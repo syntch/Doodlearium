@@ -1,14 +1,23 @@
 import { Container, MeshPlane, type Texture } from 'pixi.js';
 import type { Drawing } from '../../../shared/types.ts';
 import { Attachments } from '../attachments.ts';
+import type { Flake } from '../food.ts';
 import { TAU, clamp, depthOrder, depthScale, depthTint, seededRandom, type Creature, type World } from '../world.ts';
 
 const COLUMNS = 16;
+/** How close to the glass a curious fish comes (negative depth is in front of everything). */
+const GLASS_Z = -0.7;
+const FLAKES_UNTIL_FULL = 3;
+
+type Personality = 'curious' | 'shy' | 'easygoing';
 
 /**
  * A fish: the drawing is a mesh whose columns are bent by a sine wave travelling from head to tail
- * (amplitude grows toward the tail), while the body wanders between random targets with smooth steering.
+ * (amplitude grows toward the tail), while the body steers toward a target.
  * Drawings are stored facing right, so x = 0 is the tail and x = width is the head.
+ *
+ * Every frame the fish picks what it is up to, in priority order: chasing food, following a school,
+ * visiting the glass (curious fish), darting away from neighbours (shy fish), or just wandering.
  */
 export class Swimmer implements Creature {
   readonly view = new Container();
@@ -18,23 +27,35 @@ export class Swimmer implements Creature {
   private texW: number;
   private texH: number;
 
-  private z: number;
+  readonly personality: Personality;
+  /** Where this fish likes to be (0 front .. 1 back), and where it is right now. */
+  private zHome: number;
+  z: number;
+  private zGoal: number;
   private size: number;
   private cruise: number;
   private phase: number;
-  private x = 0;
-  private y = 0;
-  private vx = 0;
-  private vy = 0;
+  x = 0;
+  y = 0;
+  vx = 0;
+  vy = 0;
+  facing = 1;
   private target = { x: 0, y: 0 };
   private legSpeed = 1;
   private retargetIn = 0;
   private bubbleIn: number;
-  private facing = 1;
   private dropTime = 0;
   private amp = 0;
   private attachments: Attachments;
+  private baseScale = 1;
   private scale = 1;
+
+  private meal: Flake | null = null;
+  private flakesEaten = 0;
+  private fullUntil = 0;
+  private visitIn: number;
+  private visit: { until: number; hovering: boolean } | null = null;
+  private dartCooldown = 0;
 
   constructor(
     readonly drawing: Drawing,
@@ -43,23 +64,25 @@ export class Swimmer implements Creature {
     dropIn: boolean,
   ) {
     const rand = seededRandom(drawing.id);
-    this.z = rand();
+    const roll = rand();
+    this.personality = roll < 0.3 ? 'curious' : roll < 0.5 ? 'shy' : 'easygoing';
+    this.zHome = this.personality === 'shy' ? rand(0.65, 1) : rand();
+    this.z = this.zGoal = this.zHome;
     this.size = rand(0.75, 1.3);
     this.cruise = rand(0.7, 1.3);
     this.phase = rand(0, TAU);
     this.bubbleIn = rand(2, 10);
+    this.visitIn = this.personality === 'curious' ? rand(15, 45) : rand(120, 300);
 
     this.mesh = new MeshPlane({ texture, verticesX: COLUMNS, verticesY: 2 });
     this.texW = texture.width;
     this.texH = texture.height;
     this.mesh.pivot.set(this.texW / 2, this.texH / 2);
-    this.mesh.tint = depthTint(this.z);
-    this.mesh.alpha = 1 - this.z * 0.1;
     this.positions = this.mesh.geometry.getAttribute('aPosition').buffer.data as Float32Array;
     this.rest = this.positions.slice();
     this.attachments = new Attachments(drawing.attachments, this.texW, this.texH, { x: this.texW / 2, y: this.texH / 2 });
     this.view.addChild(this.mesh, this.attachments.container);
-    this.view.zIndex = depthOrder(this.z);
+    this.applyDepth();
 
     this.layout(world);
     const bounds = this.bounds(world);
@@ -78,7 +101,8 @@ export class Swimmer implements Creature {
   }
 
   layout(world: World) {
-    this.scale = (world.height * 0.24 * this.size * depthScale(this.z)) / Math.max(this.texW, this.texH * 1.4);
+    this.baseScale = (world.height * 0.24 * this.size) / Math.max(this.texW, this.texH * 1.4);
+    this.scale = this.baseScale * depthScale(this.z);
     const b = this.bounds(world);
     this.x = clamp(this.x, b.left, b.right);
     if (this.dropTime <= 0) this.y = clamp(this.y, b.top, b.bottom);
@@ -90,27 +114,41 @@ export class Swimmer implements Creature {
     return { x: this.view.x, y: this.view.y - (this.texH * this.scale) / 2 - 8 };
   }
 
-  update(dt: number, world: World) {
-    const baseSpeed = world.height * 0.075 * this.cruise * depthScale(this.z);
-    const speed = baseSpeed * this.legSpeed;
+  /** Half the fish's on-screen length. */
+  get halfLength() {
+    return (this.texW * this.scale) / 2;
+  }
 
-    this.retargetIn -= dt;
+  update(dt: number, world: World) {
+    this.dropTime -= dt;
+    this.dartCooldown -= dt;
+    this.decide(dt, world);
+
+    // Glide toward the depth we want: forward to the glass, back home, or alongside the school.
+    if (Math.abs(this.zGoal - this.z) > 0.001) {
+      this.z += clamp(this.zGoal - this.z, -dt * 0.5, dt * 0.5);
+      this.applyDepth();
+    }
+    this.scale = this.baseScale * depthScale(this.z);
+
+    const baseSpeed = world.height * 0.075 * this.cruise * depthScale(Math.max(0, this.z));
+    const speed = baseSpeed * this.legSpeed;
     const dx = this.target.x - this.x;
     const dy = this.target.y - this.y;
     const dist = Math.hypot(dx, dy);
-    if (dist < 20 || this.retargetIn <= 0) this.pickTarget(world);
+    // Slow down on arrival so hovering looks calm rather than jittery (but stay brisk when food is near).
+    const arrive = clamp(dist / (world.height * 0.08), this.meal ? 0.6 : 0.15, 1);
 
     // Ease velocity toward the target heading; drops steer gently so the plunge carries through.
-    this.dropTime -= dt;
-    const steer = this.dropTime > 0 ? 0.6 : 1.4;
+    const steer = this.dropTime > 0 ? 0.6 : this.legSpeed > 1.5 ? 2.4 : 1.4;
     const k = Math.min(1, dt * steer);
-    this.vx += ((dx / (dist || 1)) * speed - this.vx) * k;
-    this.vy += ((dy / (dist || 1)) * speed * 0.6 - this.vy) * k;
+    this.vx += ((dx / (dist || 1)) * speed * arrive - this.vx) * k;
+    this.vy += ((dy / (dist || 1)) * speed * arrive * 0.75 - this.vy) * k;
     this.x += this.vx * dt;
     this.y += this.vy * dt;
 
     // Turn around by squashing through zero width, which reads as the fish rotating to face the other way.
-    if (Math.abs(this.vx) > baseSpeed * 0.2) {
+    if (Math.abs(this.vx) > baseSpeed * 0.15) {
       this.facing += (Math.sign(this.vx) - this.facing) * Math.min(1, dt * 3.5);
     }
     const tilt = clamp(Math.atan2(this.vy, Math.abs(this.vx) + 1e-3), -0.45, 0.45) * 0.7;
@@ -125,12 +163,139 @@ export class Swimmer implements Creature {
     // Extras ride the same body wave as the drawing underneath them.
     this.attachments.update(dt, world, (u) => ({ dx: 0, dy: this.waveAt(clamp(u, 0, 1)) }));
 
+    this.tryToEat(world);
+
     this.bubbleIn -= dt;
     if (this.bubbleIn <= 0) {
       this.bubbleIn = 4 + Math.random() * 10;
-      const head = (this.texW / 2) * this.scale * Math.sign(this.facing);
-      world.scene.bubble(this.x + head, this.y, 2 + Math.random() * 2);
+      world.scene.bubble(this.headX(), this.y, 2 + Math.random() * 2);
     }
+  }
+
+  // --- what the fish is up to ------------------------------------------------
+
+  private decide(dt: number, world: World) {
+    if (this.dropTime > 0) return;
+    if (this.chaseFood(world)) return;
+    if (this.followSchool(world)) return;
+    if (this.visitGlass(dt, world)) return;
+    if (this.personality === 'shy' && this.dartFromNeighbours(world)) return;
+    this.zGoal = this.zHome;
+    this.retargetIn -= dt;
+    if (this.retargetIn <= 0 || Math.hypot(this.target.x - this.x, this.target.y - this.y) < 20) {
+      this.pickTarget(world);
+    }
+  }
+
+  private chaseFood(world: World) {
+    if (world.time < this.fullUntil) return false;
+    // Re-pick the nearest flake when ours is gone (eaten by someone else, or fading on the sand).
+    if (!this.meal || this.meal.eaten || this.meal.landedFor > 5) {
+      this.meal = world.food.nearest(this.x, this.y);
+    }
+    if (!this.meal) return false;
+    this.visit = null;
+    this.zGoal = Math.min(this.zHome, 0.3);
+    // Aim so the head (not the middle of the body) reaches the flake.
+    const side = this.meal.x >= this.x ? 1 : -1;
+    this.target.x = this.meal.x - side * this.halfLength * 0.8;
+    this.target.y = this.meal.y;
+    this.legSpeed = this.personality === 'shy' ? 1.4 : 1.9;
+    return true;
+  }
+
+  private tryToEat(world: World) {
+    if (!this.meal || this.meal.eaten) return;
+    if (Math.hypot(this.meal.x - this.headX(), this.meal.y - this.y) > Math.max(16, this.halfLength * 0.45)) return;
+    this.meal.eaten = true;
+    this.meal = null;
+    world.scene.bubble(this.headX(), this.y - 4, 2);
+    if (++this.flakesEaten >= FLAKES_UNTIL_FULL) {
+      this.flakesEaten = 0;
+      this.fullUntil = world.time + 25;
+    }
+  }
+
+  private followSchool(world: World) {
+    const school = world.school;
+    if (!school) return false;
+    // The leader just wanders as usual; the others keep up with it.
+    const place = school.members.indexOf(this);
+    if (place === -1) return false;
+    const leader = school.leader;
+    const dir = Math.sign(leader.facing) || 1;
+    const row = Math.floor(place / 2) + 1;
+    const side = place % 2 ? 1 : -1;
+    this.target.x = leader.x - dir * row * leader.halfLength * 1.6;
+    this.target.y = leader.y + side * row * leader.halfLength * 0.55;
+    this.zGoal = clamp(leader.z + side * 0.08, 0, 1);
+    const gap = Math.hypot(this.target.x - this.x, this.target.y - this.y);
+    this.legSpeed = clamp(gap / leader.halfLength, 0.9, 3.2);
+    return true;
+  }
+
+  private visitGlass(dt: number, world: World) {
+    this.visitIn -= dt;
+    if (!this.visit) {
+      if (this.visitIn > 0) return false;
+      this.visit = { until: world.time + 30, hovering: false };
+    }
+    const visit = this.visit;
+    if (!visit.hovering) {
+      // Swim toward the middle of the tank while coming forward.
+      this.zGoal = GLASS_Z;
+      this.target.x = world.width * (0.35 + (this.phase % 1) * 0.3);
+      this.target.y = world.height * 0.45;
+      this.legSpeed = 0.8;
+      if (Math.hypot(this.target.x - this.x, this.target.y - this.y) < 40 && Math.abs(this.z - GLASS_Z) < 0.1) {
+        visit.hovering = true;
+        visit.until = world.time + 6;
+      }
+    } else {
+      // Hover nose-to-the-glass, drifting in a little circle.
+      this.target.x += Math.cos(world.time * 0.9) * 0.6;
+      this.target.y += Math.sin(world.time * 1.3) * 0.4;
+      this.legSpeed = 0.35;
+    }
+    if (world.time > visit.until) {
+      this.visit = null;
+      this.visitIn = this.personality === 'curious' ? 40 + Math.random() * 50 : 180 + Math.random() * 240;
+      this.pickTarget(world);
+      return false;
+    }
+    return true;
+  }
+
+  private dartFromNeighbours(world: World) {
+    if (this.dartCooldown > 0) return false;
+    for (const other of world.fish) {
+      if (other === this || Math.abs(other.z - this.z) > 0.35) continue;
+      const dx = this.x - other.x;
+      const dy = this.y - other.y;
+      if (Math.hypot(dx, dy) > (this.halfLength + other.halfLength) * 1.3) continue;
+      // Startled: zip off away from the neighbour, toward the back.
+      const b = this.bounds(world);
+      this.target.x = clamp(this.x + Math.sign(dx || 1) * world.width * 0.35, b.left, b.right);
+      this.target.y = clamp(this.y + Math.sign(dy || 1) * world.height * 0.15, b.top, b.bottom);
+      this.zGoal = Math.min(1, this.zHome + 0.15);
+      this.legSpeed = 2.6;
+      this.retargetIn = 2.5;
+      this.dartCooldown = 4;
+      return true;
+    }
+    return false;
+  }
+
+  // --- helpers -------------------------------------------------------------
+
+  private headX() {
+    return this.x + this.halfLength * 0.9 * Math.sign(this.facing || 1);
+  }
+
+  private applyDepth() {
+    this.mesh.tint = depthTint(this.z);
+    this.mesh.alpha = 1 - Math.max(0, this.z) * 0.1;
+    this.view.zIndex = depthOrder(this.z);
   }
 
   private wiggle(effort: number) {
@@ -152,9 +317,10 @@ export class Swimmer implements Creature {
     const b = this.bounds(world);
     // Mostly lazy cruising, sometimes a quick dart.
     this.legSpeed = Math.random() < 0.15 ? 2.2 : 0.6 + Math.random() * 0.6;
-    // Prefer horizontal travel: pick a far-off x and a nearby y.
+    // Prefer horizontal travel: pick a far-off x and a nearby y. Shy fish keep low, near the plants.
     this.target.x = b.left + Math.random() * (b.right - b.left);
-    this.target.y = clamp(this.y + (Math.random() - 0.5) * world.height * 0.35, b.top, b.bottom);
+    const y = this.y + (Math.random() - 0.5) * world.height * 0.35;
+    this.target.y = clamp(this.personality === 'shy' ? Math.max(y, world.height * 0.5) : y, b.top, b.bottom);
     this.retargetIn = 6 + Math.random() * 8;
   }
 

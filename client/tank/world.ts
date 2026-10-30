@@ -1,5 +1,7 @@
 import type { Container } from 'pixi.js';
 import type { Drawing } from '../../shared/types.ts';
+import type { Swimmer } from './behaviors/swimmer.ts';
+import type { Food } from './food.ts';
 import type { Scene } from './scene.ts';
 
 export interface World {
@@ -10,6 +12,18 @@ export interface World {
   /** Seconds since the tank started. */
   time: number;
   scene: Scene;
+  food: Food;
+  /** Every fish currently out and about, so fish can react to each other. */
+  fish: Swimmer[];
+  /** A group of fish swimming together for a while, following the leader. */
+  school: School | null;
+}
+
+export interface School {
+  leader: Swimmer;
+  /** Followers in order; each one's place in line decides its spot in the formation. */
+  members: Swimmer[];
+  until: number;
 }
 
 export interface Creature {
@@ -47,11 +61,12 @@ export function seededRandom(seed: string) {
  * Depth z runs 0 (front glass) to 1 (back wall). Far things are smaller and washed toward the water colour.
  */
 export const depthScale = (z: number) => 1 - 0.45 * z;
+/** Negative z means pressed up against the glass, in front of everything. */
 export const depthOrder = (z: number) => Math.round((1 - z) * 1000);
 
 const WATER = { r: 0x5f, g: 0x9f, b: 0xc4 };
 export function depthTint(z: number) {
-  const t = z * 0.3;
+  const t = Math.max(0, z) * 0.3;
   const r = Math.round(lerp(255, WATER.r, t));
   const g = Math.round(lerp(255, WATER.g, t));
   const b = Math.round(lerp(255, WATER.b, t));

@@ -17,6 +17,7 @@
       }
       .choices a:hover { border-color: var(--accent); }
       .choices span { display: block; font-size: 3rem; margin-bottom: 8px; }
+      .feed { margin-top: 28px; font-size: 1.2rem; padding: 12px 24px; }
       .choices small { display: block; color: var(--muted); font-weight: normal; font-size: 0.95rem; margin-top: 6px; }
     </style>
   </head>
@@ -29,6 +30,11 @@
         <a href="/draw/"><span>🖍️</span>Draw something<small>Fish, plants and decorations</small></a>
         <a href="/gallery/"><span>🖼️</span>Gallery<small>Every drawing ever made</small></a>
       </div>
+      <p><button class="primary feed" id="feed">🍤 Feed the fish</button></p>
     </main>
+    <script type="module">
+      import { setupFeedButton } from './shared/api.ts';
+      setupFeedButton(document.querySelector('#feed'));
+    </script>
   </body>
 </html>

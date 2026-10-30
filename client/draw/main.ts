@@ -1,7 +1,8 @@
 import { MAX_ATTACHMENTS, imageUrl, type AttachmentKind, type CreatureType, type Drawing } from '../../shared/types.ts';
-import { fetchDrawings, submitDrawing, updateDrawing } from '../shared/api.ts';
+import { fetchDrawings, setupFeedButton, submitDrawing, updateDrawing } from '../shared/api.ts';
 import { exportDrawing, type PlacedAttachment } from './export.ts';
 import { MATERIALS, MATERIAL_LABELS, floodFill, materialPreview, type Material } from './fill.ts';
+import { readPhoto, removePaper } from './photo.ts';
 
 const COLORS = [
   '#1b1b1b', '#ffffff', '#e63946', '#ff8c1a', '#ffd60a', '#52b788',
@@ -44,6 +45,7 @@ const toast = document.querySelector<HTMLParagraphElement>('#toast')!;
 const nameInput = document.querySelector<HTMLInputElement>('#name')!;
 const artistInput = document.querySelector<HTMLInputElement>('#artist')!;
 const sendButton = document.querySelector<HTMLButtonElement>('#send')!;
+const nocturnalInput = document.querySelector<HTMLInputElement>('#nocturnal')!;
 
 const state = {
   kind: 'swimmer' as CreatureType,
@@ -59,12 +61,13 @@ const ops: Op[] = [];
 let current: Extract<Op, { type: 'stroke' }> | null = null;
 /** When editing an existing drawing: the drawing, its image under the new ops, and its saved extras. */
 let editing: Drawing | null = null;
-let base: { image: HTMLImageElement; x: number; y: number } | null = null;
+let base: { image: HTMLImageElement | HTMLCanvasElement; x: number; y: number } | null = null;
 let baseAttachments: PlacedAttachment[] = [];
 
 try {
   artistInput.value = localStorage.getItem('doodlearium.artist') ?? '';
 } catch {}
+setupFeedButton(document.querySelector<HTMLButtonElement>('#feed')!);
 
 // --- toolbar -------------------------------------------------------------
 
@@ -222,6 +225,7 @@ document.querySelector<HTMLButtonElement>('#clear')!.onclick = () => {
   ops.length = 0;
   base = null;
   baseAttachments = [];
+  closePhotoPanel();
   redraw();
 };
 addEventListener('keydown', (e) => {
@@ -370,6 +374,61 @@ function renderMarkers() {
 }
 addEventListener('resize', renderMarkers);
 
+// --- photo of a paper drawing ----------------------------------------------
+
+const photoInput = document.querySelector<HTMLInputElement>('#photo-input')!;
+const photoPanel = document.querySelector<HTMLDivElement>('#photo-panel')!;
+const photoStrength = document.querySelector<HTMLInputElement>('#photo-strength')!;
+let photo: ImageBitmap | null = null;
+
+document.querySelector<HTMLButtonElement>('#photo')!.onclick = () => {
+  if ((ops.length || base) && !confirm('Start over with a photo? This replaces the current drawing.')) return;
+  photoInput.click();
+};
+
+photoInput.onchange = async () => {
+  const file = photoInput.files?.[0];
+  photoInput.value = '';
+  if (!file) return;
+  try {
+    photo = await readPhoto(file);
+  } catch {
+    showToast("Couldn't open that photo.", true);
+    return;
+  }
+  ops.length = 0;
+  baseAttachments = [];
+  photoPanel.hidden = false;
+  applyPhoto();
+  showToast('Photo added! Slide to clean up the paper, then touch it up with the tools.');
+};
+
+/** (Re)builds the base image from the photo at the current paper-removal strength. */
+function applyPhoto() {
+  if (!photo) return;
+  // Leave a margin so the drawing doesn't touch the paper's edges.
+  const image = removePaper(photo, paper.width * 0.9, paper.height * 0.9, Number(photoStrength.value));
+  base = {
+    image,
+    x: Math.round((paper.width - image.width) / 2),
+    y: Math.round((paper.height - image.height) / 2),
+  };
+  redraw();
+}
+
+let photoTimer = 0;
+photoStrength.oninput = () => {
+  clearTimeout(photoTimer);
+  photoTimer = window.setTimeout(applyPhoto, 60);
+};
+
+function closePhotoPanel() {
+  photoPanel.hidden = true;
+  photo?.close();
+  photo = null;
+}
+document.querySelector<HTMLButtonElement>('#photo-done')!.onclick = closePhotoPanel;
+
 // --- submit --------------------------------------------------------------
 
 let toastTimer = 0;
@@ -398,6 +457,7 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
     artist,
     image: exported.dataUrl,
     attachments: exported.attachments,
+    nocturnal: nocturnalInput.checked,
   };
 
   sendButton.disabled = true;
@@ -412,9 +472,13 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
       localStorage.setItem('doodlearium.artist', artist);
     } catch {}
     const drawing = await submitDrawing(payload);
-    showToast(`Splash! ${drawing.name} is in the tank.`);
+    showToast(`Splash! ${drawing.name} is in the tank.${drawing.nocturnal ? ' It comes out at night 🌙' : ''}`);
     ops.length = 0;
+    base = null;
+    baseAttachments = [];
     nameInput.value = '';
+    nocturnalInput.checked = false;
+    closePhotoPanel();
     redraw();
   } catch (err) {
     showToast(err instanceof Error ? err.message : 'Upload failed', true);
@@ -450,6 +514,7 @@ async function loadForEditing(id: string) {
   setKind(drawing.type);
   nameInput.value = drawing.name;
   artistInput.value = drawing.artist;
+  nocturnalInput.checked = drawing.nocturnal === true;
   sendButton.textContent = 'Save changes 💾';
   const banner = document.querySelector<HTMLParagraphElement>('#editing')!;
   banner.hidden = false;

@@ -26,6 +26,30 @@ export async function updateDrawing(id: string, drawing: NewDrawing): Promise<Dr
   return res.json();
 }
 
+/** Drops food into every open tank. Resolves to false if the fish were fed moments ago. */
+export async function feedFish(x?: number): Promise<boolean> {
+  const res = await fetch('/api/feed', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ x }),
+  });
+  return res.ok;
+}
+
+/** Turns a button into a Feed button with a little "Fed!" confirmation. */
+export function setupFeedButton(button: HTMLButtonElement) {
+  const label = button.textContent;
+  button.onclick = async () => {
+    button.disabled = true;
+    const ok = await feedFish().catch(() => false);
+    button.textContent = ok ? '🍤 Fed!' : '🍤 Still eating…';
+    setTimeout(() => {
+      button.textContent = label;
+      button.disabled = false;
+    }, 1600);
+  };
+}
+
 export async function deleteDrawing(id: string) {
   const res = await fetch(`/api/drawings/${id}`, { method: 'DELETE' });
   if (!res.ok && res.status !== 404) throw new Error(`Delete failed (${res.status})`);

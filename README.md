@@ -13,9 +13,11 @@ The server prints its address on your network, for example `http://192.168.1.20:
 
 | Page | What it's for |
 | --- | --- |
-| `/tank/` | The aquarium. Double-click for full screen. The cursor hides itself, and the tank dims at night. |
-| `/draw/` | Draw a fish, plant or decoration, then add it to the tank. It drops in live. Tools: brush (with rainbow paint), eraser, a **fill** bucket with materials (brick, stone, bark, scales, stripes, dots, rainbow), **mirror** drawing, and **extras**. Extras are animated things pinned to a drawing: bubbles, sparkles, a glow, a googly eye, a waving flag and a propeller. |
+| `/tank/` | The aquarium. Double-click for full screen; click to drop food. The cursor hides itself, and the tank dims at night. Add `?hour=22` to the address to preview night (or any hour). |
+| `/draw/` | Draw a fish, plant or decoration, then add it to the tank. It drops in live. Tools: brush (with rainbow paint), eraser, a **fill** bucket with materials (brick, stone, wood, bark, scales, stripes, dots, rainbow), **mirror** drawing, and **extras**. Extras are animated things pinned to a drawing: bubbles, sparkles, a glow, a googly eye, a waving flag and a propeller. **📷 Photo** turns a photo of a paper drawing into a drawing, removing the paper. **🌙 Night creature** makes it only come out after dark. |
 | `/gallery/` | Every drawing ever made. **Edit** opens one in the draw page, for example to fix a fish that swims backwards. **Remove** deletes it. |
+
+Every page has a **🍤 Feed** button that drops food into every open tank. Fish also have personalities: curious ones sometimes swim right up to the glass, shy ones keep to the back and dart away from neighbours, and every few minutes a few fish swim together as a school.
 
 For development, `npm run dev` runs the API on port 3000 and Vite with hot reload on http://localhost:5173.
 

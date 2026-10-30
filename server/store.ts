@@ -39,6 +39,7 @@ type DrawingMeta = {
   width: number;
   height: number;
   attachments: Attachment[];
+  nocturnal: boolean;
 };
 
 export async function addDrawing(meta: DrawingMeta, png: Buffer): Promise<Drawing> {

@@ -12,6 +12,7 @@
       <a class="brand" href="/">🐠 Doodlearium</a>
       <a href="/tank/">Tank</a>
       <a href="/gallery/">Gallery</a>
+      <button id="feed" title="Drop food into the tank">🍤 Feed</button>
     </nav>
     <main class="draw">
       <p class="editing" id="editing" hidden></p>
@@ -37,6 +38,14 @@
         <button id="facing" title="Which way is your fish facing?">Facing →</button>
         <button id="undo" title="Undo (Ctrl+Z)">↶ Undo</button>
         <button id="clear">🗑 Clear</button>
+        <button id="photo" title="Use a photo of a drawing on paper">📷 Photo</button>
+        <input type="file" id="photo-input" accept="image/*" hidden />
+      </div>
+      <div class="photo-panel" id="photo-panel" hidden>
+        <label for="photo-strength">Paper removal: gentle</label>
+        <input type="range" id="photo-strength" min="1" max="10" value="5" />
+        <span>strong</span>
+        <button id="photo-done">Done</button>
       </div>
       <div class="colors" id="colors"></div>
       <div class="options">
@@ -50,6 +59,9 @@
         <input type="text" id="name" placeholder="Name it (e.g. Bubbles)" maxlength="40" />
         <input type="text" id="artist" placeholder="Your name" maxlength="40" />
         <label class="fill"><input type="checkbox" id="paper-fill" checked /> Fill inside white</label>
+        <label class="fill" title="Only comes out after dark, and stays bright while the tank dims">
+          <input type="checkbox" id="nocturnal" /> 🌙 Night creature
+        </label>
         <button class="primary" type="submit" id="send">Add to tank 🌊</button>
       </form>
       <p class="toast" id="toast" role="status"></p>

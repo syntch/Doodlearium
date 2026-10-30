@@ -49,3 +49,4 @@ input[type='text']:focus { outline: none; border-color: var(--accent); }
 }
 .nav .brand { font-weight: bold; font-size: 1.25rem; text-decoration: none; color: var(--text); margin-right: auto; }
 .nav a:not(.brand) { text-decoration: none; }
+.nav button { padding: 6px 12px; }

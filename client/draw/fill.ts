@@ -1,10 +1,11 @@
-export const MATERIALS = ['solid', 'brick', 'stone', 'bark', 'scales', 'stripes', 'dots', 'rainbow'] as const;
+export const MATERIALS = ['solid', 'brick', 'stone', 'wood', 'bark', 'scales', 'stripes', 'dots', 'rainbow'] as const;
 export type Material = (typeof MATERIALS)[number];
 
 export const MATERIAL_LABELS: Record<Material, string> = {
   solid: 'Solid',
   brick: 'Brick',
   stone: 'Stone',
+  wood: 'Wood',
   bark: 'Bark',
   scales: 'Scales',
   stripes: 'Stripes',
@@ -81,6 +82,24 @@ const PAINTERS: Record<Material, (x: number, y: number, base: (x: number, y: num
     if (d2 - d1 < 2.5) return darken(base(x, y), 0.45);
     const rounded = 0.18 * Math.max(0, 1 - d1 / 22);
     return shade(base(x, y), (hash(nearest, 7, 4) - 0.5) * 0.35 + rounded + (hash(x, y, 5) - 0.5) * 0.06);
+  },
+
+  wood: (x, y, base) => {
+    // Horizontal planks, 24px tall, each with one staggered end joint per tile and its own shade.
+    const board = Math.floor(y / 24);
+    const inBoard = y % 24;
+    const joint = Math.floor(hash(board, 0, 8) * TILE);
+    if (inBoard < 2 || wrapDist(x, joint) < 1.2) return darken(base(x, y), 0.5);
+    // A knot on one board per tile, with grain rings around it.
+    const kx = hash(0, 1, 9) * TILE;
+    const ky = Math.floor(hash(0, 2, 9) * 4) * 24 + 12;
+    const knotDist = Math.hypot(wrapDist(x, kx) * 0.55, wrapDist(y, ky));
+    if (Math.floor(y / 24) === Math.floor(ky / 24) && knotDist < 7) {
+      return darken(base(x, y), knotDist < 2.5 ? 0.45 : 0.18 + 0.12 * Math.sin(knotDist * 2.2));
+    }
+    const grain = Math.sin((inBoard + board * 7) * 0.9 + 1.4 * Math.sin((x / TILE) * TAU * 2 + board));
+    const boardShade = (hash(board, 3, 10) - 0.5) * 0.18;
+    return shade(base(x, y), boardShade + (grain > 0.75 ? -0.16 : grain * 0.04) + (hash(x, y, 11) - 0.5) * 0.05);
   },
 
   bark: (x, y, base) => {

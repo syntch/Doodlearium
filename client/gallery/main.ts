@@ -1,5 +1,7 @@
 import { imageUrl, type CreatureType, type Drawing } from '../../shared/types.ts';
-import { connectLive, deleteDrawing, fetchDrawings } from '../shared/api.ts';
+import { connectLive, deleteDrawing, fetchDrawings, setupFeedButton } from '../shared/api.ts';
+
+setupFeedButton(document.querySelector<HTMLButtonElement>('#feed')!);
 
 const FILTERS: { label: string; type: CreatureType | null }[] = [
   { label: 'Everything', type: null },
@@ -48,7 +50,8 @@ function card(d: Drawing) {
 
   const name = document.createElement('div');
   name.className = 'name';
-  name.textContent = d.name;
+  name.textContent = d.nocturnal ? `${d.name} 🌙` : d.name;
+  if (d.nocturnal) name.title = 'Night creature: only comes out after dark';
   const meta = document.createElement('div');
   meta.className = 'meta';
   meta.textContent = `by ${d.artist} · ${new Date(d.createdAt).toLocaleDateString()}`;
@@ -90,8 +93,10 @@ connectLive(
   (msg) => {
     if (msg.type === 'drawing:added' || msg.type === 'drawing:updated') {
       drawings = [...drawings.filter((d) => d.id !== msg.drawing.id), msg.drawing];
-    } else {
+    } else if (msg.type === 'drawing:removed') {
       drawings = drawings.filter((d) => d.id !== msg.id);
+    } else {
+      return;
     }
     render();
   },

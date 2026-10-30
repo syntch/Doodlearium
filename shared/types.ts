@@ -32,6 +32,8 @@ export interface Drawing {
   width: number;
   height: number;
   attachments?: Attachment[];
+  /** Night creatures only come out after dark. */
+  nocturnal?: boolean;
 }
 
 export interface NewDrawing {
@@ -41,12 +43,15 @@ export interface NewDrawing {
   /** PNG data URL. */
   image: string;
   attachments?: Attachment[];
+  nocturnal?: boolean;
 }
 
 export type ServerMessage =
   | { type: 'drawing:added'; drawing: Drawing }
   | { type: 'drawing:updated'; drawing: Drawing }
-  | { type: 'drawing:removed'; id: string };
+  | { type: 'drawing:removed'; id: string }
+  /** Feeding time: x is where across the tank (0..1) the food drops. */
+  | { type: 'feed'; x: number };
 
 /** Images are served with a long cache lifetime, so the version query makes edits show up. */
 export const imageUrl = (d: Pick<Drawing, 'id' | 'createdAt' | 'updatedAt'>) =>

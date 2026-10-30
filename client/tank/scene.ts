@@ -67,7 +67,16 @@ export class Scene {
       g.circle(x - b.r * 0.35, b.y - b.r * 0.35, b.r * 0.25).fill({ color: 0xffffff, alpha: 0.7 });
     }
 
-    this.night.clear().rect(0, 0, world.width, world.height).fill({ color: 0x020d24, alpha: nightDarkness() });
+    this.darkness = nightDarkness();
+    this.night.clear().rect(0, 0, world.width, world.height).fill({ color: 0x020d24, alpha: this.darkness });
+  }
+
+  /** 0 in daylight, 0.5 at full night. */
+  darkness = 0;
+
+  /** Night creatures come out once it's getting properly dark. */
+  get isNight() {
+    return this.darkness >= 0.25;
   }
 
   bubble(x: number, y: number, r: number) {
@@ -127,10 +136,13 @@ function waterGradient(height: number) {
   return Texture.from(canvas);
 }
 
+/** `/tank/?hour=22` pretends it's that hour, to preview night (or day) any time. */
+const HOUR_OVERRIDE = Number.parseFloat(new URLSearchParams(location.search).get('hour') ?? '');
+
 /** 0 during the day, up to 0.5 at night, easing through dawn (5–8h) and dusk (18–21h). */
 function nightDarkness() {
   const now = new Date();
-  const hour = now.getHours() + now.getMinutes() / 60;
+  const hour = Number.isFinite(HOUR_OVERRIDE) ? HOUR_OVERRIDE % 24 : now.getHours() + now.getMinutes() / 60;
   const max = 0.5;
   if (hour >= 8 && hour < 18) return 0;
   if (hour >= 21 || hour < 5) return max;

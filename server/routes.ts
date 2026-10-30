@@ -46,6 +46,7 @@ function parseDrawing(body: any) {
     width,
     height,
     attachments,
+    nocturnal: body.nocturnal === true,
   };
   return { meta, png };
 }
@@ -94,6 +95,20 @@ api.put('/drawings/:id', async (req, res) => {
   }
   broadcast({ type: 'drawing:updated', drawing });
   res.json(drawing);
+});
+
+let lastFeed = 0;
+api.post('/feed', (req, res) => {
+  const now = Date.now();
+  // A little cooldown so an excited button-masher doesn't bury the tank in food.
+  if (now - lastFeed < 1500) {
+    res.status(429).json({ error: 'The fish are still eating!' });
+    return;
+  }
+  lastFeed = now;
+  const x = typeof req.body?.x === 'number' && req.body.x >= 0 && req.body.x <= 1 ? req.body.x : 0.15 + Math.random() * 0.7;
+  broadcast({ type: 'feed', x });
+  res.status(204).end();
 });
 
 api.delete('/drawings/:id', async (req, res) => {
