@@ -35,10 +35,12 @@
 
       <div class="workspace" id="workspace">
         <div class="stage">
+          <div class="holes" id="holes" aria-hidden="true"></div>
           <canvas id="paper" width="1000" height="750"></canvas>
           <div class="guide" id="guide" aria-hidden="true"></div>
           <canvas class="selection-overlay" id="selection-overlay" width="1000" height="750" aria-hidden="true"></canvas>
           <div class="markers" id="markers" aria-hidden="true"></div>
+          <div class="brush-cursor" id="brush-cursor" hidden></div>
         </div>
         <div class="preview" id="preview" hidden aria-label="Preview of how it moves in the tank"></div>
       </div>
@@ -74,6 +76,7 @@
             <button data-select-mode="add" aria-pressed="true" title="Paint over a part to select it">🖌️ Select</button>
             <button data-select-mode="remove" aria-pressed="false" title="Paint to unselect">🧽 Unselect</button>
             <button data-select="all" title="Select the whole drawing">⬚ All</button>
+            <button data-select="none" title="Unselect everything">✕ Unselect all</button>
           </span>
           <span class="group" role="group" aria-label="Change the selected part">
             <button data-select="bigger" title="Bigger">➕ Bigger</button>

@@ -172,6 +172,10 @@ export function materialPreview(material: Material, color: string) {
  * (transparent areas count as one colour), then the area grows by one pixel so it tucks under
  * anti-aliased line edges, which are drawn back on top.
  */
+/**
+ * Fills the area under each seed. Colour 'clear' makes the area see-through instead.
+ * Returns the area (1 = filled, 2 = its edge ring) so the caller can track see-through parts.
+ */
 export function floodFill(ctx: CanvasRenderingContext2D, seeds: { x: number; y: number }[], material: Material, color: string) {
   const { width, height } = ctx.canvas;
   const image = ctx.getImageData(0, 0, width, height);
@@ -218,6 +222,12 @@ export function floodFill(ctx: CanvasRenderingContext2D, seeds: { x: number; y: 
     if (i < width * (height - 1) && !mask[i + width]) mask[i + width] = 2;
   }
 
+  if (color === 'clear') {
+    for (let i = 0; i < mask.length; i++) if (mask[i] === 1) d[i * 4 + 3] = 0;
+    ctx.putImageData(image, 0, 0);
+    return mask;
+  }
+
   const tile = materialTile(material, color);
   for (let i = 0; i < mask.length; i++) {
     if (!mask[i]) continue;
@@ -233,4 +243,5 @@ export function floodFill(ctx: CanvasRenderingContext2D, seeds: { x: number; y: 
     d[p + 3] = 255;
   }
   ctx.putImageData(image, 0, 0);
+  return mask;
 }

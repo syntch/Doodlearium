@@ -87,10 +87,10 @@ const eel: BodyStyle = {
   bob: 0.003,
   beat: (effort) => 2.6 + effort * 1.6,
   thrust: fixed,
-  // An S-wave of about one and a half wavelengths along the whole body, a little calmer at the head.
+  // An S-wave of about one and a half wavelengths travelling from head to tail, a little calmer at the head.
   deform(u, _v, s) {
     const amp = Math.min(s.texW * 0.05, s.texH * 0.9);
-    return { dx: 0, dy: amp * (0.45 + 0.55 * (1 - u)) * Math.sin(s.phase - u * TAU * 1.5) };
+    return { dx: 0, dy: amp * (0.45 + 0.55 * (1 - u)) * Math.sin(s.phase + u * TAU * 1.5) };
   },
 };
 

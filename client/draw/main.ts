@@ -1,14 +1,16 @@
 import { MAX_ATTACHMENTS, imageUrl, motionOf, type AttachmentKind, type Drawing, type Motion } from '../../shared/types.ts';
 import { fetchDrawings, setupFeedButton, submitDrawing, updateDrawing } from '../shared/api.ts';
-import { exportDrawing, inkBounds, type PlacedAttachment } from './export.ts';
+import { enclosedHoles, exportDrawing, inkBounds, type PlacedAttachment } from './export.ts';
 import { MATERIALS, MATERIAL_LABELS, floodFill, materialPreview, type Material } from './fill.ts';
 import { readPhoto, removePaper } from './photo.ts';
 import { Selection, applyTransform, maskHas, type TransformOp } from './selection.ts';
 
-const COLORS = [
-  '#1b1b1b', '#ffffff', '#e63946', '#ff8c1a', '#ffd60a', '#52b788',
-  '#2ec4b6', '#3a86ff', '#8338ec', '#ff70a6', '#8d5a3b', '#8d99ae',
-  'rainbow',
+/** Colour and the name shown when hovering it. 'clear' paints and fills see-through. */
+const COLORS: [string, string][] = [
+  ['#1b1b1b', 'Black'], ['#ffffff', 'White'], ['#e63946', 'Red'], ['#ff8c1a', 'Orange'],
+  ['#ffd60a', 'Yellow'], ['#52b788', 'Green'], ['#2ec4b6', 'Teal'], ['#3a86ff', 'Blue'],
+  ['#8338ec', 'Purple'], ['#ff70a6', 'Pink'], ['#8d5a3b', 'Brown'], ['#8d99ae', 'Grey'],
+  ['rainbow', 'Rainbow'], ['clear', 'Invisible (see-through)'],
 ];
 const SIZES = [4, 10, 22, 40];
 /** The same four size buttons double as the size of extras. */
@@ -52,7 +54,7 @@ const nocturnalInput = document.querySelector<HTMLInputElement>('#nocturnal')!;
 const state = {
   motion: 'fish' as Motion,
   tool: 'brush' as Tool,
-  color: COLORS[0],
+  color: COLORS[0][0],
   sizeIndex: 1,
   material: 'solid' as Material,
   extra: 'bubbles' as AttachmentKind,
@@ -63,9 +65,14 @@ const ops: Op[] = [];
 let current: Extract<Op, { type: 'stroke' }> | null = null;
 /** When editing an existing drawing: the drawing, its image under the new ops, and its saved extras. */
 let editing: Drawing | null = null;
-let base: { image: HTMLImageElement | HTMLCanvasElement; x: number; y: number } | null = null;
+/** Under the new ops; holes are its see-through areas, when re-editing a saved drawing. */
+let base: { image: HTMLImageElement | HTMLCanvasElement; x: number; y: number; holes?: HTMLCanvasElement } | null = null;
 let baseAttachments: PlacedAttachment[] = [];
 const selection = new Selection(paper.width, paper.height);
+/** Where the drawing has been made see-through on purpose, so "Fill inside white" leaves it be. */
+const holesCanvas = Object.assign(document.createElement('canvas'), { width: paper.width, height: paper.height });
+const holesView = document.querySelector<HTMLDivElement>('#holes')!;
+const holes = holesCanvas.getContext('2d', { willReadFrequently: true })!;
 const overlay = document.querySelector<HTMLCanvasElement>('#selection-overlay')!.getContext('2d')!;
 /** The paper as committed, under a selection that is being moved around. */
 const snapshot = Object.assign(document.createElement('canvas'), { width: paper.width, height: paper.height });
@@ -86,16 +93,12 @@ const press = (buttons: Iterable<Element>, isOn: (b: HTMLElement) => boolean) =>
 };
 
 const colorsEl = document.querySelector<HTMLDivElement>('#colors')!;
-const colorButtons = COLORS.map((color) => {
+const colorButtons = COLORS.map(([color, name]) => {
   const b = document.createElement('button');
   b.dataset.color = color;
-  if (color === 'rainbow') {
-    b.className = 'rainbow';
-    b.title = 'Rainbow';
-  } else {
-    b.style.background = color;
-    b.title = color;
-  }
+  b.title = name;
+  if (color === 'rainbow' || color === 'clear') b.className = color;
+  else b.style.background = color;
   b.onclick = () => pickColor(color);
   colorsEl.append(b);
   return b;
@@ -143,7 +146,9 @@ const materialButtons = MATERIALS.map((material) => {
 
 /** Material swatches are shown in the current colour, so brick in blue looks like blue brick. */
 function renderMaterials() {
-  if (state.tool !== 'fill') return;
+  // See-through has no pattern, so there's nothing to pick.
+  materialsEl.hidden = state.tool !== 'fill' || state.color === 'clear';
+  if (materialsEl.hidden) return;
   MATERIALS.forEach((material, i) => {
     const color = state.color === 'rainbow' || material === 'rainbow' ? 'rainbow' : state.color;
     materialButtons[i].innerHTML = `<img alt="" src="${materialPreview(material, color)}" />${MATERIAL_LABELS[material]}`;
@@ -177,7 +182,7 @@ function setTool(tool: Tool) {
   extrasEl.hidden = tool !== 'extras';
   selectBar.hidden = tool !== 'select';
   colorsEl.hidden = tool === 'select';
-  paper.style.cursor = tool === 'fill' ? 'cell' : tool === 'extras' ? 'copy' : 'crosshair';
+  paper.style.cursor = tool === 'fill' ? 'cell' : tool === 'extras' ? 'copy' : tool === 'select' ? 'crosshair' : 'none';
   renderSelectBar();
   renderMaterials();
   renderHint();
@@ -439,36 +444,65 @@ paper.addEventListener('pointercancel', endStroke);
 function drawSegment(stroke: Extract<Op, { type: 'stroke' }>, i: number) {
   const p = stroke.points[i];
   const prev = stroke.points[Math.max(0, i - 1)];
-  ctx.globalCompositeOperation = stroke.erase ? 'destination-out' : 'source-over';
-  ctx.strokeStyle = stroke.color === 'rainbow' ? `hsl(${(i * 4) % 360} 85% 58%)` : stroke.color;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.lineWidth = stroke.size * (0.4 + p.pressure * 2) * (stroke.erase ? 1.5 : 1);
-  const froms = withMirror(prev, stroke.mirror);
-  const tos = withMirror(p, stroke.mirror);
-  ctx.beginPath();
-  froms.forEach((from, k) => {
-    ctx.moveTo(from.x, from.y);
-    ctx.lineTo(tos[k].x + (i === 0 ? 0.01 : 0), tos[k].y);
-  });
-  ctx.stroke();
+  const invisible = stroke.color === 'clear';
+  const width = brushWidth(stroke.size, p.pressure, stroke.erase);
+  const line = (c: CanvasRenderingContext2D) => {
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    c.lineWidth = width;
+    const froms = withMirror(prev, stroke.mirror);
+    const tos = withMirror(p, stroke.mirror);
+    c.beginPath();
+    froms.forEach((from, k) => {
+      c.moveTo(from.x, from.y);
+      c.lineTo(tos[k].x + (i === 0 ? 0.01 : 0), tos[k].y);
+    });
+    c.stroke();
+  };
+  ctx.globalCompositeOperation = stroke.erase || invisible ? 'destination-out' : 'source-over';
+  ctx.strokeStyle = stroke.color === 'rainbow' ? `hsl(${(i * 4) % 360} 85% 58%)` : invisible ? '#000' : stroke.color;
+  line(ctx);
+  // Invisible paint marks a see-through spot; real paint over one covers it up again.
+  if (invisible || !stroke.erase) {
+    holes.globalCompositeOperation = invisible ? 'source-over' : 'destination-out';
+    holes.strokeStyle = '#000';
+    line(holes);
+    showHoles();
+  }
+}
+
+/** On-paper width of a brush stroke; pen pressure scales it from 0.4x to 2.4x. */
+function brushWidth(size: number, pressure: number, erase: boolean) {
+  return size * (0.4 + pressure * 2) * (erase ? 1.5 : 1);
 }
 
 function applyFill(op: Extract<Op, { type: 'fill' }>) {
   ctx.globalCompositeOperation = 'source-over';
   const material = op.material === 'solid' && op.color === 'rainbow' ? 'rainbow' : op.material;
-  floodFill(ctx, withMirror(op, op.mirror), material, op.color);
+  const area = floodFill(ctx, withMirror(op, op.mirror), material, op.color);
+  const image = holes.getImageData(0, 0, holesCanvas.width, holesCanvas.height);
+  const alpha = op.color === 'clear' ? 255 : 0;
+  for (let i = 0; i < area.length; i++) if (area[i] === 1) image.data[i * 4 + 3] = alpha;
+  holes.putImageData(image, 0, 0);
+  showHoles();
 }
 
 function redraw() {
   ctx.globalCompositeOperation = 'source-over';
   ctx.clearRect(0, 0, paper.width, paper.height);
+  holes.globalCompositeOperation = 'source-over';
+  holes.clearRect(0, 0, holesCanvas.width, holesCanvas.height);
   if (base) ctx.drawImage(base.image, base.x, base.y);
+  if (base?.holes) holes.drawImage(base.holes, base.x, base.y);
   for (const op of ops) {
     if (op.type === 'stroke') op.points.forEach((_, i) => drawSegment(op, i));
     else if (op.type === 'fill') applyFill(op);
-    else if (op.type === 'transform') applyTransform(ctx, op);
+    else if (op.type === 'transform') {
+      applyTransform(ctx, op);
+      applyTransform(holes, op);
+    }
   }
+  showHoles();
   snapshotPaper();
   renderSelection();
   changed();
@@ -515,7 +549,7 @@ function placeOrRemoveExtra(p: Point) {
   } else {
     ops.push({
       type: 'attach',
-      attachment: { kind: state.extra, x: p.x, y: p.y, scale: EXTRA_SCALES[state.sizeIndex], color: state.color },
+      attachment: { kind: state.extra, x: p.x, y: p.y, scale: EXTRA_SCALES[state.sizeIndex], color: state.color === 'clear' ? '#ffffff' : state.color },
     });
   }
   renderMarkers();
@@ -536,6 +570,42 @@ function renderMarkers() {
   );
 }
 addEventListener('resize', renderMarkers);
+
+/** The holes canvas only marks where; CSS masks a checkerboard with it so see-through spots show. */
+let holesTimer = 0;
+function showHoles() {
+  clearTimeout(holesTimer);
+  holesTimer = window.setTimeout(() => holesView.style.setProperty('--holes', `url(${holesCanvas.toDataURL()})`), 30);
+}
+
+// --- brush cursor: a circle the exact size the brush will paint ------------
+
+const brushCursor = document.querySelector<HTMLDivElement>('#brush-cursor')!;
+
+function cursorSize() {
+  const size = SIZES[state.sizeIndex];
+  if (state.tool === 'select') return selectBrushSize();
+  if (state.tool === 'brush') return brushWidth(size, 0.5, false);
+  if (state.tool === 'eraser') return brushWidth(size, 0.5, true);
+  return 0;
+}
+
+function moveCursor(e: PointerEvent) {
+  const p = toCanvas(e);
+  const overSelection = state.tool === 'select' && selectMode === 'add' && selection.contains(p.x, p.y);
+  const size = overSelection || e.pointerType === 'touch' ? 0 : cursorSize();
+  brushCursor.hidden = size === 0;
+  if (overSelection) paper.style.cursor = 'move';
+  else if (state.tool === 'select') paper.style.cursor = 'none';
+  if (brushCursor.hidden) return;
+  const scale = paper.getBoundingClientRect().width / paper.width;
+  brushCursor.style.width = brushCursor.style.height = `${size * scale}px`;
+  brushCursor.style.left = `${(p.x / paper.width) * 100}%`;
+  brushCursor.style.top = `${(p.y / paper.height) * 100}%`;
+}
+paper.addEventListener('pointermove', moveCursor);
+paper.addEventListener('pointerdown', moveCursor);
+paper.addEventListener('pointerleave', () => (brushCursor.hidden = true));
 
 // --- selection ---------------------------------------------------------------
 
@@ -563,8 +633,10 @@ function renderSelection() {
   renderMarkers();
 }
 
+const selectBrushSize = () => Math.max(30, SIZES[state.sizeIndex] * 3);
+
 function paintSelection(p: Point) {
-  const size = Math.max(30, SIZES[state.sizeIndex] * 3);
+  const size = selectBrushSize();
   selection.paint(selectStroke ?? p, p, size, selectMode === 'remove');
   selectStroke = p;
   renderSelection();
@@ -573,7 +645,10 @@ function paintSelection(p: Point) {
 /** Turns a pending move into an op in the history; the selection stays on the part. */
 function commitSelection() {
   if (!selection.moved) return;
-  ops.push(selection.pendingOp());
+  const op = selection.pendingOp();
+  ops.push(op);
+  applyTransform(holes, op);
+  showHoles();
   selection.settle();
   snapshotPaper();
   renderSelection();
@@ -621,6 +696,7 @@ const SELECT_ACTIONS: Record<string, () => void> = {
     selection.clear();
     redraw();
   },
+  none: finishSelection,
   done: finishSelection,
 };
 selectBar.querySelectorAll<HTMLButtonElement>('[data-select]').forEach((b) => {
@@ -722,6 +798,7 @@ async function refreshPreview() {
   const exported = exportDrawing(paper, {
     mirror: hasFacing(state.motion) && state.facingLeft,
     paperFill: document.querySelector<HTMLInputElement>('#paper-fill')!.checked,
+    holes: holesCanvas,
     attachments: currentAttachments(),
   });
   if (!exported) return;
@@ -764,6 +841,7 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
   const exported = exportDrawing(paper, {
     mirror: hasFacing(state.motion) && state.facingLeft,
     paperFill: document.querySelector<HTMLInputElement>('#paper-fill')!.checked,
+    holes: holesCanvas,
     attachments: currentAttachments(),
   });
   if (!exported) {
@@ -826,6 +904,7 @@ async function loadForEditing(id: string) {
     image,
     x: Math.round((paper.width - image.width) / 2),
     y: Math.round((paper.height - image.height) / 2),
+    holes: enclosedHoles(image),
   };
   baseAttachments = (drawing.attachments ?? []).map((a) => ({
     ...a,

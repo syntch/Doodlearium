@@ -102,6 +102,31 @@
   font-size: 0.75rem;
 }
 .materials img { width: 40px; height: 40px; border-radius: 6px; image-rendering: pixelated; }
+/* See-through: the usual checkerboard. */
+.colors .clear,
+.holes {
+  background: repeating-conic-gradient(#c9c9c9 0 25%, #ffffff 0 50%) 0 0 / 12px 12px !important;
+}
+.holes {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0.7;
+  /* The holes canvas only holds where things are invisible; it masks the checkerboard. */
+  --holes: linear-gradient(transparent, transparent);
+  -webkit-mask: var(--holes) 0 0 / 100% 100% no-repeat;
+  mask: var(--holes) 0 0 / 100% 100% no-repeat;
+}
+.brush-cursor {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 50%;
+  border: 1.5px solid rgba(0, 0, 0, 0.7);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.8), inset 0 0 0 1px rgba(255, 255, 255, 0.8);
+  transform: translate(-50%, -50%);
+}
 .colors .rainbow {
   background: conic-gradient(#ff4d4d, #ffd60a, #52b788, #3a86ff, #8338ec, #ff4d4d) !important;
 }
