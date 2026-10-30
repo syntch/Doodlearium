@@ -7,8 +7,8 @@ import { Scene } from './scene.ts';
 import type { Creature, World } from './world.ts';
 
 const FLOOR = 0.86;
-/** The preview is a small window into a smaller tank, so its creature is big enough to watch. */
-const ZOOM = 1.6;
+/** The camera shows part of the tank, close up, so the creature is big enough to watch. */
+const ZOOM = 2;
 
 export interface Preview {
   /** Swaps in a new version of the drawing (the preview owns the texture from then on). */
@@ -18,6 +18,7 @@ export interface Preview {
 
 /**
  * A tiny tank running the real tank code with one creature, for the draw page.
+ * The camera follows the creature around a tank the size of the panel.
  * Tapping it drops food, so feeding behaviour can be tried out too.
  */
 export async function createPreview(container: HTMLElement): Promise<Preview> {
@@ -52,18 +53,33 @@ export async function createPreview(container: HTMLElement): Promise<Preview> {
     const { width, height } = app.screen;
     if (width === size.width && height === size.height) return;
     Object.assign(size, { width, height });
-    world.width = width / ZOOM;
-    world.height = height / ZOOM;
-    world.floorY = world.height * FLOOR;
+    world.width = width;
+    world.height = height;
+    world.floorY = height * FLOOR;
     app.stage.scale.set(ZOOM);
     scene.layout(world);
     place();
+    follow(1);
   };
+
+  /** Eases the camera toward the creature's middle, without showing past the tank's edges. */
+  function follow(k: number) {
+    if (!creature) return;
+    // Bounds come back in screen pixels; turn their middle into tank coordinates.
+    const b = creature.view.getBounds();
+    const x = (b.x + b.width / 2 - app.stage.x) / ZOOM;
+    const y = (b.y + b.height / 2 - app.stage.y) / ZOOM;
+    const wantX = Math.min(0, Math.max(world.width * (1 - ZOOM), world.width / 2 - x * ZOOM));
+    const wantY = Math.min(0, Math.max(world.height * (1 - ZOOM), world.height / 2 - y * ZOOM));
+    app.stage.x += (wantX - app.stage.x) * k;
+    app.stage.y += (wantY - app.stage.y) * k;
+  }
   relayoutIfResized();
 
   app.canvas.addEventListener('pointerdown', (e) => {
     const rect = app.canvas.getBoundingClientRect();
-    food.drop(world, (e.clientX - rect.left) / rect.width);
+    const screenX = ((e.clientX - rect.left) / rect.width) * world.width;
+    food.drop(world, (screenX - app.stage.x) / ZOOM / world.width);
   });
 
   app.ticker.add((ticker) => {
@@ -75,6 +91,7 @@ export async function createPreview(container: HTMLElement): Promise<Preview> {
     food.update(dt, world);
     try {
       creature?.update(dt, world);
+      follow(Math.min(1, dt * 3));
     } catch (err) {
       console.warn('Preview creature failed', err);
       clear();
@@ -90,11 +107,15 @@ export async function createPreview(container: HTMLElement): Promise<Preview> {
 
   return {
     show(drawing, newTexture) {
+      // Carry on from where the previous version was, so redrawing doesn't make it jump around.
+      const was = creature instanceof Swimmer ? { x: creature.x, y: creature.y, facing: creature.facing } : null;
       clear();
       texture = newTexture;
       creature = createCreature(drawing, newTexture, world, false);
+      if (was && creature instanceof Swimmer) Object.assign(creature, was);
       (drawing.nocturnal ? nightLayer : creatureLayer).addChild(creature.view);
       place();
+      follow(1);
     },
     destroy() {
       clear();

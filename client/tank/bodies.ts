@@ -110,18 +110,22 @@ const jelly: BodyStyle = {
   beat: () => 2.2,
   thrust: fixed,
   deform(u, v, s) {
-    const contraction = Math.max(0, Math.sin(s.phase));
+    // Squeezes hard on each contraction and relaxes a little wider than rest in between.
+    const wave = Math.sin(s.phase);
+    const squeeze = wave > 0 ? wave : wave * 0.35;
     const bell = 0.4;
+    const pinch = -(u - 0.5) * s.texW * 0.34 * squeeze;
     if (v < bell) {
-      // The bell squeezes narrower and taller on each contraction.
-      const k = 1 - (v / bell) * 0.3;
-      return { dx: -(u - 0.5) * s.texW * 0.22 * contraction * k, dy: -(1 - v / bell) * s.texH * 0.04 * contraction };
+      // The bell narrows and domes up, most at its rim.
+      const rim = 0.55 + 0.45 * (v / bell);
+      return { dx: pinch * rim, dy: -(1 - v / bell) * s.texH * 0.08 * squeeze };
     }
-    // Tentacles trail behind, swaying with a lag that grows toward their tips.
+    // Tentacles start where the rim is and trail behind, swaying with a lag that grows toward their tips,
+    // and stretch out as the bell pushes up.
     const t = (v - bell) / (1 - bell);
     return {
-      dx: s.texW * 0.09 * Math.pow(t, 1.3) * Math.sin(s.phase * 0.7 - t * 4),
-      dy: s.texH * 0.03 * t * contraction,
+      dx: pinch * (1 - t) + s.texW * 0.14 * Math.pow(t, 1.2) * Math.sin(s.phase * 0.8 - t * 4),
+      dy: s.texH * 0.07 * t * Math.max(0, wave),
     };
   },
 };
@@ -138,12 +142,15 @@ const seahorse: BodyStyle = {
   darts: false,
   schools: false,
   move: 'cruise',
-  bob: 0.012,
+  bob: 0.02,
   beat: () => 2.4,
   thrust: fixed,
-  // Upright: the tail end curls back and forth, the head stays steady.
+  // Upright: the tail end curls back and forth, the body leans and rocks, and the snout nods.
   deform(_u, v, s) {
-    return { dx: s.texW * 0.08 * v * v * Math.sin(s.phase * 0.5), dy: 0 };
+    const curl = s.texW * 0.16 * v * v * Math.sin(s.phase * 0.5);
+    const lean = s.texW * 0.05 * (v - 0.4) * Math.sin(s.phase * 0.5 + 1.2);
+    const nod = v < 0.25 ? -s.texH * 0.025 * (1 - v / 0.25) * Math.sin(s.phase) : 0;
+    return { dx: curl + lean, dy: nod };
   },
 };
 

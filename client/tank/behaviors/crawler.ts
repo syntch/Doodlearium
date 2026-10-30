@@ -2,7 +2,7 @@ import { Container, Sprite, type Texture } from 'pixi.js';
 import type { Drawing } from '../../../shared/types.ts';
 import { Attachments } from '../attachments.ts';
 import type { Flake } from '../food.ts';
-import { clamp, depthOrder, depthScale, depthTint, sandY, TAU, type Creature, type World } from '../world.ts';
+import { clamp, depthOrder, seededRandom, depthScale, depthTint, sandY, TAU, type Creature, type World } from '../world.ts';
 
 /**
  * Walks along the sand (crabs, snails, starfish...) with a bouncy step, stopping now and then to look
@@ -13,9 +13,9 @@ export class Crawler implements Creature {
   readonly view = new Container();
   private sprite: Sprite;
   private attachments: Attachments;
-  private z = 0.2 + Math.random() * 0.7;
-  private size = 0.85 + Math.random() * 0.3;
-  private pace = 0.8 + Math.random() * 0.4;
+  private z: number;
+  private size: number;
+  private pace: number;
   private x = 0;
   /** Height above the sand while dropping in; 0 once landed. */
   private air = 0;
@@ -35,6 +35,10 @@ export class Crawler implements Creature {
     world: World,
     dropIn: boolean,
   ) {
+    const rand = seededRandom(drawing.id);
+    this.z = rand(0.2, 0.9);
+    this.size = rand(0.85, 1.15);
+    this.pace = rand(0.8, 1.2);
     this.sprite = new Sprite({ texture, anchor: { x: 0.5, y: 1 } });
     this.sprite.tint = depthTint(this.z);
     this.attachments = new Attachments(drawing.attachments, texture.width, texture.height, {

@@ -37,6 +37,7 @@
         <div class="stage">
           <canvas id="paper" width="1000" height="750"></canvas>
           <div class="guide" id="guide" aria-hidden="true"></div>
+          <canvas class="selection-overlay" id="selection-overlay" width="1000" height="750" aria-hidden="true"></canvas>
           <div class="markers" id="markers" aria-hidden="true"></div>
         </div>
         <div class="preview" id="preview" hidden aria-label="Preview of how it moves in the tank"></div>
@@ -47,6 +48,7 @@
         <button data-tool="eraser" aria-pressed="false">🧽 Eraser</button>
         <button data-tool="fill" aria-pressed="false">🪣 Fill</button>
         <button data-tool="extras" aria-pressed="false">✨ Extras</button>
+        <button data-tool="select" aria-pressed="false" title="Paint over a part to move, resize, turn, copy or delete it">⬚ Select</button>
         <span class="divider"></span>
         <button id="mirror" title="Mirror drawing">🪞 Mirror: off</button>
         <button id="facing" title="Which way is your fish facing?">Facing →</button>
@@ -67,6 +69,23 @@
         <div class="sizes" id="sizes"></div>
         <div class="materials" id="materials"></div>
         <div class="extras" id="extras"></div>
+        <div class="select-bar" id="select-bar" hidden>
+          <span class="group" role="group" aria-label="Selection brush">
+            <button data-select-mode="add" aria-pressed="true" title="Paint over a part to select it">🖌️ Select</button>
+            <button data-select-mode="remove" aria-pressed="false" title="Paint to unselect">🧽 Unselect</button>
+            <button data-select="all" title="Select the whole drawing">⬚ All</button>
+          </span>
+          <span class="group" role="group" aria-label="Change the selected part">
+            <button data-select="bigger" title="Bigger">➕ Bigger</button>
+            <button data-select="smaller" title="Smaller">➖ Smaller</button>
+            <button data-select="left" title="Turn left">↺</button>
+            <button data-select="right" title="Turn right">↻</button>
+            <button data-select="flip" title="Flip it around">⇋ Flip</button>
+            <button data-select="copy" title="Make a copy (then drag it)">📄 Copy</button>
+            <button data-select="delete" title="Delete the selected part">🗑 Delete</button>
+            <button data-select="done" class="primary" title="Finish and unselect">✓ Done</button>
+          </span>
+        </div>
       </div>
       <p class="hint" id="hint"></p>
 

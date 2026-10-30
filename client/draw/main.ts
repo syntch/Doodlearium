@@ -3,6 +3,7 @@ import { fetchDrawings, setupFeedButton, submitDrawing, updateDrawing } from '..
 import { exportDrawing, inkBounds, type PlacedAttachment } from './export.ts';
 import { MATERIALS, MATERIAL_LABELS, floodFill, materialPreview, type Material } from './fill.ts';
 import { readPhoto, removePaper } from './photo.ts';
+import { Selection, applyTransform, maskHas, type TransformOp } from './selection.ts';
 
 const COLORS = [
   '#1b1b1b', '#ffffff', '#e63946', '#ff8c1a', '#ffd60a', '#52b788',
@@ -23,7 +24,7 @@ const EXTRAS: { kind: AttachmentKind; icon: string; label: string; hint: string 
 ];
 const EXTRA_ICONS = Object.fromEntries(EXTRAS.map((e) => [e.kind, e.icon])) as Record<AttachmentKind, string>;
 
-type Tool = 'brush' | 'eraser' | 'fill' | 'extras';
+type Tool = 'brush' | 'eraser' | 'fill' | 'extras' | 'select';
 type Mirror = 'off' | 'updown' | 'leftright';
 type Point = { x: number; y: number; pressure: number };
 
@@ -32,7 +33,8 @@ type Op =
   | { type: 'stroke'; color: string; size: number; erase: boolean; mirror: Mirror; points: Point[] }
   | { type: 'fill'; x: number; y: number; color: string; material: Material; mirror: Mirror }
   | { type: 'attach'; attachment: PlacedAttachment }
-  | { type: 'detach'; target: PlacedAttachment };
+  | { type: 'detach'; target: PlacedAttachment }
+  | TransformOp;
 
 const paper = document.querySelector<HTMLCanvasElement>('#paper')!;
 const ctx = paper.getContext('2d', { willReadFrequently: true })!;
@@ -63,6 +65,14 @@ let current: Extract<Op, { type: 'stroke' }> | null = null;
 let editing: Drawing | null = null;
 let base: { image: HTMLImageElement | HTMLCanvasElement; x: number; y: number } | null = null;
 let baseAttachments: PlacedAttachment[] = [];
+const selection = new Selection(paper.width, paper.height);
+const overlay = document.querySelector<HTMLCanvasElement>('#selection-overlay')!.getContext('2d')!;
+/** The paper as committed, under a selection that is being moved around. */
+const snapshot = Object.assign(document.createElement('canvas'), { width: paper.width, height: paper.height });
+let selectMode: 'add' | 'remove' = 'add';
+/** A selection drag in progress: where it started and where the selection was then. */
+let drag: { x: number; y: number; dx: number; dy: number } | null = null;
+let selectStroke: Point | null = null;
 
 try {
   artistInput.value = localStorage.getItem('doodlearium.artist') ?? '';
@@ -154,16 +164,21 @@ const extraButtons = EXTRAS.map((extra) => {
   return b;
 });
 
+const selectBar = document.querySelector<HTMLDivElement>('#select-bar')!;
 const toolButtons = document.querySelectorAll<HTMLButtonElement>('[data-tool]');
 toolButtons.forEach((b) => (b.onclick = () => setTool(b.dataset.tool as Tool)));
 
 function setTool(tool: Tool) {
+  if (tool !== 'select') finishSelection();
   state.tool = tool;
   press(toolButtons, (b) => b.dataset.tool === tool);
   sizesEl.hidden = tool === 'fill';
   materialsEl.hidden = tool !== 'fill';
   extrasEl.hidden = tool !== 'extras';
+  selectBar.hidden = tool !== 'select';
+  colorsEl.hidden = tool === 'select';
   paper.style.cursor = tool === 'fill' ? 'cell' : tool === 'extras' ? 'copy' : 'crosshair';
+  renderSelectBar();
   renderMaterials();
   renderHint();
 }
@@ -175,7 +190,9 @@ function renderHint() {
       ? 'Tap inside a shape to fill it.'
       : state.tool === 'extras'
         ? `${extra.hint}. Tap the drawing to add one, tap it again to remove it. Extras come alive in the tank!`
-        : '';
+        : state.tool === 'select'
+          ? 'Paint over a part to select it, then drag it to move it, or use the buttons to resize, turn, flip, copy or delete it.'
+          : '';
 }
 
 const MIRROR_LABELS: Record<Mirror, string> = { off: '🪞 Mirror: off', updown: '🪞 Mirror: ↕', leftright: '🪞 Mirror: ↔' };
@@ -310,6 +327,7 @@ document.querySelector<HTMLButtonElement>('#clear')!.onclick = () => {
   ops.length = 0;
   base = null;
   baseAttachments = [];
+  selection.clear();
   closePhotoPanel();
   redraw();
 };
@@ -321,7 +339,10 @@ addEventListener('keydown', (e) => {
 });
 
 function undo() {
-  ops.pop();
+  // While selecting, undo first takes back the pending move, then the selection itself.
+  if (selection.moved) selection.resetPlacement();
+  else if (!selection.empty) selection.clear();
+  else ops.pop();
   redraw();
 }
 
@@ -358,6 +379,18 @@ paper.addEventListener('pointerdown', (e) => {
     return;
   }
   paper.setPointerCapture(e.pointerId);
+  if (state.tool === 'select') {
+    if (selectMode === 'add' && selection.contains(p.x, p.y)) {
+      startMove();
+      drag = { x: p.x, y: p.y, dx: selection.dx, dy: selection.dy };
+    } else {
+      // Painting more of the selection starts from where the part is now.
+      commitSelection();
+      selectStroke = p;
+      paintSelection(p);
+    }
+    return;
+  }
   current = {
     type: 'stroke',
     color: state.color,
@@ -370,6 +403,17 @@ paper.addEventListener('pointerdown', (e) => {
   drawSegment(current, 0);
 });
 paper.addEventListener('pointermove', (e) => {
+  if (drag) {
+    const p = toCanvas(e);
+    selection.dx = drag.dx + p.x - drag.x;
+    selection.dy = drag.dy + p.y - drag.y;
+    renderSelection();
+    return;
+  }
+  if (selectStroke) {
+    paintSelection(toCanvas(e));
+    return;
+  }
   if (!current) return;
   const coalesced = e.getCoalescedEvents?.();
   for (const event of coalesced?.length ? coalesced : [e]) {
@@ -378,8 +422,15 @@ paper.addEventListener('pointermove', (e) => {
   }
 });
 const endStroke = () => {
-  if (current) changed();
+  if (current || drag) changed();
+  if (selectStroke) {
+    if (selectMode === 'add') selection.fillHoles();
+    renderSelection();
+    renderSelectBar();
+  }
   current = null;
+  drag = null;
+  selectStroke = null;
 };
 paper.addEventListener('pointerup', endStroke);
 paper.addEventListener('pointercancel', endStroke);
@@ -416,8 +467,10 @@ function redraw() {
   for (const op of ops) {
     if (op.type === 'stroke') op.points.forEach((_, i) => drawSegment(op, i));
     else if (op.type === 'fill') applyFill(op);
+    else if (op.type === 'transform') applyTransform(ctx, op);
   }
-  renderMarkers();
+  snapshotPaper();
+  renderSelection();
   changed();
 }
 
@@ -428,8 +481,27 @@ function currentAttachments(): PlacedAttachment[] {
   for (const op of ops) {
     if (op.type === 'attach') list.push(op.attachment);
     else if (op.type === 'detach') list.splice(list.indexOf(op.target), 1);
+    else if (op.type === 'transform') carryExtras(list, op);
   }
+  if (selection.moved) carryExtras(list, selection.pendingOp());
   return list;
+}
+
+/** Extras on the selected part move, copy or disappear with it. */
+function carryExtras(list: PlacedAttachment[], op: TransformOp) {
+  op.carried ??= new Map();
+  const size = Math.hypot(op.matrix.a, op.matrix.b);
+  for (const a of [...list]) {
+    if (!maskHas(op.mask, a.x, a.y)) continue;
+    let moved = op.carried.get(a) as PlacedAttachment | undefined;
+    if (!moved) {
+      const p = op.matrix.transformPoint({ x: a.x, y: a.y });
+      moved = { ...a, x: p.x, y: p.y, scale: Math.min(3, Math.max(0.25, a.scale * size)) };
+      op.carried.set(a, moved);
+    }
+    if (!op.copy) list.splice(list.indexOf(a), 1);
+    if (!op.remove) list.push(moved);
+  }
 }
 
 function placeOrRemoveExtra(p: Point) {
@@ -465,6 +537,102 @@ function renderMarkers() {
 }
 addEventListener('resize', renderMarkers);
 
+// --- selection ---------------------------------------------------------------
+
+/** Remembers the paper before the selected part starts moving, so it can be shown anywhere. */
+function startMove() {
+  if (!selection.moved) snapshotPaper();
+}
+
+function snapshotPaper() {
+  const s = snapshot.getContext('2d')!;
+  s.clearRect(0, 0, snapshot.width, snapshot.height);
+  s.drawImage(paper, 0, 0);
+}
+
+/** Shows the paper with the selected part where it's being moved to, and the selection on top. */
+function renderSelection() {
+  if (selection.moved) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'copy';
+    ctx.drawImage(snapshot, 0, 0);
+    ctx.restore();
+    applyTransform(ctx, selection.pendingOp());
+  }
+  selection.drawOverlay(overlay);
+  renderMarkers();
+}
+
+function paintSelection(p: Point) {
+  const size = Math.max(30, SIZES[state.sizeIndex] * 3);
+  selection.paint(selectStroke ?? p, p, size, selectMode === 'remove');
+  selectStroke = p;
+  renderSelection();
+}
+
+/** Turns a pending move into an op in the history; the selection stays on the part. */
+function commitSelection() {
+  if (!selection.moved) return;
+  ops.push(selection.pendingOp());
+  selection.settle();
+  snapshotPaper();
+  renderSelection();
+}
+
+function finishSelection() {
+  commitSelection();
+  if (selection.empty) return;
+  selection.clear();
+  renderSelection();
+  renderSelectBar();
+}
+
+function renderSelectBar() {
+  selectBar.querySelectorAll<HTMLButtonElement>('[data-select]').forEach((b) => {
+    b.disabled = b.dataset.select !== 'all' && selection.empty;
+  });
+}
+
+selectBar.querySelectorAll<HTMLButtonElement>('[data-select-mode]').forEach((b) => {
+  b.onclick = () => {
+    selectMode = b.dataset.selectMode as typeof selectMode;
+    press(selectBar.querySelectorAll('[data-select-mode]'), (x) => x === b);
+  };
+});
+
+const SELECT_ACTIONS: Record<string, () => void> = {
+  all() {
+    commitSelection();
+    selection.selectAll();
+  },
+  bigger: () => (selection.scale = Math.min(4, selection.scale * 1.15)),
+  smaller: () => (selection.scale = Math.max(0.2, selection.scale / 1.15)),
+  left: () => (selection.angle -= 15),
+  right: () => (selection.angle += 15),
+  flip: () => (selection.flip = !selection.flip),
+  copy() {
+    commitSelection();
+    selection.copy = true;
+    selection.dx = selection.dy = 40;
+  },
+  delete() {
+    commitSelection();
+    ops.push({ ...selection.pendingOp(), remove: true });
+    selection.clear();
+    redraw();
+  },
+  done: finishSelection,
+};
+selectBar.querySelectorAll<HTMLButtonElement>('[data-select]').forEach((b) => {
+  b.onclick = () => {
+    startMove();
+    SELECT_ACTIONS[b.dataset.select!]();
+    renderSelection();
+    renderSelectBar();
+    changed();
+  };
+});
+
 // --- photo of a paper drawing ----------------------------------------------
 
 const photoInput = document.querySelector<HTMLInputElement>('#photo-input')!;
@@ -489,6 +657,7 @@ photoInput.onchange = async () => {
   }
   ops.length = 0;
   baseAttachments = [];
+  selection.clear();
   photoPanel.hidden = false;
   applyPhoto();
   showToast('Photo added! Slide to clean up the paper, then touch it up with the tools.');
@@ -561,7 +730,8 @@ async function refreshPreview() {
   const [{ Texture }, view] = await Promise.all([import('pixi.js'), preview, image.decode()]);
   view.show(
     {
-      id: 'preview',
+      // This id seeds an easygoing creature near the front glass at a typical size.
+      id: 'preview-13',
       type: 'swimmer',
       motion: state.motion,
       name: nameInput.value,
@@ -590,6 +760,7 @@ function showToast(message: string, error = false) {
 
 document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) => {
   e.preventDefault();
+  finishSelection();
   const exported = exportDrawing(paper, {
     mirror: hasFacing(state.motion) && state.facingLeft,
     paperFill: document.querySelector<HTMLInputElement>('#paper-fill')!.checked,

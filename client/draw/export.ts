@@ -65,7 +65,7 @@ export function inkBounds(canvas: HTMLCanvasElement) {
   return right < 0 ? null : { left, right, top, bottom };
 }
 
-function fillEnclosed(ctx: CanvasRenderingContext2D, width: number, height: number) {
+export function fillEnclosed(ctx: CanvasRenderingContext2D, width: number, height: number) {
   const image = ctx.getImageData(0, 0, width, height);
   const data = image.data;
   const outside = new Uint8Array(width * height);

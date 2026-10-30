@@ -156,7 +156,7 @@ export class Swimmer implements Creature {
       // and sink cancel out (a half-sine averages 1/π), so the drift toward the target sets where it goes.
       const contraction = Math.max(0, Math.sin(this.phase));
       wantX = dirX * speed * 0.5 * (0.2 + contraction);
-      wantY = (1 - contraction * 3.1) * baseSpeed + dirY * speed * 0.6;
+      wantY = (1.25 - contraction * 3.9) * baseSpeed + dirY * speed * 0.6;
       k = Math.min(1, dt * 6);
     }
     this.vx += (wantX - this.vx) * k;
