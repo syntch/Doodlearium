@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Doodlearium · Gallery</title>
+    <link rel="stylesheet" href="../shared/style.css" />
+    <style>
+      main { padding: 0 16px 32px; }
+      .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; align-items: start; }
+      .card { background: var(--panel); border-radius: var(--radius); padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+      .card .art { aspect-ratio: 1; display: grid; place-items: center; border-radius: 10px; background: #1f78a8; }
+      .card img { max-width: 90%; max-height: 90%; }
+      .card .name { font-weight: bold; overflow-wrap: anywhere; }
+      .card .meta { color: var(--muted); font-size: 0.85rem; }
+      .card button { align-self: flex-start; padding: 4px 10px; font-size: 0.85rem; }
+      .card button:hover { border-color: var(--danger); }
+      .empty { color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <nav class="nav">
+      <a class="brand" href="/">🐠 Doodlearium</a>
+      <a href="/tank/">Tank</a>
+      <a href="/draw/">Draw</a>
+    </nav>
+    <main>
+      <div class="filters" id="filters"></div>
+      <div class="grid" id="grid"></div>
+      <p class="empty" id="empty" hidden>No drawings yet. <a href="/draw/">Draw the first one!</a></p>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

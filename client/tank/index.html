@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Doodlearium · Tank</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #0a3456; }
+      canvas { display: block; }
+      body.idle { cursor: none; }
+      .hint {
+        position: fixed; right: 16px; bottom: 12px; color: #fff; opacity: 0.6;
+        font: 14px 'Trebuchet MS', sans-serif; pointer-events: none;
+        animation: fade 1s 6s forwards;
+      }
+      @keyframes fade { to { opacity: 0; } }
+    </style>
+  </head>
+  <body>
+    <div class="hint">Double-click for full screen</div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

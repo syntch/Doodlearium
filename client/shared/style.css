@@ -1,0 +1,50 @@
+:root {
+  --bg: #0c2f4a;
+  --panel: #12405f;
+  --panel-2: #1a5378;
+  --text: #f2f8fc;
+  --muted: #a9c6da;
+  --accent: #ffcc4d;
+  --danger: #ff7a6b;
+  --radius: 14px;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+a { color: var(--accent); }
+button, input, select {
+  font: inherit;
+  color: inherit;
+}
+button {
+  background: var(--panel-2);
+  border: 2px solid transparent;
+  border-radius: 10px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+button:hover { border-color: rgba(255, 255, 255, 0.25); }
+button.primary { background: var(--accent); color: #2b2100; font-weight: bold; }
+button[aria-pressed='true'] { border-color: var(--accent); }
+input[type='text'] {
+  background: var(--panel-2);
+  border: 2px solid transparent;
+  border-radius: 10px;
+  padding: 8px 12px;
+  min-width: 0;
+}
+input[type='text']:focus { outline: none; border-color: var(--accent); }
+.nav {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 12px 16px;
+}
+.nav .brand { font-weight: bold; font-size: 1.25rem; text-decoration: none; color: var(--text); margin-right: auto; }
+.nav a:not(.brand) { text-decoration: none; }

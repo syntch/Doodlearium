@@ -1,0 +1,28 @@
+{
+  "name": "doodlearium",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A family digital aquarium where every creature is drawn by the family.",
+  "scripts": {
+    "dev": "concurrently -k -n server,client -c cyan,magenta \"tsx watch server/index.ts\" \"vite\"",
+    "build": "vite build",
+    "start": "vite build && tsx server/index.ts",
+    "serve": "tsx server/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "express": "^5.3.0",
+    "pixi.js": "^8.22.0",
+    "tsx": "^4.23.15",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.6",
+    "@types/ws": "^8.18.2",
+    "concurrently": "^10.0.6",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
+  }
+}

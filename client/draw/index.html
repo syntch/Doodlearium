@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>Doodlearium · Draw</title>
+    <link rel="stylesheet" href="../shared/style.css" />
+    <link rel="stylesheet" href="./draw.css" />
+  </head>
+  <body>
+    <nav class="nav">
+      <a class="brand" href="/">🐠 Doodlearium</a>
+      <a href="/tank/">Tank</a>
+      <a href="/gallery/">Gallery</a>
+    </nav>
+    <main class="draw">
+      <div class="kinds" role="group" aria-label="What are you drawing?">
+        <button data-kind="swimmer" aria-pressed="true">🐟 Fish</button>
+        <button data-kind="plant" aria-pressed="false">🌿 Plant</button>
+        <button data-kind="decor" aria-pressed="false">🪨 Decoration</button>
+      </div>
+
+      <div class="stage">
+        <canvas id="paper" width="1000" height="750"></canvas>
+        <div class="guide" id="guide" aria-hidden="true"></div>
+      </div>
+
+      <div class="tools">
+        <div class="colors" id="colors"></div>
+        <div class="sizes" id="sizes"></div>
+        <button id="eraser" aria-pressed="false" title="Eraser">🧽 Eraser</button>
+        <button id="facing" title="Which way is your fish facing?">Facing →</button>
+        <button id="undo" title="Undo (Ctrl+Z)">↶ Undo</button>
+        <button id="clear">🗑 Clear</button>
+      </div>
+
+      <form class="submit" id="submit-form">
+        <input type="text" id="name" placeholder="Name it (e.g. Bubbles)" maxlength="40" />
+        <input type="text" id="artist" placeholder="Your name" maxlength="40" />
+        <label class="fill"><input type="checkbox" id="paper-fill" checked /> Fill inside white</label>
+        <button class="primary" type="submit" id="send">Add to tank 🌊</button>
+      </form>
+      <p class="toast" id="toast" role="status"></p>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,81 @@
+.draw {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  padding: 0 16px 24px;
+}
+.kinds, .tools, .colors, .sizes, .submit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+}
+.stage {
+  position: relative;
+  width: min(100%, calc((100dvh - 290px) * 4 / 3));
+  min-width: min(100%, 320px);
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background:
+    linear-gradient(rgba(12, 47, 74, 0.06) 1px, transparent 1px) 0 0 / 40px 40px,
+    linear-gradient(90deg, rgba(12, 47, 74, 0.06) 1px, transparent 1px) 0 0 / 40px 40px,
+    #fbf8f0;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+#paper {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: crosshair;
+}
+.guide {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  color: rgba(12, 47, 74, 0.28);
+  font-weight: bold;
+  font-size: clamp(14px, 2.4vw, 22px);
+}
+.guide .arrow {
+  position: absolute;
+  top: 12px;
+  left: 0;
+  right: 0;
+  text-align: center;
+}
+.guide .ground {
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  bottom: 8%;
+  border-top: 3px dashed rgba(12, 47, 74, 0.25);
+  text-align: center;
+  padding-top: 4px;
+}
+.colors button {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.15);
+}
+.colors button[aria-pressed='true'] { border-color: var(--accent); transform: scale(1.12); }
+.colors input[type='color'] {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+.sizes button { width: 44px; height: 40px; padding: 0; display: grid; place-items: center; }
+.sizes span { display: block; border-radius: 50%; background: var(--text); }
+.submit input[type='text'] { width: 200px; }
+.fill { color: var(--muted); font-size: 0.9rem; }
+.toast { min-height: 1.4em; margin: 0; color: var(--accent); font-weight: bold; text-align: center; }
+.toast.error { color: var(--danger); }
