@@ -106,7 +106,7 @@ function updateSchool() {
   }
   if (world.time < nextSchoolAt) return;
   nextSchoolAt = world.time + 70 + Math.random() * 80;
-  const candidates = world.fish.filter((f) => f.personality !== 'shy').sort(() => Math.random() - 0.5);
+  const candidates = world.fish.filter((f) => f.style.schools && f.personality !== 'shy').sort(() => Math.random() - 0.5);
   if (candidates.length < 3) return;
   const [leader, ...rest] = candidates;
   world.school = { leader, members: rest.slice(0, 2 + Math.floor(Math.random() * 4)), until: world.time + 25 };
@@ -159,7 +159,7 @@ async function sync() {
   const ids = new Set(drawings.map((d) => d.id));
   for (const id of entries.keys()) if (!ids.has(id)) removeDrawing(id);
   const newestFirst = [...drawings].sort((a, b) => b.createdAt - a.createdAt);
-  const counts = { swimmer: 0, plant: 0, decor: 0 };
+  const counts = { swimmer: 0, crawler: 0, plant: 0, decor: 0 };
   for (const d of newestFirst) {
     if (counts[d.type]++ >= CAPS[d.type]) continue;
     const shown = entries.get(d.id)?.creature.drawing;

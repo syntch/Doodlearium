@@ -3,9 +3,12 @@ import {
   ATTACHMENT_KINDS,
   CREATURE_TYPES,
   MAX_ATTACHMENTS,
+  MOTIONS,
+  habitatOf,
   isAttachmentColor,
+  motionOf,
   type Attachment,
-  type CreatureType,
+  type Motion,
 } from '../shared/types.ts';
 import { addDrawing, listDrawings, removeDrawing, updateDrawing } from './store.ts';
 import { broadcast } from './ws.ts';
@@ -26,7 +29,13 @@ api.get('/drawings', (_req, res) => {
 /** Validates a submitted drawing body; returns an error message or the cleaned metadata and PNG bytes. */
 function parseDrawing(body: any) {
   const { type, name, artist, image } = body ?? {};
-  if (!CREATURE_TYPES.includes(type)) return { error: `type must be one of ${CREATURE_TYPES.join(', ')}` };
+  // Older pages send only a type; map it to that type's default motion.
+  const motion: Motion | undefined = MOTIONS.includes(body?.motion)
+    ? body.motion
+    : CREATURE_TYPES.includes(type)
+      ? motionOf({ type })
+      : undefined;
+  if (!motion) return { error: `motion must be one of ${MOTIONS.join(', ')}` };
   const prefix = 'data:image/png;base64,';
   if (typeof image !== 'string' || !image.startsWith(prefix)) return { error: 'image must be a PNG data URL' };
   const png = Buffer.from(image.slice(prefix.length), 'base64');
@@ -40,7 +49,8 @@ function parseDrawing(body: any) {
   const attachments = parseAttachments(body.attachments);
   if (!attachments) return { error: `attachments must be a list of at most ${MAX_ATTACHMENTS} valid extras` };
   const meta = {
-    type: type as CreatureType,
+    type: habitatOf(motion),
+    motion,
     name: cleanText(name, 'Mystery'),
     artist: cleanText(artist, 'Anonymous'),
     width,

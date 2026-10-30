@@ -1,10 +1,10 @@
 import { Container, MeshPlane, type Texture } from 'pixi.js';
-import type { Drawing } from '../../../shared/types.ts';
+import { motionOf, type Drawing } from '../../../shared/types.ts';
 import { Attachments } from '../attachments.ts';
+import { BODY_STYLES, type BodyState, type BodyStyle } from '../bodies.ts';
 import type { Flake } from '../food.ts';
 import { TAU, clamp, depthOrder, depthScale, depthTint, seededRandom, type Creature, type World } from '../world.ts';
 
-const COLUMNS = 16;
 /** How close to the glass a curious fish comes (negative depth is in front of everything). */
 const GLASS_Z = -0.7;
 const FLAKES_UNTIL_FULL = 3;
@@ -12,15 +12,17 @@ const FLAKES_UNTIL_FULL = 3;
 type Personality = 'curious' | 'shy' | 'easygoing';
 
 /**
- * A fish: the drawing is a mesh whose columns are bent by a sine wave travelling from head to tail
- * (amplitude grows toward the tail), while the body steers toward a target.
+ * Anything that swims in open water. The drawing is a mesh bent by its body style (a fish's tail wave,
+ * an eel's S-wave, a jellyfish's pulse...), while the body steers toward a target.
  * Drawings are stored facing right, so x = 0 is the tail and x = width is the head.
  *
- * Every frame the fish picks what it is up to, in priority order: chasing food, following a school,
- * visiting the glass (curious fish), darting away from neighbours (shy fish), or just wandering.
+ * Every frame the swimmer picks what it is up to, in priority order: chasing food, following a school,
+ * visiting the glass (curious ones), darting away from neighbours (shy ones), or just wandering.
  */
 export class Swimmer implements Creature {
   readonly view = new Container();
+  readonly style: BodyStyle;
+  private body: BodyState;
   private mesh: MeshPlane;
   private positions: Float32Array;
   private rest: Float32Array;
@@ -45,7 +47,6 @@ export class Swimmer implements Creature {
   private retargetIn = 0;
   private bubbleIn: number;
   private dropTime = 0;
-  private amp = 0;
   private attachments: Attachments;
   private baseScale = 1;
   private scale = 1;
@@ -74,9 +75,11 @@ export class Swimmer implements Creature {
     this.bubbleIn = rand(2, 10);
     this.visitIn = this.personality === 'curious' ? rand(15, 45) : rand(120, 300);
 
-    this.mesh = new MeshPlane({ texture, verticesX: COLUMNS, verticesY: 2 });
+    this.style = BODY_STYLES[motionOf(drawing)] ?? BODY_STYLES.fish!;
+    this.mesh = new MeshPlane({ texture, verticesX: this.style.columns, verticesY: this.style.rows });
     this.texW = texture.width;
     this.texH = texture.height;
+    this.body = { phase: this.phase, effort: 1, texW: this.texW, texH: this.texH };
     this.mesh.pivot.set(this.texW / 2, this.texH / 2);
     this.positions = this.mesh.geometry.getAttribute('aPosition').buffer.data as Float32Array;
     this.rest = this.positions.slice();
@@ -96,12 +99,13 @@ export class Swimmer implements Creature {
       this.x = bounds.left + Math.random() * (bounds.right - bounds.left);
       this.y = bounds.top + Math.random() * (bounds.bottom - bounds.top);
     }
-    this.facing = Math.random() < 0.5 ? -1 : 1;
+    this.facing = this.style.flips && Math.random() < 0.5 ? -1 : 1;
     this.pickTarget(world);
   }
 
   layout(world: World) {
-    this.baseScale = (world.height * 0.24 * this.size) / Math.max(this.texW, this.texH * 1.4);
+    this.baseScale =
+      (world.height * this.style.size * this.size) / Math.max(this.texW, this.texH * this.style.heightWeight);
     this.scale = this.baseScale * depthScale(this.z);
     const b = this.bounds(world);
     this.x = clamp(this.x, b.left, b.right);
@@ -131,37 +135,56 @@ export class Swimmer implements Creature {
     }
     this.scale = this.baseScale * depthScale(this.z);
 
-    const baseSpeed = world.height * 0.075 * this.cruise * depthScale(Math.max(0, this.z));
-    const speed = baseSpeed * this.legSpeed;
+    const style = this.style;
+    const baseSpeed = world.height * 0.075 * this.cruise * style.cruise * depthScale(Math.max(0, this.z));
+    const speed = baseSpeed * this.legSpeed * style.thrust(this.phase);
     const dx = this.target.x - this.x;
     const dy = this.target.y - this.y;
     const dist = Math.hypot(dx, dy);
     // Slow down on arrival so hovering looks calm rather than jittery (but stay brisk when food is near).
     const arrive = clamp(dist / (world.height * 0.08), this.meal ? 0.6 : 0.15, 1);
+    const dirX = dx / (dist || 1);
+    const dirY = dy / (dist || 1);
 
     // Ease velocity toward the target heading; drops steer gently so the plunge carries through.
     const steer = this.dropTime > 0 ? 0.6 : this.legSpeed > 1.5 ? 2.4 : 1.4;
-    const k = Math.min(1, dt * steer);
-    this.vx += ((dx / (dist || 1)) * speed * arrive - this.vx) * k;
-    this.vy += ((dy / (dist || 1)) * speed * arrive * 0.75 - this.vy) * k;
+    let k = Math.min(1, dt * steer);
+    let wantX = dirX * speed * arrive;
+    let wantY = dirY * speed * arrive * style.vertical;
+    if (style.move === 'pulse' && this.dropTime <= 0) {
+      // Jellyfish: each contraction shoots up and along; in between they sink. Over a whole beat the rise
+      // and sink cancel out (a half-sine averages 1/π), so the drift toward the target sets where it goes.
+      const contraction = Math.max(0, Math.sin(this.phase));
+      wantX = dirX * speed * 0.5 * (0.2 + contraction);
+      wantY = (1 - contraction * 3.1) * baseSpeed + dirY * speed * 0.6;
+      k = Math.min(1, dt * 6);
+    }
+    this.vx += (wantX - this.vx) * k;
+    this.vy += (wantY - this.vy) * k;
     this.x += this.vx * dt;
     this.y += this.vy * dt;
+    if (style.move === 'pulse') {
+      const b = this.bounds(world);
+      this.y = clamp(this.y, b.top, b.bottom + this.halfLength * 0.3);
+    }
 
-    // Turn around by squashing through zero width, which reads as the fish rotating to face the other way.
-    if (Math.abs(this.vx) > baseSpeed * 0.15) {
+    // Turn around by squashing through zero width, which reads as the creature rotating to face the other way.
+    if (style.flips && Math.abs(this.vx) > baseSpeed * 0.15) {
       this.facing += (Math.sign(this.vx) - this.facing) * Math.min(1, dt * 3.5);
     }
-    const tilt = clamp(Math.atan2(this.vy, Math.abs(this.vx) + 1e-3), -0.45, 0.45) * 0.7;
-    const bob = Math.sin(world.time * 1.3 + this.phase) * world.height * 0.004;
+    const tilt = clamp(Math.atan2(this.vy, Math.abs(this.vx) + 1e-3), -0.45, 0.45) * style.tilt;
+    const bob = Math.sin(world.time * 1.3 + this.phase * 0.1) * world.height * style.bob;
     this.view.position.set(this.x, this.y + bob);
     this.view.scale.set(this.facing * this.scale, this.scale);
     this.view.rotation = tilt * Math.sign(this.facing);
 
     const effort = clamp(Math.hypot(this.vx, this.vy) / baseSpeed, 0.2, 2.5);
-    this.phase += dt * (4 + effort * 4);
-    this.wiggle(effort);
-    // Extras ride the same body wave as the drawing underneath them.
-    this.attachments.update(dt, world, (u) => ({ dx: 0, dy: this.waveAt(clamp(u, 0, 1)) }));
+    this.phase += dt * style.beat(effort);
+    this.body.phase = this.phase;
+    this.body.effort = effort;
+    this.bend();
+    // Extras ride the same body motion as the drawing underneath them.
+    this.attachments.update(dt, world, (u, v) => style.deform(clamp(u, 0, 1), clamp(v, 0, 1), this.body));
 
     this.tryToEat(world);
 
@@ -200,7 +223,8 @@ export class Swimmer implements Creature {
     const side = this.meal.x >= this.x ? 1 : -1;
     this.target.x = this.meal.x - side * this.halfLength * 0.8;
     this.target.y = this.meal.y;
-    this.legSpeed = this.personality === 'shy' ? 1.4 : 1.9;
+    // Jellyfish just drift toward food; everyone else races for it.
+    this.legSpeed = this.style.move === 'pulse' ? 0.8 : this.personality === 'shy' ? 1.4 : 1.9;
     return true;
   }
 
@@ -298,28 +322,25 @@ export class Swimmer implements Creature {
     this.view.zIndex = depthOrder(this.z);
   }
 
-  private wiggle(effort: number) {
-    this.amp = this.texH * 0.08 * (0.6 + effort * 0.4);
+  /** Bends every mesh vertex by the body style. */
+  private bend() {
     const p = this.positions;
     for (let i = 0; i < p.length; i += 2) {
-      p[i + 1] = this.rest[i + 1] + this.waveAt(this.rest[i] / this.texW);
+      const { dx, dy } = this.style.deform(this.rest[i] / this.texW, this.rest[i + 1] / this.texH, this.body);
+      p[i] = this.rest[i] + dx;
+      p[i + 1] = this.rest[i + 1] + dy;
     }
     this.mesh.geometry.getAttribute('aPosition').buffer.update();
-  }
-
-  /** Vertical body offset at u (0 tail .. 1 head): a wave travelling toward the tail, biggest at the tail. */
-  private waveAt(u: number) {
-    const tail = 1 - u;
-    return this.amp * (0.15 + tail * tail) * Math.sin(this.phase - u * 3.2);
   }
 
   private pickTarget(world: World) {
     const b = this.bounds(world);
     // Mostly lazy cruising, sometimes a quick dart.
-    this.legSpeed = Math.random() < 0.15 ? 2.2 : 0.6 + Math.random() * 0.6;
-    // Prefer horizontal travel: pick a far-off x and a nearby y. Shy fish keep low, near the plants.
+    this.legSpeed = this.style.darts && Math.random() < 0.15 ? 2.2 : 0.6 + Math.random() * 0.6;
+    // Prefer horizontal travel: pick a far-off x and a nearby y (hoverers roam up and down more).
+    // Shy ones keep low, near the plants.
     this.target.x = b.left + Math.random() * (b.right - b.left);
-    const y = this.y + (Math.random() - 0.5) * world.height * 0.35;
+    const y = this.y + (Math.random() - 0.5) * world.height * 0.35 * (this.style.vertical >= 1 ? 1.8 : 1);
     this.target.y = clamp(this.personality === 'shy' ? Math.max(y, world.height * 0.5) : y, b.top, b.bottom);
     this.retargetIn = 6 + Math.random() * 8;
   }

@@ -48,7 +48,7 @@ export function exportDrawing(
   return { dataUrl: out.toDataURL('image/png'), width, height, attachments: exportedAttachments };
 }
 
-function inkBounds(canvas: HTMLCanvasElement) {
+export function inkBounds(canvas: HTMLCanvasElement) {
   const { width, height } = canvas;
   const data = canvas.getContext('2d')!.getImageData(0, 0, width, height).data;
   let left = width, right = -1, top = height, bottom = -1;

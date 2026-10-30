@@ -1,5 +1,17 @@
-export const CREATURE_TYPES = ['swimmer', 'plant', 'decor'] as const;
+/** Where a drawing lives: open water, walking on the sand, growing from the sand, or sitting on it. */
+export const CREATURE_TYPES = ['swimmer', 'crawler', 'plant', 'decor'] as const;
 export type CreatureType = (typeof CREATURE_TYPES)[number];
+
+/** How a drawing moves. Picking a motion style also decides where it lives. */
+export const MOTIONS = ['fish', 'eel', 'jelly', 'seahorse', 'flapper', 'vessel', 'crawler', 'plant', 'decor'] as const;
+export type Motion = (typeof MOTIONS)[number];
+
+export const habitatOf = (motion: Motion): CreatureType =>
+  motion === 'crawler' || motion === 'plant' || motion === 'decor' ? motion : 'swimmer';
+
+/** Drawings made before motion styles existed only have a type. */
+export const motionOf = (d: { motion?: Motion; type: CreatureType }): Motion =>
+  d.motion ?? (d.type === 'swimmer' ? 'fish' : d.type);
 
 /** Animated extras pinned to a drawing; the tank brings them to life. */
 export const ATTACHMENT_KINDS = ['bubbles', 'sparkles', 'glow', 'googly', 'flag', 'propeller'] as const;
@@ -24,6 +36,7 @@ export const isAttachmentColor = (c: unknown): c is string =>
 export interface Drawing {
   id: string;
   type: CreatureType;
+  motion?: Motion;
   name: string;
   artist: string;
   createdAt: number;
@@ -37,7 +50,7 @@ export interface Drawing {
 }
 
 export interface NewDrawing {
-  type: CreatureType;
+  motion: Motion;
   name: string;
   artist: string;
   /** PNG data URL. */

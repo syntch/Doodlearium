@@ -1,6 +1,6 @@
-import { MAX_ATTACHMENTS, imageUrl, type AttachmentKind, type CreatureType, type Drawing } from '../../shared/types.ts';
+import { MAX_ATTACHMENTS, imageUrl, motionOf, type AttachmentKind, type Drawing, type Motion } from '../../shared/types.ts';
 import { fetchDrawings, setupFeedButton, submitDrawing, updateDrawing } from '../shared/api.ts';
-import { exportDrawing, type PlacedAttachment } from './export.ts';
+import { exportDrawing, inkBounds, type PlacedAttachment } from './export.ts';
 import { MATERIALS, MATERIAL_LABELS, floodFill, materialPreview, type Material } from './fill.ts';
 import { readPhoto, removePaper } from './photo.ts';
 
@@ -48,7 +48,7 @@ const sendButton = document.querySelector<HTMLButtonElement>('#send')!;
 const nocturnalInput = document.querySelector<HTMLInputElement>('#nocturnal')!;
 
 const state = {
-  kind: 'swimmer' as CreatureType,
+  motion: 'fish' as Motion,
   tool: 'brush' as Tool,
   color: COLORS[0],
   sizeIndex: 1,
@@ -189,34 +189,119 @@ mirrorButton.onclick = () => {
 facingButton.onclick = () => {
   state.facingLeft = !state.facingLeft;
   renderGuide();
+  schedulePreview();
 };
 
-function setKind(kind: CreatureType) {
-  state.kind = kind;
-  press(document.querySelectorAll('[data-kind]'), (b) => b.dataset.kind === kind);
-  renderGuide();
-}
-document.querySelectorAll<HTMLButtonElement>('[data-kind]').forEach((b) => {
-  b.onclick = () => setKind(b.dataset.kind as CreatureType);
-});
+const MOTION_LABELS: Record<Motion, string> = {
+  fish: '🐟 Fish',
+  eel: '🐍 Eel',
+  jelly: '🪼 Jellyfish',
+  seahorse: '🦄 Seahorse',
+  flapper: '🐢 Flapper',
+  vessel: '🚢 Vessel',
+  crawler: '🦀 Crawler',
+  plant: '🌿 Plant',
+  decor: '🏰 Decoration',
+};
 
-const PLACEHOLDERS: Record<CreatureType, string> = {
-  swimmer: 'Name it (e.g. Bubbles)',
+const PLACEHOLDERS: Record<Motion, string> = {
+  fish: 'Name it (e.g. Bubbles)',
+  eel: 'Name it (e.g. Noodle)',
+  jelly: 'Name it (e.g. Wobbles)',
+  seahorse: 'Name it (e.g. Sir Prance)',
+  flapper: 'Name it (e.g. Shelly)',
+  vessel: 'Name it (e.g. Yellow Sub)',
+  crawler: 'Name it (e.g. Pinchy)',
   plant: 'Name it (e.g. Swirly Weed)',
   decor: 'Name it (e.g. Castle)',
 };
 
+/** Styles that have a head, so the Facing button matters. */
+const hasFacing = (motion: Motion) => motion !== 'jelly' && motion !== 'plant' && motion !== 'decor';
+
+function setMotion(motion: Motion) {
+  state.motion = motion;
+  press(document.querySelectorAll('.kinds [data-motion]'), (b) => b.dataset.motion === motion);
+  suggestEl.hidden = true;
+  renderGuide();
+  changed();
+}
+document.querySelectorAll<HTMLButtonElement>('.kinds [data-motion]').forEach((b) => {
+  b.onclick = () => setMotion(b.dataset.motion as Motion);
+});
+
 function renderGuide() {
-  const fish = state.kind === 'swimmer';
-  facingButton.hidden = !fish;
+  const m = state.motion;
+  facingButton.hidden = !hasFacing(m);
   facingButton.textContent = state.facingLeft ? '← Facing' : 'Facing →';
-  nameInput.placeholder = PLACEHOLDERS[state.kind];
+  nameInput.placeholder = PLACEHOLDERS[m];
   const mirrorLine = state.mirror === 'off' ? '' : `<div class="mirror-line ${state.mirror}"></div>`;
-  guide.innerHTML =
-    mirrorLine +
-    (fish
-      ? `<div class="arrow">${state.facingLeft ? '⟵ head this way' : 'head this way ⟶'}</div>`
-      : `<div class="ground">${state.kind === 'plant' ? 'grows up from the sand' : 'sits on the sand'}</div>`);
+  const way = (text: string) => (state.facingLeft ? `⟵ ${text}` : `${text} ⟶`);
+  const top = (text: string) => `<div class="arrow">${text}</div>`;
+  const ground = (text: string) => `<div class="ground">${text}</div>`;
+  const guides: Record<Motion, string> = {
+    fish: top(way('head this way')),
+    eel: top(way('head this way')),
+    flapper: top(way('head this way')),
+    vessel: top(way('front this way')),
+    seahorse: top(way('head at the top, facing')),
+    jelly: top('bell on top, tentacles hanging down'),
+    crawler: top(way('walks this way')) + ground('walks on the sand'),
+    plant: ground('grows up from the sand'),
+    decor: ground('sits on the sand'),
+  };
+  guide.innerHTML = mirrorLine + guides[m];
+}
+
+// --- motion suggestions ------------------------------------------------------
+
+const suggestEl = document.querySelector<HTMLParagraphElement>('#suggest')!;
+const suggestText = document.querySelector<HTMLSpanElement>('#suggest-text')!;
+const suggestOptions = document.querySelector<HTMLSpanElement>('#suggest-options')!;
+/** Once dismissed, no more suggestions until the drawing is sent. */
+let suggestDismissed = false;
+document.querySelector<HTMLButtonElement>('#suggest-dismiss')!.onclick = () => {
+  suggestDismissed = true;
+  suggestEl.hidden = true;
+};
+
+/** Suggests (never switches to) a style that suits the drawing's shape. */
+function suggestMotion() {
+  const b = suggestDismissed || state.motion === 'plant' || state.motion === 'decor' ? null : inkBounds(paper);
+  const w = b ? b.right - b.left + 1 : 0;
+  const h = b ? b.bottom - b.top + 1 : 0;
+  let text = '';
+  let options: Motion[] = [];
+  if (b && Math.max(w, h) > 80) {
+    if (w >= h * 3.2) {
+      text = 'Looks long and skinny! Try';
+      options = ['eel'];
+    } else if (h >= w * 1.4) {
+      text = 'Tall and thin! Try';
+      options = ['seahorse', 'jelly'];
+    }
+  }
+  // Already one of the suggestions: nothing to say.
+  if (options.includes(state.motion)) options = [];
+  suggestEl.hidden = options.length === 0;
+  if (suggestEl.hidden) return;
+  suggestText.textContent = text;
+  suggestOptions.replaceChildren(
+    ...options.map((m) => {
+      const button = document.createElement('button');
+      button.textContent = `${MOTION_LABELS[m]}?`;
+      button.onclick = () => setMotion(m);
+      return button;
+    }),
+  );
+}
+
+let suggestTimer = 0;
+/** Called whenever the drawing, its style or its extras change. */
+function changed() {
+  clearTimeout(suggestTimer);
+  suggestTimer = window.setTimeout(suggestMotion, 800);
+  schedulePreview();
 }
 
 document.querySelector<HTMLButtonElement>('#undo')!.onclick = undo;
@@ -265,6 +350,7 @@ paper.addEventListener('pointerdown', (e) => {
     const op: Op = { type: 'fill', x: p.x, y: p.y, color: state.color, material: state.material, mirror: state.mirror };
     ops.push(op);
     applyFill(op);
+    changed();
     return;
   }
   if (state.tool === 'extras') {
@@ -291,7 +377,10 @@ paper.addEventListener('pointermove', (e) => {
     drawSegment(current, current.points.length - 1);
   }
 });
-const endStroke = () => (current = null);
+const endStroke = () => {
+  if (current) changed();
+  current = null;
+};
 paper.addEventListener('pointerup', endStroke);
 paper.addEventListener('pointercancel', endStroke);
 
@@ -329,6 +418,7 @@ function redraw() {
     else if (op.type === 'fill') applyFill(op);
   }
   renderMarkers();
+  changed();
 }
 
 // --- extras --------------------------------------------------------------
@@ -357,6 +447,7 @@ function placeOrRemoveExtra(p: Point) {
     });
   }
   renderMarkers();
+  changed();
 }
 
 function renderMarkers() {
@@ -429,6 +520,64 @@ function closePhotoPanel() {
 }
 document.querySelector<HTMLButtonElement>('#photo-done')!.onclick = closePhotoPanel;
 
+// --- live preview ----------------------------------------------------------
+
+const previewEl = document.querySelector<HTMLDivElement>('#preview')!;
+const previewToggle = document.querySelector<HTMLButtonElement>('#preview-toggle')!;
+const workspace = document.querySelector<HTMLDivElement>('#workspace')!;
+/** Loaded on first open, so the tank code (and Pixi) only downloads when someone wants a preview. */
+let preview: Promise<import('../tank/mini.ts').Preview> | null = null;
+let previewTimer = 0;
+
+previewToggle.onclick = () => {
+  const open = Boolean(previewEl.hidden);
+  previewEl.hidden = !open;
+  workspace.classList.toggle('previewing', open);
+  previewToggle.setAttribute('aria-pressed', String(open));
+  previewToggle.textContent = open ? '⏹ Preview' : '▶ Preview';
+  renderMarkers();
+  if (open) {
+    preview ??= import('../tank/mini.ts').then((m) => m.createPreview(previewEl));
+    void refreshPreview();
+  }
+};
+
+function schedulePreview() {
+  if (previewEl.hidden) return;
+  clearTimeout(previewTimer);
+  previewTimer = window.setTimeout(refreshPreview, 500);
+}
+
+async function refreshPreview() {
+  if (previewEl.hidden || !preview) return;
+  const exported = exportDrawing(paper, {
+    mirror: hasFacing(state.motion) && state.facingLeft,
+    paperFill: document.querySelector<HTMLInputElement>('#paper-fill')!.checked,
+    attachments: currentAttachments(),
+  });
+  if (!exported) return;
+  const image = new Image();
+  image.src = exported.dataUrl;
+  const [{ Texture }, view] = await Promise.all([import('pixi.js'), preview, image.decode()]);
+  view.show(
+    {
+      id: 'preview',
+      type: 'swimmer',
+      motion: state.motion,
+      name: nameInput.value,
+      artist: artistInput.value,
+      createdAt: Date.now(),
+      width: exported.width,
+      height: exported.height,
+      attachments: exported.attachments,
+      nocturnal: nocturnalInput.checked,
+    },
+    Texture.from(image),
+  );
+}
+document.querySelector<HTMLInputElement>('#paper-fill')!.addEventListener('change', schedulePreview);
+nocturnalInput.addEventListener('change', schedulePreview);
+
 // --- submit --------------------------------------------------------------
 
 let toastTimer = 0;
@@ -442,7 +591,7 @@ function showToast(message: string, error = false) {
 document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) => {
   e.preventDefault();
   const exported = exportDrawing(paper, {
-    mirror: state.kind === 'swimmer' && state.facingLeft,
+    mirror: hasFacing(state.motion) && state.facingLeft,
     paperFill: document.querySelector<HTMLInputElement>('#paper-fill')!.checked,
     attachments: currentAttachments(),
   });
@@ -452,7 +601,7 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
   }
   const artist = artistInput.value.trim();
   const payload = {
-    type: state.kind,
+    motion: state.motion,
     name: nameInput.value,
     artist,
     image: exported.dataUrl,
@@ -478,6 +627,7 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
     baseAttachments = [];
     nameInput.value = '';
     nocturnalInput.checked = false;
+    suggestDismissed = false;
     closePhotoPanel();
     redraw();
   } catch (err) {
@@ -511,7 +661,7 @@ async function loadForEditing(id: string) {
     x: base!.x + a.x * image.width,
     y: base!.y + a.y * image.height,
   }));
-  setKind(drawing.type);
+  setMotion(motionOf(drawing));
   nameInput.value = drawing.name;
   artistInput.value = drawing.artist;
   nocturnalInput.checked = drawing.nocturnal === true;
@@ -519,7 +669,7 @@ async function loadForEditing(id: string) {
   const banner = document.querySelector<HTMLParagraphElement>('#editing')!;
   banner.hidden = false;
   banner.textContent =
-    drawing.type === 'swimmer'
+    hasFacing(motionOf(drawing))
       ? `Editing ${drawing.name}. Swimming backwards? Tap “Facing” so the arrow points the way its head does, then save.`
       : `Editing ${drawing.name}.`;
   redraw();

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Attachment, CreatureType, Drawing } from '../shared/types.ts';
+import type { Attachment, CreatureType, Drawing, Motion } from '../shared/types.ts';
 
 export const DATA_DIR = join(import.meta.dirname, '..', 'data');
 export const DRAWINGS_DIR = join(DATA_DIR, 'drawings');
@@ -34,6 +34,7 @@ export const listDrawings = () => drawings;
 
 type DrawingMeta = {
   type: CreatureType;
+  motion: Motion;
   name: string;
   artist: string;
   width: number;

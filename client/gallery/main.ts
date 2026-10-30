@@ -5,7 +5,8 @@ setupFeedButton(document.querySelector<HTMLButtonElement>('#feed')!);
 
 const FILTERS: { label: string; type: CreatureType | null }[] = [
   { label: 'Everything', type: null },
-  { label: '🐟 Fish', type: 'swimmer' },
+  { label: '🐟 Swimmers', type: 'swimmer' },
+  { label: '🦀 Crawlers', type: 'crawler' },
   { label: '🌿 Plants', type: 'plant' },
   { label: '🪨 Decorations', type: 'decor' },
 ];
