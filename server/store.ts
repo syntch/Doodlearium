@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { CreatureType, Drawing } from '../shared/types.ts';
+import type { Attachment, CreatureType, Drawing } from '../shared/types.ts';
 
 export const DATA_DIR = join(import.meta.dirname, '..', 'data');
 export const DRAWINGS_DIR = join(DATA_DIR, 'drawings');
@@ -32,7 +32,14 @@ function save() {
 
 export const listDrawings = () => drawings;
 
-type DrawingMeta = { type: CreatureType; name: string; artist: string; width: number; height: number };
+type DrawingMeta = {
+  type: CreatureType;
+  name: string;
+  artist: string;
+  width: number;
+  height: number;
+  attachments: Attachment[];
+};
 
 export async function addDrawing(meta: DrawingMeta, png: Buffer): Promise<Drawing> {
   const drawing: Drawing = { id: randomUUID(), createdAt: Date.now(), ...meta };

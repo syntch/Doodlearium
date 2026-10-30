@@ -79,6 +79,32 @@
 .fill { color: var(--muted); font-size: 0.9rem; }
 .toast { min-height: 1.4em; margin: 0; color: var(--accent); font-weight: bold; text-align: center; }
 .toast.error { color: var(--danger); }
+.options { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+.materials, .extras { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.materials button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  font-size: 0.75rem;
+}
+.materials img { width: 40px; height: 40px; border-radius: 6px; image-rendering: pixelated; }
+.colors .rainbow {
+  background: conic-gradient(#ff4d4d, #ffd60a, #52b788, #3a86ff, #8338ec, #ff4d4d) !important;
+}
+.tools .divider { width: 1px; align-self: stretch; background: rgba(255, 255, 255, 0.15); }
+.hint { margin: 0; min-height: 1.2em; color: var(--muted); font-size: 0.9rem; text-align: center; }
+.markers { position: absolute; inset: 0; pointer-events: none; }
+.markers span {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  line-height: 1;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+}
+.guide .mirror-line { position: absolute; border: 0 dashed rgba(131, 56, 236, 0.35); }
+.guide .mirror-line.updown { left: 0; right: 0; top: 50%; border-top-width: 2px; }
+.guide .mirror-line.leftright { top: 0; bottom: 0; left: 50%; border-left-width: 2px; }
 .editing {
   margin: 0;
   padding: 10px 14px;

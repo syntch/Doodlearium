@@ -1,22 +1,33 @@
+import type { Attachment } from '../../shared/types.ts';
+
 const MAX_SIZE = 512;
 const PADDING = 6;
 const ALPHA_VISIBLE = 10;
 /** Pixels below this alpha are "open water" the outside flood can pass through. */
 const ALPHA_WALL = 128;
 
+/** An extra placed on the paper, in paper pixel coordinates. */
+export type PlacedAttachment = Omit<Attachment, 'x' | 'y'> & { x: number; y: number };
+
 /**
  * Crops the drawing to its inked area, scales it down, optionally mirrors it so it faces right,
  * and optionally fills enclosed regions white so outline-only drawings look like paper cut-outs.
+ * Extras are converted to fractions of the exported image.
  */
 export function exportDrawing(
   source: HTMLCanvasElement,
-  { mirror, paperFill }: { mirror: boolean; paperFill: boolean },
-): { dataUrl: string; width: number; height: number } | null {
+  { mirror, paperFill, attachments }: { mirror: boolean; paperFill: boolean; attachments: PlacedAttachment[] },
+): { dataUrl: string; width: number; height: number; attachments: Attachment[] } | null {
   const bounds = inkBounds(source);
   if (!bounds) return null;
 
   const cropW = bounds.right - bounds.left + 1 + PADDING * 2;
   const cropH = bounds.bottom - bounds.top + 1 + PADDING * 2;
+  const clampFraction = (v: number) => Math.min(1.5, Math.max(-0.5, v));
+  const exportedAttachments = attachments.map((a) => {
+    const x = clampFraction((a.x - (bounds.left - PADDING)) / cropW);
+    return { ...a, x: mirror ? 1 - x : x, y: clampFraction((a.y - (bounds.top - PADDING)) / cropH) };
+  });
   const scale = Math.min(1, MAX_SIZE / Math.max(cropW, cropH));
   const width = Math.max(1, Math.round(cropW * scale));
   const height = Math.max(1, Math.round(cropH * scale));
@@ -34,7 +45,7 @@ export function exportDrawing(
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
   if (paperFill) fillEnclosed(ctx, width, height);
-  return { dataUrl: out.toDataURL('image/png'), width, height };
+  return { dataUrl: out.toDataURL('image/png'), width, height, attachments: exportedAttachments };
 }
 
 function inkBounds(canvas: HTMLCanvasElement) {

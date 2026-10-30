@@ -14,7 +14,7 @@ The server prints its address on your network, for example `http://192.168.1.20:
 | Page | What it's for |
 | --- | --- |
 | `/tank/` | The aquarium. Double-click for full screen. The cursor hides itself, and the tank dims at night. |
-| `/draw/` | Draw a fish, plant or decoration, then add it to the tank. It drops in live. |
+| `/draw/` | Draw a fish, plant or decoration, then add it to the tank. It drops in live. Tools: brush (with rainbow paint), eraser, a **fill** bucket with materials (brick, stone, bark, scales, stripes, dots, rainbow), **mirror** drawing, and **extras**. Extras are animated things pinned to a drawing: bubbles, sparkles, a glow, a googly eye, a waving flag and a propeller. |
 | `/gallery/` | Every drawing ever made. **Edit** opens one in the draw page, for example to fix a fish that swims backwards. **Remove** deletes it. |
 
 For development, `npm run dev` runs the API on port 3000 and Vite with hot reload on http://localhost:5173.

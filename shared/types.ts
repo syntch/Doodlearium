@@ -1,6 +1,25 @@
 export const CREATURE_TYPES = ['swimmer', 'plant', 'decor'] as const;
 export type CreatureType = (typeof CREATURE_TYPES)[number];
 
+/** Animated extras pinned to a drawing; the tank brings them to life. */
+export const ATTACHMENT_KINDS = ['bubbles', 'sparkles', 'glow', 'googly', 'flag', 'propeller'] as const;
+export type AttachmentKind = (typeof ATTACHMENT_KINDS)[number];
+export const MAX_ATTACHMENTS = 24;
+
+export interface Attachment {
+  kind: AttachmentKind;
+  /** Position as a fraction of the stored image's width and height (may stick out a little past 0..1). */
+  x: number;
+  y: number;
+  /** Size multiplier, 0.25 to 3. */
+  scale: number;
+  /** '#rrggbb' or 'rainbow'. */
+  color: string;
+}
+
+export const isAttachmentColor = (c: unknown): c is string =>
+  typeof c === 'string' && (c === 'rainbow' || /^#[0-9a-f]{6}$/i.test(c));
+
 /** Stored drawings always face right (the draw page mirrors left-facing ones on export). */
 export interface Drawing {
   id: string;
@@ -12,6 +31,7 @@ export interface Drawing {
   updatedAt?: number;
   width: number;
   height: number;
+  attachments?: Attachment[];
 }
 
 export interface NewDrawing {
@@ -20,6 +40,7 @@ export interface NewDrawing {
   artist: string;
   /** PNG data URL. */
   image: string;
+  attachments?: Attachment[];
 }
 
 export type ServerMessage =

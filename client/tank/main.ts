@@ -100,6 +100,17 @@ async function replaceDrawing(drawing: Drawing) {
   if (updated) showLabel(updated, 6);
 }
 
+/** One misbehaving drawing must never freeze the whole tank: it is taken out instead. */
+function safeUpdate(entry: Entry, dt: number) {
+  try {
+    entry.creature.update(dt, world);
+  } catch (err) {
+    console.error(`Removing ${entry.creature.drawing.name} after an animation error`, err);
+    entry.removing = true;
+    entry.fade = 0;
+  }
+}
+
 function destroyEntry({ creature }: Entry) {
   creature.view.destroy({ children: true });
   void Assets.unload(imageUrl(creature.drawing));
@@ -184,13 +195,13 @@ app.ticker.add((ticker) => {
       entries.delete(id);
       continue;
     }
-    creature.update(dt, world);
+    safeUpdate(entry, dt);
   }
   for (let i = retiring.length - 1; i >= 0; i--) {
     const entry = retiring[i];
     entry.fade = Math.max(0, entry.fade - dt / FADE_SECONDS);
     entry.creature.view.alpha = entry.fade;
-    entry.creature.update(dt, world);
+    safeUpdate(entry, dt);
     if (entry.fade === 0) {
       destroyEntry(entry);
       retiring.splice(i, 1);

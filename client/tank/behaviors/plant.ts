@@ -1,6 +1,7 @@
 import { Container, MeshPlane, type Texture } from 'pixi.js';
 import type { Drawing } from '../../../shared/types.ts';
-import { TAU, depthOrder, depthScale, depthTint, sandY, seededRandom, type Creature, type World } from '../world.ts';
+import { Attachments } from '../attachments.ts';
+import { TAU, clamp, depthOrder, depthScale, depthTint, sandY, seededRandom, type Creature, type World } from '../world.ts';
 
 const ROWS = 12;
 
@@ -18,6 +19,7 @@ export class Plant implements Creature {
   private seed: number;
   private swaySpeed: number;
   private scale = 1;
+  private attachments: Attachments;
 
   constructor(
     readonly drawing: Drawing,
@@ -38,7 +40,8 @@ export class Plant implements Creature {
     this.mesh.tint = depthTint(this.z);
     this.positions = this.mesh.geometry.getAttribute('aPosition').buffer.data as Float32Array;
     this.rest = this.positions.slice();
-    this.view.addChild(this.mesh);
+    this.attachments = new Attachments(drawing.attachments, this.texW, this.texH, { x: this.texW / 2, y: this.texH });
+    this.view.addChild(this.mesh, this.attachments.container);
     this.view.zIndex = depthOrder(this.z);
     this.layout(world);
   }
@@ -55,15 +58,19 @@ export class Plant implements Creature {
     return { x: this.view.x, y: this.view.y - this.texH * this.scale - 8 };
   }
 
-  update(_dt: number, world: World) {
+  update(dt: number, world: World) {
     const t = world.time * this.swaySpeed;
-    const amp = this.texH * 0.06;
     const p = this.positions;
     for (let i = 0; i < p.length; i += 2) {
-      const v = 1 - this.rest[i + 1] / this.texH; // 0 roots .. 1 tip
-      const bend = Math.pow(v, 1.6);
-      p[i] = this.rest[i] + amp * bend * (Math.sin(t + this.seed + v * 1.8) + 0.3 * Math.sin(t * 2.3 + this.seed * 2));
+      p[i] = this.rest[i] + this.swayAt(1 - this.rest[i + 1] / this.texH, t);
     }
     this.mesh.geometry.getAttribute('aPosition').buffer.update();
+    this.attachments.update(dt, world, (_u, y) => ({ dx: this.swayAt(clamp(1 - y, 0, 1), t), dy: 0 }));
+  }
+
+  /** Sideways offset at height v (0 roots .. 1 tip). */
+  private swayAt(v: number, t: number) {
+    const bend = Math.pow(v, 1.6);
+    return this.texH * 0.06 * bend * (Math.sin(t + this.seed + v * 1.8) + 0.3 * Math.sin(t * 2.3 + this.seed * 2));
   }
 }

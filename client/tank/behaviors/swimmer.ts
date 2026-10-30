@@ -1,5 +1,6 @@
 import { Container, MeshPlane, type Texture } from 'pixi.js';
 import type { Drawing } from '../../../shared/types.ts';
+import { Attachments } from '../attachments.ts';
 import { TAU, clamp, depthOrder, depthScale, depthTint, seededRandom, type Creature, type World } from '../world.ts';
 
 const COLUMNS = 16;
@@ -31,6 +32,8 @@ export class Swimmer implements Creature {
   private bubbleIn: number;
   private facing = 1;
   private dropTime = 0;
+  private amp = 0;
+  private attachments: Attachments;
   private scale = 1;
 
   constructor(
@@ -54,7 +57,8 @@ export class Swimmer implements Creature {
     this.mesh.alpha = 1 - this.z * 0.1;
     this.positions = this.mesh.geometry.getAttribute('aPosition').buffer.data as Float32Array;
     this.rest = this.positions.slice();
-    this.view.addChild(this.mesh);
+    this.attachments = new Attachments(drawing.attachments, this.texW, this.texH, { x: this.texW / 2, y: this.texH / 2 });
+    this.view.addChild(this.mesh, this.attachments.container);
     this.view.zIndex = depthOrder(this.z);
 
     this.layout(world);
@@ -118,6 +122,8 @@ export class Swimmer implements Creature {
     const effort = clamp(Math.hypot(this.vx, this.vy) / baseSpeed, 0.2, 2.5);
     this.phase += dt * (4 + effort * 4);
     this.wiggle(effort);
+    // Extras ride the same body wave as the drawing underneath them.
+    this.attachments.update(dt, world, (u) => ({ dx: 0, dy: this.waveAt(clamp(u, 0, 1)) }));
 
     this.bubbleIn -= dt;
     if (this.bubbleIn <= 0) {
@@ -128,14 +134,18 @@ export class Swimmer implements Creature {
   }
 
   private wiggle(effort: number) {
-    const amp = this.texH * 0.08 * (0.6 + effort * 0.4);
+    this.amp = this.texH * 0.08 * (0.6 + effort * 0.4);
     const p = this.positions;
     for (let i = 0; i < p.length; i += 2) {
-      const u = this.rest[i] / this.texW; // 0 tail .. 1 head
-      const tail = 1 - u;
-      p[i + 1] = this.rest[i + 1] + amp * (0.15 + tail * tail) * Math.sin(this.phase - u * 3.2);
+      p[i + 1] = this.rest[i + 1] + this.waveAt(this.rest[i] / this.texW);
     }
     this.mesh.geometry.getAttribute('aPosition').buffer.update();
+  }
+
+  /** Vertical body offset at u (0 tail .. 1 head): a wave travelling toward the tail, biggest at the tail. */
+  private waveAt(u: number) {
+    const tail = 1 - u;
+    return this.amp * (0.15 + tail * tail) * Math.sin(this.phase - u * 3.2);
   }
 
   private pickTarget(world: World) {

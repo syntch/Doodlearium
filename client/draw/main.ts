@@ -1,25 +1,45 @@
-import { imageUrl, type CreatureType, type Drawing } from '../../shared/types.ts';
+import { MAX_ATTACHMENTS, imageUrl, type AttachmentKind, type CreatureType, type Drawing } from '../../shared/types.ts';
 import { fetchDrawings, submitDrawing, updateDrawing } from '../shared/api.ts';
-import { exportDrawing } from './export.ts';
+import { exportDrawing, type PlacedAttachment } from './export.ts';
+import { MATERIALS, MATERIAL_LABELS, floodFill, materialPreview, type Material } from './fill.ts';
 
 const COLORS = [
   '#1b1b1b', '#ffffff', '#e63946', '#ff8c1a', '#ffd60a', '#52b788',
   '#2ec4b6', '#3a86ff', '#8338ec', '#ff70a6', '#8d5a3b', '#8d99ae',
+  'rainbow',
 ];
 const SIZES = [4, 10, 22, 40];
+/** The same four size buttons double as the size of extras. */
+const EXTRA_SCALES = [0.6, 1, 1.5, 2.2];
 
-interface Stroke {
-  color: string;
-  size: number;
-  erase: boolean;
-  points: { x: number; y: number; pressure: number }[];
-}
+const EXTRAS: { kind: AttachmentKind; icon: string; label: string; hint: string }[] = [
+  { kind: 'bubbles', icon: '🫧', label: 'Bubbles', hint: 'Bubbles float up from here' },
+  { kind: 'sparkles', icon: '✨', label: 'Sparkles', hint: 'Twinkling sparkles in your colour' },
+  { kind: 'glow', icon: '💡', label: 'Glow', hint: 'A soft light, best at night' },
+  { kind: 'googly', icon: '👀', label: 'Googly eye', hint: 'A wobbly googly eye' },
+  { kind: 'flag', icon: '🚩', label: 'Flag', hint: 'A flag waving in the current, in your colour' },
+  { kind: 'propeller', icon: '🌀', label: 'Propeller', hint: 'A spinning propeller' },
+];
+const EXTRA_ICONS = Object.fromEntries(EXTRAS.map((e) => [e.kind, e.icon])) as Record<AttachmentKind, string>;
+
+type Tool = 'brush' | 'eraser' | 'fill' | 'extras';
+type Mirror = 'off' | 'updown' | 'leftright';
+type Point = { x: number; y: number; pressure: number };
+
+/** Everything on the paper is a replayable list of operations, so undo works the same for every tool. */
+type Op =
+  | { type: 'stroke'; color: string; size: number; erase: boolean; mirror: Mirror; points: Point[] }
+  | { type: 'fill'; x: number; y: number; color: string; material: Material; mirror: Mirror }
+  | { type: 'attach'; attachment: PlacedAttachment }
+  | { type: 'detach'; target: PlacedAttachment };
 
 const paper = document.querySelector<HTMLCanvasElement>('#paper')!;
 const ctx = paper.getContext('2d', { willReadFrequently: true })!;
 const guide = document.querySelector<HTMLDivElement>('#guide')!;
+const markers = document.querySelector<HTMLDivElement>('#markers')!;
+const hint = document.querySelector<HTMLParagraphElement>('#hint')!;
 const facingButton = document.querySelector<HTMLButtonElement>('#facing')!;
-const eraserButton = document.querySelector<HTMLButtonElement>('#eraser')!;
+const mirrorButton = document.querySelector<HTMLButtonElement>('#mirror')!;
 const toast = document.querySelector<HTMLParagraphElement>('#toast')!;
 const nameInput = document.querySelector<HTMLInputElement>('#name')!;
 const artistInput = document.querySelector<HTMLInputElement>('#artist')!;
@@ -27,16 +47,20 @@ const sendButton = document.querySelector<HTMLButtonElement>('#send')!;
 
 const state = {
   kind: 'swimmer' as CreatureType,
+  tool: 'brush' as Tool,
   color: COLORS[0],
-  size: SIZES[1],
-  erase: false,
+  sizeIndex: 1,
+  material: 'solid' as Material,
+  extra: 'bubbles' as AttachmentKind,
+  mirror: 'off' as Mirror,
   facingLeft: false,
 };
-const strokes: Stroke[] = [];
-let current: Stroke | null = null;
-/** When editing an existing drawing: the drawing, and its image drawn underneath the new strokes. */
+const ops: Op[] = [];
+let current: Extract<Op, { type: 'stroke' }> | null = null;
+/** When editing an existing drawing: the drawing, its image under the new ops, and its saved extras. */
 let editing: Drawing | null = null;
 let base: { image: HTMLImageElement; x: number; y: number } | null = null;
+let baseAttachments: PlacedAttachment[] = [];
 
 try {
   artistInput.value = localStorage.getItem('doodlearium.artist') ?? '';
@@ -44,12 +68,21 @@ try {
 
 // --- toolbar -------------------------------------------------------------
 
+const press = (buttons: Iterable<Element>, isOn: (b: HTMLElement) => boolean) => {
+  for (const b of buttons) b.setAttribute('aria-pressed', String(isOn(b as HTMLElement)));
+};
+
 const colorsEl = document.querySelector<HTMLDivElement>('#colors')!;
 const colorButtons = COLORS.map((color) => {
   const b = document.createElement('button');
-  b.style.background = color;
-  b.title = color;
-  b.setAttribute('aria-pressed', String(color === state.color));
+  b.dataset.color = color;
+  if (color === 'rainbow') {
+    b.className = 'rainbow';
+    b.title = 'Rainbow';
+  } else {
+    b.style.background = color;
+    b.title = color;
+  }
   b.onclick = () => pickColor(color);
   colorsEl.append(b);
   return b;
@@ -62,32 +95,93 @@ colorsEl.append(customColor);
 
 function pickColor(color: string) {
   state.color = color;
-  setEraser(false);
-  colorButtons.forEach((b, i) => b.setAttribute('aria-pressed', String(COLORS[i] === color)));
+  if (state.tool === 'eraser') setTool('brush');
+  press(colorButtons, (b) => b.dataset.color === color);
+  renderMaterials();
 }
 
 const sizesEl = document.querySelector<HTMLDivElement>('#sizes')!;
-const sizeButtons = SIZES.map((size) => {
+const sizeButtons = SIZES.map((size, index) => {
   const b = document.createElement('button');
-  b.title = `Brush ${size}`;
+  b.title = `Size ${index + 1}`;
   const dot = document.createElement('span');
   const px = Math.max(4, Math.min(26, size * 0.65));
   dot.style.width = dot.style.height = `${px}px`;
   b.append(dot);
-  b.setAttribute('aria-pressed', String(size === state.size));
   b.onclick = () => {
-    state.size = size;
-    sizeButtons.forEach((s, i) => s.setAttribute('aria-pressed', String(SIZES[i] === size)));
+    state.sizeIndex = index;
+    press(sizeButtons, (s) => s === b);
   };
   sizesEl.append(b);
   return b;
 });
 
-function setEraser(on: boolean) {
-  state.erase = on;
-  eraserButton.setAttribute('aria-pressed', String(on));
+const materialsEl = document.querySelector<HTMLDivElement>('#materials')!;
+const materialButtons = MATERIALS.map((material) => {
+  const b = document.createElement('button');
+  b.title = MATERIAL_LABELS[material];
+  b.onclick = () => {
+    state.material = material;
+    press(materialButtons, (m) => m === b);
+  };
+  materialsEl.append(b);
+  return b;
+});
+
+/** Material swatches are shown in the current colour, so brick in blue looks like blue brick. */
+function renderMaterials() {
+  if (state.tool !== 'fill') return;
+  MATERIALS.forEach((material, i) => {
+    const color = state.color === 'rainbow' || material === 'rainbow' ? 'rainbow' : state.color;
+    materialButtons[i].innerHTML = `<img alt="" src="${materialPreview(material, color)}" />${MATERIAL_LABELS[material]}`;
+  });
 }
-eraserButton.onclick = () => setEraser(!state.erase);
+
+const extrasEl = document.querySelector<HTMLDivElement>('#extras')!;
+const extraButtons = EXTRAS.map((extra) => {
+  const b = document.createElement('button');
+  b.textContent = `${extra.icon} ${extra.label}`;
+  b.title = extra.hint;
+  b.onclick = () => {
+    state.extra = extra.kind;
+    press(extraButtons, (x) => x === b);
+    renderHint();
+  };
+  extrasEl.append(b);
+  return b;
+});
+
+const toolButtons = document.querySelectorAll<HTMLButtonElement>('[data-tool]');
+toolButtons.forEach((b) => (b.onclick = () => setTool(b.dataset.tool as Tool)));
+
+function setTool(tool: Tool) {
+  state.tool = tool;
+  press(toolButtons, (b) => b.dataset.tool === tool);
+  sizesEl.hidden = tool === 'fill';
+  materialsEl.hidden = tool !== 'fill';
+  extrasEl.hidden = tool !== 'extras';
+  paper.style.cursor = tool === 'fill' ? 'cell' : tool === 'extras' ? 'copy' : 'crosshair';
+  renderMaterials();
+  renderHint();
+}
+
+function renderHint() {
+  const extra = EXTRAS.find((e) => e.kind === state.extra)!;
+  hint.textContent =
+    state.tool === 'fill'
+      ? 'Tap inside a shape to fill it.'
+      : state.tool === 'extras'
+        ? `${extra.hint}. Tap the drawing to add one, tap it again to remove it. Extras come alive in the tank!`
+        : '';
+}
+
+const MIRROR_LABELS: Record<Mirror, string> = { off: '🪞 Mirror: off', updown: '🪞 Mirror: ↕', leftright: '🪞 Mirror: ↔' };
+mirrorButton.onclick = () => {
+  state.mirror = state.mirror === 'off' ? 'updown' : state.mirror === 'updown' ? 'leftright' : 'off';
+  mirrorButton.textContent = MIRROR_LABELS[state.mirror];
+  mirrorButton.setAttribute('aria-pressed', String(state.mirror !== 'off'));
+  renderGuide();
+};
 
 facingButton.onclick = () => {
   state.facingLeft = !state.facingLeft;
@@ -96,9 +190,7 @@ facingButton.onclick = () => {
 
 function setKind(kind: CreatureType) {
   state.kind = kind;
-  document
-    .querySelectorAll<HTMLButtonElement>('[data-kind]')
-    .forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.kind === kind)));
+  press(document.querySelectorAll('[data-kind]'), (b) => b.dataset.kind === kind);
   renderGuide();
 }
 document.querySelectorAll<HTMLButtonElement>('[data-kind]').forEach((b) => {
@@ -116,17 +208,20 @@ function renderGuide() {
   facingButton.hidden = !fish;
   facingButton.textContent = state.facingLeft ? '← Facing' : 'Facing →';
   nameInput.placeholder = PLACEHOLDERS[state.kind];
-  guide.innerHTML = fish
-    ? `<div class="arrow">${state.facingLeft ? '⟵ head this way' : 'head this way ⟶'}</div>`
-    : `<div class="ground">${state.kind === 'plant' ? 'grows up from the sand' : 'sits on the sand'}</div>`;
+  const mirrorLine = state.mirror === 'off' ? '' : `<div class="mirror-line ${state.mirror}"></div>`;
+  guide.innerHTML =
+    mirrorLine +
+    (fish
+      ? `<div class="arrow">${state.facingLeft ? '⟵ head this way' : 'head this way ⟶'}</div>`
+      : `<div class="ground">${state.kind === 'plant' ? 'grows up from the sand' : 'sits on the sand'}</div>`);
 }
-renderGuide();
 
 document.querySelector<HTMLButtonElement>('#undo')!.onclick = undo;
 document.querySelector<HTMLButtonElement>('#clear')!.onclick = () => {
-  if ((strokes.length || base) && !confirm('Clear the whole drawing?')) return;
-  strokes.length = 0;
+  if ((ops.length || base) && !confirm('Clear the whole drawing?')) return;
+  ops.length = 0;
   base = null;
+  baseAttachments = [];
   redraw();
 };
 addEventListener('keydown', (e) => {
@@ -137,13 +232,13 @@ addEventListener('keydown', (e) => {
 });
 
 function undo() {
-  strokes.pop();
+  ops.pop();
   redraw();
 }
 
-// --- drawing -------------------------------------------------------------
+// --- painting ------------------------------------------------------------
 
-function toCanvas(e: PointerEvent) {
+function toCanvas(e: PointerEvent): Point {
   const rect = paper.getBoundingClientRect();
   return {
     x: ((e.clientX - rect.left) / rect.width) * paper.width,
@@ -152,11 +247,36 @@ function toCanvas(e: PointerEvent) {
   };
 }
 
+/** The point itself plus its reflection when mirror drawing is on. */
+function withMirror<T extends { x: number; y: number }>(p: T, mirror: Mirror): T[] {
+  if (mirror === 'updown') return [p, { ...p, y: paper.height - p.y }];
+  if (mirror === 'leftright') return [p, { ...p, x: paper.width - p.x }];
+  return [p];
+}
+
 paper.addEventListener('pointerdown', (e) => {
   if (e.button !== 0) return;
+  const p = toCanvas(e);
+  if (state.tool === 'fill') {
+    const op: Op = { type: 'fill', x: p.x, y: p.y, color: state.color, material: state.material, mirror: state.mirror };
+    ops.push(op);
+    applyFill(op);
+    return;
+  }
+  if (state.tool === 'extras') {
+    placeOrRemoveExtra(p);
+    return;
+  }
   paper.setPointerCapture(e.pointerId);
-  current = { color: state.color, size: state.size, erase: state.erase, points: [toCanvas(e)] };
-  strokes.push(current);
+  current = {
+    type: 'stroke',
+    color: state.color,
+    size: SIZES[state.sizeIndex],
+    erase: state.tool === 'eraser',
+    mirror: state.mirror,
+    points: [p],
+  };
+  ops.push(current);
   drawSegment(current, 0);
 });
 paper.addEventListener('pointermove', (e) => {
@@ -172,26 +292,83 @@ paper.addEventListener('pointerup', endStroke);
 paper.addEventListener('pointercancel', endStroke);
 
 /** Draws the segment ending at point i (a dot when i is 0). Pen pressure scales width from 0.4x to 2.4x. */
-function drawSegment(stroke: Stroke, i: number) {
+function drawSegment(stroke: Extract<Op, { type: 'stroke' }>, i: number) {
   const p = stroke.points[i];
   const prev = stroke.points[Math.max(0, i - 1)];
   ctx.globalCompositeOperation = stroke.erase ? 'destination-out' : 'source-over';
-  ctx.strokeStyle = stroke.color;
+  ctx.strokeStyle = stroke.color === 'rainbow' ? `hsl(${(i * 4) % 360} 85% 58%)` : stroke.color;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   ctx.lineWidth = stroke.size * (0.4 + p.pressure * 2) * (stroke.erase ? 1.5 : 1);
+  const froms = withMirror(prev, stroke.mirror);
+  const tos = withMirror(p, stroke.mirror);
   ctx.beginPath();
-  ctx.moveTo(prev.x, prev.y);
-  ctx.lineTo(p.x + (i === 0 ? 0.01 : 0), p.y);
+  froms.forEach((from, k) => {
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(tos[k].x + (i === 0 ? 0.01 : 0), tos[k].y);
+  });
   ctx.stroke();
+}
+
+function applyFill(op: Extract<Op, { type: 'fill' }>) {
+  ctx.globalCompositeOperation = 'source-over';
+  const material = op.material === 'solid' && op.color === 'rainbow' ? 'rainbow' : op.material;
+  floodFill(ctx, withMirror(op, op.mirror), material, op.color);
 }
 
 function redraw() {
   ctx.globalCompositeOperation = 'source-over';
   ctx.clearRect(0, 0, paper.width, paper.height);
   if (base) ctx.drawImage(base.image, base.x, base.y);
-  for (const stroke of strokes) stroke.points.forEach((_, i) => drawSegment(stroke, i));
+  for (const op of ops) {
+    if (op.type === 'stroke') op.points.forEach((_, i) => drawSegment(op, i));
+    else if (op.type === 'fill') applyFill(op);
+  }
+  renderMarkers();
 }
+
+// --- extras --------------------------------------------------------------
+
+function currentAttachments(): PlacedAttachment[] {
+  const list = [...baseAttachments];
+  for (const op of ops) {
+    if (op.type === 'attach') list.push(op.attachment);
+    else if (op.type === 'detach') list.splice(list.indexOf(op.target), 1);
+  }
+  return list;
+}
+
+function placeOrRemoveExtra(p: Point) {
+  const list = currentAttachments();
+  const hit = list.findLast((a) => Math.hypot(a.x - p.x, a.y - p.y) < 35 * a.scale);
+  if (hit) {
+    ops.push({ type: 'detach', target: hit });
+  } else if (list.length >= MAX_ATTACHMENTS) {
+    showToast(`That's a lot of extras! The limit is ${MAX_ATTACHMENTS}.`, true);
+    return;
+  } else {
+    ops.push({
+      type: 'attach',
+      attachment: { kind: state.extra, x: p.x, y: p.y, scale: EXTRA_SCALES[state.sizeIndex], color: state.color },
+    });
+  }
+  renderMarkers();
+}
+
+function renderMarkers() {
+  const pxPerUnit = paper.getBoundingClientRect().width / paper.width;
+  markers.replaceChildren(
+    ...currentAttachments().map((a) => {
+      const el = document.createElement('span');
+      el.textContent = EXTRA_ICONS[a.kind];
+      el.style.left = `${(a.x / paper.width) * 100}%`;
+      el.style.top = `${(a.y / paper.height) * 100}%`;
+      el.style.fontSize = `${Math.max(14, 70 * a.scale * pxPerUnit)}px`;
+      return el;
+    }),
+  );
+}
+addEventListener('resize', renderMarkers);
 
 // --- submit --------------------------------------------------------------
 
@@ -208,13 +385,20 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
   const exported = exportDrawing(paper, {
     mirror: state.kind === 'swimmer' && state.facingLeft,
     paperFill: document.querySelector<HTMLInputElement>('#paper-fill')!.checked,
+    attachments: currentAttachments(),
   });
   if (!exported) {
     showToast('Draw something first!', true);
     return;
   }
   const artist = artistInput.value.trim();
-  const payload = { type: state.kind, name: nameInput.value, artist, image: exported.dataUrl };
+  const payload = {
+    type: state.kind,
+    name: nameInput.value,
+    artist,
+    image: exported.dataUrl,
+    attachments: exported.attachments,
+  };
 
   sendButton.disabled = true;
   try {
@@ -229,7 +413,7 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
     } catch {}
     const drawing = await submitDrawing(payload);
     showToast(`Splash! ${drawing.name} is in the tank.`);
-    strokes.length = 0;
+    ops.length = 0;
     nameInput.value = '';
     redraw();
   } catch (err) {
@@ -258,6 +442,11 @@ async function loadForEditing(id: string) {
     x: Math.round((paper.width - image.width) / 2),
     y: Math.round((paper.height - image.height) / 2),
   };
+  baseAttachments = (drawing.attachments ?? []).map((a) => ({
+    ...a,
+    x: base!.x + a.x * image.width,
+    y: base!.y + a.y * image.height,
+  }));
   setKind(drawing.type);
   nameInput.value = drawing.name;
   artistInput.value = drawing.artist;
@@ -270,6 +459,13 @@ async function loadForEditing(id: string) {
       : `Editing ${drawing.name}.`;
   redraw();
 }
+
+pickColor(state.color);
+press(sizeButtons, (b) => b === sizeButtons[state.sizeIndex]);
+press(materialButtons, (b) => b === materialButtons[0]);
+press(extraButtons, (b) => b === extraButtons[0]);
+setTool('brush');
+renderGuide();
 
 const editId = new URLSearchParams(location.search).get('edit');
 if (editId) {
