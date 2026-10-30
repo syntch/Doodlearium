@@ -37,6 +37,8 @@ const emptyMessage = new Text({
 app.stage.addChild(scene.back, creatureLayer, scene.front, labelLayer, emptyMessage);
 
 const entries = new Map<string, Entry>();
+/** Old versions of edited drawings, fading out while the new version fades in. */
+const retiring: Entry[] = [];
 const loading = new Set<string>();
 const labels: Label[] = [];
 let nextRandomLabel = 12;
@@ -86,6 +88,23 @@ function removeDrawing(id: string) {
   if (entry) entry.removing = true;
 }
 
+async function replaceDrawing(drawing: Drawing) {
+  const old = entries.get(drawing.id);
+  if (old) {
+    entries.delete(drawing.id);
+    old.removing = true;
+    retiring.push(old);
+  }
+  await addDrawing(drawing, false);
+  const updated = entries.get(drawing.id);
+  if (updated) showLabel(updated, 6);
+}
+
+function destroyEntry({ creature }: Entry) {
+  creature.view.destroy({ children: true });
+  void Assets.unload(imageUrl(creature.drawing));
+}
+
 /** Keeps only the newest N of the drawing's type in the tank. */
 function enforceCap(drawing: Drawing) {
   const sameType = [...entries.values()]
@@ -102,7 +121,10 @@ async function sync() {
   const newestFirst = [...drawings].sort((a, b) => b.createdAt - a.createdAt);
   const counts = { swimmer: 0, plant: 0, decor: 0 };
   for (const d of newestFirst) {
-    if (counts[d.type]++ < CAPS[d.type]) void addDrawing(d, false);
+    if (counts[d.type]++ >= CAPS[d.type]) continue;
+    const shown = entries.get(d.id)?.creature.drawing;
+    if (shown && shown.updatedAt !== d.updatedAt) void replaceDrawing(d);
+    else void addDrawing(d, false);
   }
 }
 
@@ -133,7 +155,7 @@ function updateLabels(dt: number) {
     const { x, y } = label.entry.creature.labelAnchor();
     label.text.position.set(x, Math.max(label.text.height + 4, y));
     label.text.alpha = Math.min(1, label.remaining, label.entry.creature.view.alpha);
-    if (label.remaining <= 0 || !entries.has(label.entry.creature.drawing.id)) {
+    if (label.remaining <= 0 || entries.get(label.entry.creature.drawing.id) !== label.entry) {
       label.text.destroy();
       labels.splice(i, 1);
     }
@@ -158,12 +180,21 @@ app.ticker.add((ticker) => {
     entry.fade = Math.max(0, Math.min(1, entry.fade + (entry.removing ? -dt : dt) / FADE_SECONDS));
     creature.view.alpha = entry.fade;
     if (entry.removing && entry.fade === 0) {
-      creature.view.destroy({ children: true });
+      destroyEntry(entry);
       entries.delete(id);
-      void Assets.unload(imageUrl(creature.drawing));
       continue;
     }
     creature.update(dt, world);
+  }
+  for (let i = retiring.length - 1; i >= 0; i--) {
+    const entry = retiring[i];
+    entry.fade = Math.max(0, entry.fade - dt / FADE_SECONDS);
+    entry.creature.view.alpha = entry.fade;
+    entry.creature.update(dt, world);
+    if (entry.fade === 0) {
+      destroyEntry(entry);
+      retiring.splice(i, 1);
+    }
   }
 
   updateLabels(dt);
@@ -173,6 +204,7 @@ app.ticker.add((ticker) => {
 connectLive(
   (msg) => {
     if (msg.type === 'drawing:added') void addDrawing(msg.drawing, true);
+    else if (msg.type === 'drawing:updated') void replaceDrawing(msg.drawing);
     else removeDrawing(msg.id);
   },
   () => void sync().catch((err) => console.warn('Sync failed', err)),

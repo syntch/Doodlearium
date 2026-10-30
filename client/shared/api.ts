@@ -16,6 +16,16 @@ export async function submitDrawing(drawing: NewDrawing): Promise<Drawing> {
   return res.json();
 }
 
+export async function updateDrawing(id: string, drawing: NewDrawing): Promise<Drawing> {
+  const res = await fetch(`/api/drawings/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(drawing),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `Save failed (${res.status})`);
+  return res.json();
+}
+
 export async function deleteDrawing(id: string) {
   const res = await fetch(`/api/drawings/${id}`, { method: 'DELETE' });
   if (!res.ok && res.status !== 404) throw new Error(`Delete failed (${res.status})`);

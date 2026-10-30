@@ -32,13 +32,21 @@ function save() {
 
 export const listDrawings = () => drawings;
 
-export async function addDrawing(
-  meta: { type: CreatureType; name: string; artist: string; width: number; height: number },
-  png: Buffer,
-): Promise<Drawing> {
+type DrawingMeta = { type: CreatureType; name: string; artist: string; width: number; height: number };
+
+export async function addDrawing(meta: DrawingMeta, png: Buffer): Promise<Drawing> {
   const drawing: Drawing = { id: randomUUID(), createdAt: Date.now(), ...meta };
   await writeFile(join(DRAWINGS_DIR, `${drawing.id}.png`), png);
   drawings.push(drawing);
+  await save();
+  return drawing;
+}
+
+export async function updateDrawing(id: string, meta: DrawingMeta, png: Buffer): Promise<Drawing | null> {
+  const drawing = drawings.find((d) => d.id === id);
+  if (!drawing) return null;
+  await writeFile(join(DRAWINGS_DIR, `${id}.png`), png);
+  Object.assign(drawing, meta, { updatedAt: Date.now() });
   await save();
   return drawing;
 }

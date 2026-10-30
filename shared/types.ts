@@ -8,6 +8,8 @@ export interface Drawing {
   name: string;
   artist: string;
   createdAt: number;
+  /** Set when the drawing has been edited; also busts the browser's image cache. */
+  updatedAt?: number;
   width: number;
   height: number;
 }
@@ -22,6 +24,9 @@ export interface NewDrawing {
 
 export type ServerMessage =
   | { type: 'drawing:added'; drawing: Drawing }
+  | { type: 'drawing:updated'; drawing: Drawing }
   | { type: 'drawing:removed'; id: string };
 
-export const imageUrl = (d: Pick<Drawing, 'id'>) => `/drawings/${d.id}.png`;
+/** Images are served with a long cache lifetime, so the version query makes edits show up. */
+export const imageUrl = (d: Pick<Drawing, 'id' | 'createdAt' | 'updatedAt'>) =>
+  `/drawings/${d.id}.png?v=${d.updatedAt ?? d.createdAt}`;

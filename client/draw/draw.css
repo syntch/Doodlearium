@@ -79,3 +79,12 @@
 .fill { color: var(--muted); font-size: 0.9rem; }
 .toast { min-height: 1.4em; margin: 0; color: var(--accent); font-weight: bold; text-align: center; }
 .toast.error { color: var(--danger); }
+.editing {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--panel);
+  border-left: 4px solid var(--accent);
+  max-width: 760px;
+  text-align: center;
+}

@@ -1,6 +1,6 @@
 import express, { Router } from 'express';
 import { CREATURE_TYPES, type CreatureType } from '../shared/types.ts';
-import { addDrawing, listDrawings, removeDrawing } from './store.ts';
+import { addDrawing, listDrawings, removeDrawing, updateDrawing } from './store.ts';
 import { broadcast } from './ws.ts';
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -16,42 +16,54 @@ api.get('/drawings', (_req, res) => {
   res.json(listDrawings());
 });
 
-api.post('/drawings', async (req, res) => {
-  const { type, name, artist, image } = req.body ?? {};
-  if (!CREATURE_TYPES.includes(type)) {
-    res.status(400).json({ error: `type must be one of ${CREATURE_TYPES.join(', ')}` });
-    return;
-  }
+/** Validates a submitted drawing body; returns an error message or the cleaned metadata and PNG bytes. */
+function parseDrawing(body: any) {
+  const { type, name, artist, image } = body ?? {};
+  if (!CREATURE_TYPES.includes(type)) return { error: `type must be one of ${CREATURE_TYPES.join(', ')}` };
   const prefix = 'data:image/png;base64,';
-  if (typeof image !== 'string' || !image.startsWith(prefix)) {
-    res.status(400).json({ error: 'image must be a PNG data URL' });
-    return;
-  }
+  if (typeof image !== 'string' || !image.startsWith(prefix)) return { error: 'image must be a PNG data URL' };
   const png = Buffer.from(image.slice(prefix.length), 'base64');
-  if (png.length < 24 || !png.subarray(0, 8).equals(PNG_SIGNATURE)) {
-    res.status(400).json({ error: 'image is not a valid PNG' });
-    return;
-  }
+  if (png.length < 24 || !png.subarray(0, 8).equals(PNG_SIGNATURE)) return { error: 'image is not a valid PNG' };
   // IHDR chunk: width and height are big-endian uint32s at bytes 16 and 20.
   const width = png.readUInt32BE(16);
   const height = png.readUInt32BE(20);
   if (!width || !height || width > MAX_DIMENSION || height > MAX_DIMENSION) {
-    res.status(400).json({ error: `image must be at most ${MAX_DIMENSION}px on each side` });
+    return { error: `image must be at most ${MAX_DIMENSION}px on each side` };
+  }
+  const meta = {
+    type: type as CreatureType,
+    name: cleanText(name, 'Mystery'),
+    artist: cleanText(artist, 'Anonymous'),
+    width,
+    height,
+  };
+  return { meta, png };
+}
+
+api.post('/drawings', async (req, res) => {
+  const parsed = parseDrawing(req.body);
+  if ('error' in parsed) {
+    res.status(400).json({ error: parsed.error });
     return;
   }
-
-  const drawing = await addDrawing(
-    {
-      type: type as CreatureType,
-      name: cleanText(name, 'Mystery'),
-      artist: cleanText(artist, 'Anonymous'),
-      width,
-      height,
-    },
-    png,
-  );
+  const drawing = await addDrawing(parsed.meta, parsed.png);
   broadcast({ type: 'drawing:added', drawing });
   res.status(201).json(drawing);
+});
+
+api.put('/drawings/:id', async (req, res) => {
+  const parsed = parseDrawing(req.body);
+  if ('error' in parsed) {
+    res.status(400).json({ error: parsed.error });
+    return;
+  }
+  const drawing = await updateDrawing(req.params.id, parsed.meta, parsed.png);
+  if (!drawing) {
+    res.status(404).json({ error: 'not found' });
+    return;
+  }
+  broadcast({ type: 'drawing:updated', drawing });
+  res.json(drawing);
 });
 
 api.delete('/drawings/:id', async (req, res) => {

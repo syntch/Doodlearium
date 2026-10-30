@@ -14,7 +14,13 @@
       .card img { max-width: 90%; max-height: 90%; }
       .card .name { font-weight: bold; overflow-wrap: anywhere; }
       .card .meta { color: var(--muted); font-size: 0.85rem; }
-      .card button { align-self: flex-start; padding: 4px 10px; font-size: 0.85rem; }
+      .card .actions { display: flex; gap: 8px; }
+      .card .actions > * { padding: 4px 10px; font-size: 0.85rem; }
+      .card a.button {
+        background: var(--panel-2); border: 2px solid transparent; border-radius: 10px;
+        color: var(--text); text-decoration: none;
+      }
+      .card a.button:hover { border-color: var(--accent); }
       .card button:hover { border-color: var(--danger); }
       .empty { color: var(--muted); }
     </style>

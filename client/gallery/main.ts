@@ -68,22 +68,32 @@ function card(d: Drawing) {
     }
   };
 
-  el.append(art, name, meta, remove);
+  const edit = document.createElement('a');
+  edit.className = 'button';
+  edit.href = `/draw/?edit=${d.id}`;
+  edit.textContent = '✏️ Edit';
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+  actions.append(edit, remove);
+
+  el.append(art, name, meta, actions);
   return el;
 }
 
+async function refresh() {
+  drawings = await fetchDrawings();
+  render();
+}
+
+void refresh();
 connectLive(
   (msg) => {
-    if (msg.type === 'drawing:added') {
-      if (!drawings.some((d) => d.id === msg.drawing.id)) drawings.push(msg.drawing);
+    if (msg.type === 'drawing:added' || msg.type === 'drawing:updated') {
+      drawings = [...drawings.filter((d) => d.id !== msg.drawing.id), msg.drawing];
     } else {
       drawings = drawings.filter((d) => d.id !== msg.id);
     }
     render();
   },
-  async () => {
-    drawings = await fetchDrawings();
-    render();
-  },
+  () => void refresh(),
 );
-render();

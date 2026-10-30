@@ -15,7 +15,7 @@ The server prints its address on your network, for example `http://192.168.1.20:
 | --- | --- |
 | `/tank/` | The aquarium. Double-click for full screen. The cursor hides itself, and the tank dims at night. |
 | `/draw/` | Draw a fish, plant or decoration, then add it to the tank. It drops in live. |
-| `/gallery/` | Every drawing ever made, with a remove button. |
+| `/gallery/` | Every drawing ever made. **Edit** opens one in the draw page, for example to fix a fish that swims backwards. **Remove** deletes it. |
 
 For development, `npm run dev` runs the API on port 3000 and Vite with hot reload on http://localhost:5173.
 

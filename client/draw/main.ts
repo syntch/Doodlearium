@@ -1,5 +1,5 @@
-import type { CreatureType } from '../../shared/types.ts';
-import { submitDrawing } from '../shared/api.ts';
+import { imageUrl, type CreatureType, type Drawing } from '../../shared/types.ts';
+import { fetchDrawings, submitDrawing, updateDrawing } from '../shared/api.ts';
 import { exportDrawing } from './export.ts';
 
 const COLORS = [
@@ -34,6 +34,9 @@ const state = {
 };
 const strokes: Stroke[] = [];
 let current: Stroke | null = null;
+/** When editing an existing drawing: the drawing, and its image drawn underneath the new strokes. */
+let editing: Drawing | null = null;
+let base: { image: HTMLImageElement; x: number; y: number } | null = null;
 
 try {
   artistInput.value = localStorage.getItem('doodlearium.artist') ?? '';
@@ -91,14 +94,15 @@ facingButton.onclick = () => {
   renderGuide();
 };
 
+function setKind(kind: CreatureType) {
+  state.kind = kind;
+  document
+    .querySelectorAll<HTMLButtonElement>('[data-kind]')
+    .forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.kind === kind)));
+  renderGuide();
+}
 document.querySelectorAll<HTMLButtonElement>('[data-kind]').forEach((b) => {
-  b.onclick = () => {
-    state.kind = b.dataset.kind as CreatureType;
-    document
-      .querySelectorAll('[data-kind]')
-      .forEach((other) => other.setAttribute('aria-pressed', String(other === b)));
-    renderGuide();
-  };
+  b.onclick = () => setKind(b.dataset.kind as CreatureType);
 });
 
 const PLACEHOLDERS: Record<CreatureType, string> = {
@@ -120,8 +124,9 @@ renderGuide();
 
 document.querySelector<HTMLButtonElement>('#undo')!.onclick = undo;
 document.querySelector<HTMLButtonElement>('#clear')!.onclick = () => {
-  if (strokes.length && !confirm('Clear the whole drawing?')) return;
+  if ((strokes.length || base) && !confirm('Clear the whole drawing?')) return;
   strokes.length = 0;
+  base = null;
   redraw();
 };
 addEventListener('keydown', (e) => {
@@ -184,6 +189,7 @@ function drawSegment(stroke: Stroke, i: number) {
 function redraw() {
   ctx.globalCompositeOperation = 'source-over';
   ctx.clearRect(0, 0, paper.width, paper.height);
+  if (base) ctx.drawImage(base.image, base.x, base.y);
   for (const stroke of strokes) stroke.points.forEach((_, i) => drawSegment(stroke, i));
 }
 
@@ -208,18 +214,20 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
     return;
   }
   const artist = artistInput.value.trim();
-  try {
-    localStorage.setItem('doodlearium.artist', artist);
-  } catch {}
+  const payload = { type: state.kind, name: nameInput.value, artist, image: exported.dataUrl };
 
   sendButton.disabled = true;
   try {
-    const drawing = await submitDrawing({
-      type: state.kind,
-      name: nameInput.value,
-      artist,
-      image: exported.dataUrl,
-    });
+    if (editing) {
+      const drawing = await updateDrawing(editing.id, payload);
+      showToast(`Saved! ${drawing.name} is updated in the tank.`);
+      setTimeout(() => location.assign('/gallery/'), 1200);
+      return;
+    }
+    try {
+      localStorage.setItem('doodlearium.artist', artist);
+    } catch {}
+    const drawing = await submitDrawing(payload);
     showToast(`Splash! ${drawing.name} is in the tank.`);
     strokes.length = 0;
     nameInput.value = '';
@@ -230,3 +238,40 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
     sendButton.disabled = false;
   }
 };
+
+// --- editing an existing drawing (/draw/?edit=<id>) ----------------------
+
+async function loadForEditing(id: string) {
+  const drawing = (await fetchDrawings()).find((d) => d.id === id);
+  if (!drawing) {
+    showToast('That drawing no longer exists.', true);
+    return;
+  }
+  const image = new Image();
+  image.src = imageUrl(drawing);
+  await image.decode();
+
+  editing = drawing;
+  // Stored images are at most 512px, so they fit the 1000x750 paper at their own size.
+  base = {
+    image,
+    x: Math.round((paper.width - image.width) / 2),
+    y: Math.round((paper.height - image.height) / 2),
+  };
+  setKind(drawing.type);
+  nameInput.value = drawing.name;
+  artistInput.value = drawing.artist;
+  sendButton.textContent = 'Save changes 💾';
+  const banner = document.querySelector<HTMLParagraphElement>('#editing')!;
+  banner.hidden = false;
+  banner.textContent =
+    drawing.type === 'swimmer'
+      ? `Editing ${drawing.name}. Swimming backwards? Tap “Facing” so the arrow points the way its head does, then save.`
+      : `Editing ${drawing.name}.`;
+  redraw();
+}
+
+const editId = new URLSearchParams(location.search).get('edit');
+if (editId) {
+  loadForEditing(editId).catch(() => showToast('Could not load that drawing.', true));
+}
