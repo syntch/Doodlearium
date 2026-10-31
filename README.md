@@ -70,7 +70,7 @@ Any part of a drawing can move on its own, on top of the whole-body motion. With
 | 💓 Pulse | hearts, lights |
 | 😉 Blink | eyes |
 
-Pop-out and Flap show an orange line where the part is attached. It's found automatically, but if it's in the wrong place, tap **📍** on the part's chip under the drawing and draw a new line. Moving parts are saved with the drawing (as  beside it) and come back when it's edited.
+Pop-out and Flap show an orange line where the part is attached. It's found automatically, but if it's in the wrong place, tap **📍** on the part's chip under the drawing and draw a new line. Moving parts are saved with the drawing (as `<id>.parts.png` beside it) and come back when it's edited.
 
 ## How the animation works
 
