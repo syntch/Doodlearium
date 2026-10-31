@@ -13,8 +13,8 @@ The server prints its address on your network, for example `http://192.168.1.20:
 
 | Page | What it's for |
 | --- | --- |
-| `/tank/` | The aquarium. Double-click for full screen; click to drop food. The cursor hides itself, and the tank dims at night. **🔇/🔊** (top right, or the S key) turns on soft sounds. See **Life in the tank** below for what goes on, and how to preview it. |
-| `/draw/` | Pick how it moves (see **Motion styles** below), draw it, then add it to the tank. It drops in live. **▶ Preview** shows it moving in a little tank while you draw (tap the preview to feed it). If the drawing's shape suits another style, a suggestion pops up. Tools: brush (with rainbow paint, and **invisible** paint that makes see-through holes, shown as a checkerboard), eraser, a **fill** bucket with materials (brick, stone, wood, bark, scales, stripes, dots, rainbow), **mirror** drawing, **⬚ Select** (paint over a part, or draw a loop around it, then drag it to move it, or make it bigger, smaller, turned, flipped, copied or deleted; extras on it come along), and **extras**. Extras are animated things pinned to a drawing: bubbles, sparkles, a glow, a googly eye, a waving flag and a propeller. **📷 Photo** turns a photo of a paper drawing into a drawing, removing the paper. **🌙 Night creature** makes it only come out after dark. |
+| `/tank/` | The aquarium. Double-click for full screen; click to drop food. Move the mouse (or tap) and buttons appear: **✏️ Draw** and **🖼️ Gallery** to get around, **⚙️** for the tank controls (see below) and **🔇/🔊** (or the S key) for soft sounds. They hide again, with the cursor, when left alone. Point at a creature (or tap it) to see its name, who drew it and what it's like. The tank dims at night. See **Life in the tank** below for what goes on. |
+| `/draw/` | Pick how it moves (see **Motion styles** below), draw it, then add it to the tank. It drops in live. **▶ Preview** shows it moving in a little tank while you draw (tap the preview to feed it). If the drawing's shape suits another style, a suggestion pops up. Tools: brush (with rainbow paint, and **invisible** paint that makes see-through holes, shown as a checkerboard), eraser, a **fill** bucket with materials (brick, stone, wood, bark, scales, stripes, dots, rainbow; **Turn** points scales up, down, left or right, and runs wood, bark, brick, stripes and rainbow across or up and down), **💡 Glow paint** (glows softly, brightest at night) and **🟣 Blacklight paint** (looks ordinary until the tank's blacklight goes on) for the brush and fill, **mirror** drawing, **⬚ Select** (paint over a part, or draw a loop around it, then drag it to move it, or make it bigger, smaller, turned, flipped, copied or deleted; extras on it come along), and **extras**. Extras are animated things pinned to a drawing: bubbles, sparkles, a glow, a googly eye, a waving flag and a propeller. The preview's **🟣 Blacklight** button shows blacklight paint glowing. **📷 Photo** turns a photo of a paper drawing into a drawing, removing the paper. **🌙 Night creature** makes it only come out after dark. |
 | `/gallery/` | Every drawing ever made, babies included (**🐣 Babies** shows just those). **Edit** opens one in the draw page, for example to fix a fish that swims backwards. **Remove** deletes it. |
 
 Every page has a **🍤 Feed** button that drops food into every open tank.
@@ -24,13 +24,17 @@ Every page has a **🍤 Feed** button that drops food into every open tank.
 - **Personalities.** Curious fish sometimes swim right up to the glass. Shy ones keep to the back and dart away from neighbours. Some of the bigger fish and eels are **hunters**: now and then one prowls after a smaller fish, and small fish scatter and hide behind the nearest plant or decoration. Nobody ever gets eaten. Every few minutes a few fish swim together as a school.
 - **Feeding.** Fish race for food, look a little plumper for a while after eating, and a fish that's had its fill puffs out a little heart.
 - **Sleepy nights.** After dark, day creatures drift down beside the plants (or to the bottom) and doze, swimming slowly with their blinking eyes closed, while night creatures come out. Food still wakes them up.
-- **Eggs and babies.** When two 🐟 Fish have schooled together, they sometimes lay an egg. It sinks to the sand, and you can see the baby curled up inside. It wobbles more and more, then hatches after about 3 minutes. The baby takes after both parents: the front half from one, the tail from the other, their colours blending in the middle. Its name is a mix of theirs, for example Bubbles + Nemo = Bubbmo. Babies hatch small and grow over their first week. Eggs are rare, at most one every 6 hours however many tanks are open. Change that with the `EGG_GAP_MINUTES` setting (and the hatching time with `HATCH_SECONDS`) when starting the server, for example `EGG_GAP_MINUTES=120 npm start`. The tank shows the newest 6 babies, so they never crowd out the family's own drawings.
-- **Documentary mode.** Every 5 to 10 minutes the camera slowly zooms in on one creature and follows it for half a minute, with a name card: who drew it, how long it's been in the tank and what it's like.
+- **Eggs and babies.** When two 🐟 Fish have schooled together, they sometimes lay an egg. It sinks to the sand, and you can see the baby curled up inside. It wobbles more and more, then hatches after about 3 minutes. The baby takes after both parents: the front half from one, the tail from the other, their colours blending in the middle. It gets both parents' extras (googly eyes, flags, sparkles...), moving parts and glowing paint too. Its name is a mix of theirs, for example Bubbles + Nemo = Bubbmo. Babies hatch small and grow over their first week. Eggs are rare, at most one every 6 hours however many tanks are open. Change that with the `EGG_GAP_MINUTES` setting (and the hatching time with `HATCH_SECONDS`) when starting the server, for example `EGG_GAP_MINUTES=120 npm start`. The tank shows the newest 6 babies, so they never crowd out the family's own drawings.
+- **Documentary mode.** Every 5 to 10 minutes the camera slowly zooms in on one creature and follows it for half a minute, with a name card: who drew it, how long it's been in the tank and what it's like. The star swims up to the front, the rest of the tank dims around it like a spotlight, and it shows off: loop-the-loops, dashes, happy wiggles and streams of bubbles (puffers puff up, crawlers hop).
 - **Visitors.** Rarely, something passes by: a whale far beyond the back wall, a diver, or (around Halloween) a friendly ghost.
 - **Currents.** Now and then a gentle current sweeps through. Plants lean, bubbles and food drift, and fish get carried along a little.
 - **Seasons**, by the date: snow in winter, glowing jack-o'-lanterns and spooky light around Halloween, twinkling lights in December, and hearts for Valentine's.
 
-To try these out on the tank page:
+### Tank controls (⚙️)
+
+The ⚙️ button on the tank opens a menu that works with a mouse or a finger, so a phone or tablet can run it too. It changes the **time of day**, the **holiday** decorations, turns the **blacklight** on or off, and makes things happen: a documentary, feeding, a school of fish, a current, puffers puffing, an egg (any time, skipping the usual wait) and visitors. With **📺 Change every open tank** ticked (the default), whatever you pick happens on every screen showing the tank, so you can open the tank on your phone and control the TV. Time, holiday and blacklight go back to normal when the tank page reloads.
+
+To try things out by address instead:
 
 | Add to the address | What it does |
 | --- | --- |
@@ -39,6 +43,7 @@ To try these out on the tank page:
 | `?doc` | Starts documentary mode after a few seconds (or press D any time) |
 | `?event=whale` | Brings a visitor straight away: `whale`, `diver` or `ghost` (or press V for a random one) |
 | `?events=ocean,spooky` | Picks which packs of visitors can appear |
+| `?blacklight` | Starts with the blacklight on (or press B any time) |
 
 Combine them with `&`, for example `/tank/?hour=22&date=2026-10-31`.
 
@@ -106,7 +111,8 @@ The motion style picks the behaviour (`client/tank/creatures.ts`):
 - **Decorations** (`behaviors/decor.ts`): sit still on the sand.
 - **Puffers** are swimmers whose mesh can round out into a disc (`shape` in `behaviors/swimmer.ts`), with spikes drawn behind it.
 - **Eggs** (`babies.ts`, `behaviors/egg.ts`): the tank blends the parents' pictures and asks the server for an egg (`POST /api/eggs`). The server saves the baby as a drawing with `parents` and `hatchAt`, and every tank shows it as an egg until then.
-- **The rest of tank life**: `documentary.ts`, `seasons.ts`, `events.ts` and `sounds.ts` (made on the fly, no sound files).
+- **Glowing paint** (`glow.ts`): the draw page saves which pixels glow in a second image (`<id>.glow.png`: red for glow paint, green for blacklight paint). The tank lays a sharp and a blurred copy of those pixels over the creature, sharing its mesh so they bend with it, drawn above the night tint so they shine in the dark.
+- **The rest of tank life**: `documentary.ts`, `seasons.ts`, `events.ts` and `sounds.ts` (made on the fly, no sound files). The ⚙️ menu sends its commands through the server (`POST /api/tank`) to every open tank.
 - **Moving parts** (`parts.ts`): drawings with parts are split when loaded into a body and one piece per part. Each piece animates around its hinge or middle and rides the body's bend, like extras do.
 
 Random depth makes far-away things smaller and bluer. The tank shows the newest 40 swimmers, 10 crawlers, 24 plants, 14 decorations and 6 babies; older ones stay in the gallery.

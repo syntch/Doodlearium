@@ -31,6 +31,7 @@ export function exportDrawing(
     paperFill,
     attachments,
     holes,
+    glow,
     parts = [],
   }: {
     mirror: boolean;
@@ -39,6 +40,8 @@ export function exportDrawing(
     /** Areas painted invisible, which the white fill must leave see-through. */
     holes?: HTMLCanvasElement;
     parts?: PlacedPart[];
+    /** Where glow paint and blacklight paint are. */
+    glow?: { glow: HTMLCanvasElement; uv: HTMLCanvasElement };
   },
 ): {
   dataUrl: string;
@@ -47,6 +50,7 @@ export function exportDrawing(
   attachments: Attachment[];
   parts: Part[];
   partsImage?: string;
+  glowImage?: string;
 } | null {
   const bounds = inkBounds(source);
   if (!bounds) return null;
@@ -112,6 +116,32 @@ export function exportDrawing(
     mctx.putImageData(result, 0, 0);
     partsImage = marks.toDataURL('image/png');
   }
+  let glowImage: string | undefined;
+  if (glow) {
+    // One image: red marks glow paint, green blacklight paint.
+    const marks = Object.assign(document.createElement('canvas'), { width, height });
+    const mctx = marks.getContext('2d', { willReadFrequently: true })!;
+    const read = (canvas: HTMLCanvasElement) => {
+      mctx.clearRect(0, 0, width, height);
+      place(mctx, canvas);
+      return mctx.getImageData(0, 0, width, height).data;
+    };
+    const g = read(glow.glow);
+    const u = read(glow.uv);
+    const result = mctx.createImageData(width, height);
+    let any = false;
+    for (let i = 0; i < g.length; i += 4) {
+      if (g[i + 3] < 8 && u[i + 3] < 8) continue;
+      result.data[i] = g[i + 3];
+      result.data[i + 1] = u[i + 3];
+      result.data[i + 3] = 255;
+      any = true;
+    }
+    if (any) {
+      mctx.putImageData(result, 0, 0);
+      glowImage = marks.toDataURL('image/png');
+    }
+  }
   return {
     dataUrl: out.toDataURL('image/png'),
     width,
@@ -119,6 +149,7 @@ export function exportDrawing(
     attachments: exportedAttachments,
     parts: exportedParts,
     partsImage,
+    glowImage,
   };
 }
 

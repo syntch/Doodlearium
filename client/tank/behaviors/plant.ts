@@ -50,6 +50,10 @@ export class Plant implements Creature {
     this.layout(world);
   }
 
+  get body() {
+    return this.mesh;
+  }
+
   layout(world: World) {
     const byHeight = (world.height * 0.32 * this.size * depthScale(this.z)) / this.texH;
     const byWidth = (world.width * 0.22) / this.texW;

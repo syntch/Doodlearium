@@ -102,6 +102,7 @@
   font-size: 0.75rem;
 }
 .materials img { width: 40px; height: 40px; border-radius: 6px; image-rendering: pixelated; }
+.materials .turn .arrow { display: block; width: 40px; height: 40px; line-height: 40px; font-size: 1.6rem; }
 /* See-through: the usual checkerboard. */
 .colors .clear,
 .holes {
@@ -119,6 +120,20 @@
   -webkit-mask: var(--holes) 0 0 / 100% 100% no-repeat;
   mask: var(--holes) 0 0 / 100% 100% no-repeat;
 }
+/* Glow paint shows as a soft shimmering halo of its own colour; blacklight paint with a violet edge. */
+.glow-view {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  filter: blur(5px) saturate(1.8) brightness(1.15);
+  animation: shimmer 1.6s ease-in-out infinite alternate;
+}
+.glow-view.uv { filter: blur(4px) drop-shadow(0 0 5px #b14dff) drop-shadow(0 0 3px #b14dff); }
+@keyframes shimmer { from { opacity: 0.45; } to { opacity: 0.95; } }
+.paint-kind { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.paint-kind button { font-size: 0.85rem; padding: 4px 10px; }
 .brush-cursor {
   position: absolute;
   pointer-events: none;
@@ -133,6 +148,7 @@
 .tools .divider { width: 1px; align-self: stretch; background: rgba(255, 255, 255, 0.15); }
 .hint { margin: 0; min-height: 1.2em; color: var(--muted); font-size: 0.9rem; text-align: center; }
 .markers { position: absolute; inset: 0; pointer-events: none; }
+svg.icon { width: 1.05em; height: 1.05em; vertical-align: -0.18em; }
 .markers span {
   position: absolute;
   transform: translate(-50%, -50%);
@@ -188,7 +204,9 @@
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
   background: #1d5a80;
 }
+.preview { position: relative; }
 .preview canvas { display: block; width: 100%; height: 100%; cursor: pointer; }
+.preview-blacklight { position: absolute; right: 8px; top: 8px; z-index: 1; padding: 3px 10px; font-size: 0.8rem; }
 @media (max-width: 760px) {
   .workspace { flex-direction: column; align-items: center; }
   .workspace.previewing .stage { width: 100%; }

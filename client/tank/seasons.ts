@@ -49,10 +49,18 @@ export class Seasons {
   private flakes: Flake[] = [];
   private heartIn = 2;
 
-  constructor(readonly season: Season = seasonOf()) {
+  constructor(public season: Season = seasonOf()) {
     this.back.addChild(this.pumpkins);
     this.faces.blendMode = 'add';
     this.glow.addChild(this.spooky, this.snowGfx, this.faces, this.lightsGfx);
+  }
+
+  /** Swaps to another season's decorations (from the ⚙️ menu). */
+  set(season: Season, world: World) {
+    this.season = season;
+    for (const g of [this.faces, this.snowGfx, this.lightsGfx, this.spooky]) g.clear();
+    this.flakes = [];
+    this.layout(world);
   }
 
   layout(world: World) {

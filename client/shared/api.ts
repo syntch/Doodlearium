@@ -1,4 +1,4 @@
-import type { Drawing, NewDrawing, NewEgg, ServerMessage } from '../../shared/types.ts';
+import type { Drawing, NewDrawing, NewEgg, ServerMessage, TankCommand, TankCommandValue } from '../../shared/types.ts';
 
 export async function fetchDrawings(): Promise<Drawing[]> {
   const res = await fetch('/api/drawings');
@@ -26,12 +26,12 @@ export async function updateDrawing(id: string, drawing: NewDrawing): Promise<Dr
   return res.json();
 }
 
-/** Asks the server to lay an egg; resolves to false if it isn't time for one yet. */
-export async function layEgg(egg: NewEgg): Promise<boolean> {
+/** Asks the server to lay an egg; resolves to false if it isn't time for one yet (unless now is set). */
+export async function layEgg(egg: NewEgg, now = false): Promise<boolean> {
   const res = await fetch('/api/eggs', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(egg),
+    body: JSON.stringify({ ...egg, now }),
   });
   return res.ok;
 }
@@ -44,6 +44,16 @@ export async function feedFish(x?: number): Promise<boolean> {
     body: JSON.stringify({ x }),
   });
   return res.ok;
+}
+
+/** Sends a ⚙️ menu command to every open tank. */
+export async function sendTankCommand(command: TankCommand, value: TankCommandValue = null) {
+  const res = await fetch('/api/tank', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ command, value }),
+  });
+  if (!res.ok) throw new Error(`Command failed (${res.status})`);
 }
 
 /** Turns a button into a Feed button with a little "Fed!" confirmation. */

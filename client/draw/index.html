@@ -38,13 +38,17 @@
         <div class="stage">
           <div class="holes" id="holes" aria-hidden="true"></div>
           <canvas id="paper" width="1000" height="750"></canvas>
+          <canvas class="glow-view" id="glow-view" width="1000" height="750" aria-hidden="true"></canvas>
+          <canvas class="glow-view uv" id="uv-view" width="1000" height="750" aria-hidden="true"></canvas>
           <div class="guide" id="guide" aria-hidden="true"></div>
           <canvas class="selection-overlay" id="parts-overlay" width="1000" height="750" aria-hidden="true"></canvas>
           <canvas class="selection-overlay" id="selection-overlay" width="1000" height="750" aria-hidden="true"></canvas>
           <div class="markers" id="markers" aria-hidden="true"></div>
           <div class="brush-cursor" id="brush-cursor" hidden></div>
         </div>
-        <div class="preview" id="preview" hidden aria-label="Preview of how it moves in the tank"></div>
+        <div class="preview" id="preview" hidden aria-label="Preview of how it moves in the tank">
+          <button class="preview-blacklight" id="preview-blacklight" aria-pressed="false" title="See blacklight paint glow">🟣 Blacklight</button>
+        </div>
       </div>
 
       <div class="tools" role="group" aria-label="Tool">
@@ -69,6 +73,11 @@
         <button id="photo-done">Done</button>
       </div>
       <div class="colors" id="colors"></div>
+      <div class="paint-kind" id="paint-kind" role="group" aria-label="Kind of paint">
+        <button data-paint="normal" aria-pressed="true" title="Ordinary paint">🎨 Normal paint</button>
+        <button data-paint="glow" aria-pressed="false" title="Glows softly, brightest at night">💡 Glow paint</button>
+        <button data-paint="uv" aria-pressed="false" title="Looks normal, but glows when the tank's blacklight is on">🟣 Blacklight paint</button>
+      </div>
       <div class="options">
         <div class="sizes" id="sizes"></div>
         <div class="materials" id="materials"></div>

@@ -13,6 +13,39 @@ export const MATERIAL_LABELS: Record<Material, string> = {
   rainbow: 'Rainbow',
 };
 
+/**
+ * Which ways a material can be turned: quarter turns clockwise, with an arrow for the button. Scales
+ * point the way their rounded edges do; the others run along (↔) or up and down (↕).
+ */
+export const MATERIAL_TURNS: Partial<Record<Material, { turn: number; label: string; title: string }[]>> = {
+  scales: [
+    { turn: 0, label: '⬇', title: 'Scales point down' },
+    { turn: 1, label: '⬅', title: 'Scales point left' },
+    { turn: 2, label: '⬆', title: 'Scales point up' },
+    { turn: 3, label: '➡', title: 'Scales point right' },
+  ],
+  wood: [
+    { turn: 0, label: '↔', title: 'Planks run across' },
+    { turn: 1, label: '↕', title: 'Planks run up and down' },
+  ],
+  bark: [
+    { turn: 0, label: '↕', title: 'Grain runs up and down' },
+    { turn: 1, label: '↔', title: 'Grain runs across' },
+  ],
+  brick: [
+    { turn: 0, label: '↔', title: 'Rows run across' },
+    { turn: 1, label: '↕', title: 'Rows run up and down' },
+  ],
+  stripes: [
+    { turn: 0, label: '⟋', title: 'Stripes lean right' },
+    { turn: 1, label: '⟍', title: 'Stripes lean left' },
+  ],
+  rainbow: [
+    { turn: 0, label: '↔', title: 'Bands run across' },
+    { turn: 1, label: '↕', title: 'Bands run up and down' },
+  ],
+};
+
 type RGB = [number, number, number];
 
 /** Every pattern is a seamless tile of this size, painted in canvas coordinates so neighbouring fills line up. */
@@ -138,8 +171,8 @@ const PAINTERS: Record<Material, (x: number, y: number, base: (x: number, y: num
 const tileCache = new Map<string, Uint8ClampedArray>();
 
 /** RGBA pixels of a TILE×TILE material tile in the given colour ('#rrggbb' or 'rainbow'). */
-export function materialTile(material: Material, color: string): Uint8ClampedArray {
-  const key = `${material}:${color}`;
+export function materialTile(material: Material, color: string, turn = 0): Uint8ClampedArray {
+  const key = `${material}:${color}:${turn}`;
   let tile = tileCache.get(key);
   if (tile) return tile;
   const fixed = color === 'rainbow' ? null : hexToRgb(color);
@@ -147,7 +180,9 @@ export function materialTile(material: Material, color: string): Uint8ClampedArr
   tile = new Uint8ClampedArray(TILE * TILE * 4);
   for (let y = 0; y < TILE; y++) {
     for (let x = 0; x < TILE; x++) {
-      const [r, g, b] = PAINTERS[material](x, y, base);
+      // A turned tile reads each pixel from where it was before turning (tiles are square, so it stays seamless).
+      const [sx, sy] = [[x, y], [y, TILE - 1 - x], [TILE - 1 - x, TILE - 1 - y], [TILE - 1 - y, x]][turn & 3];
+      const [r, g, b] = PAINTERS[material](sx, sy, base);
       const i = (y * TILE + x) * 4;
       tile[i] = r;
       tile[i + 1] = g;
@@ -160,10 +195,10 @@ export function materialTile(material: Material, color: string): Uint8ClampedArr
 }
 
 /** A small swatch image of the material, for the picker buttons. */
-export function materialPreview(material: Material, color: string) {
+export function materialPreview(material: Material, color: string, turn = 0) {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = TILE;
-  canvas.getContext('2d')!.putImageData(new ImageData(materialTile(material, color).slice(), TILE, TILE), 0, 0);
+  canvas.getContext('2d')!.putImageData(new ImageData(materialTile(material, color, turn).slice(), TILE, TILE), 0, 0);
   return canvas.toDataURL();
 }
 
@@ -223,7 +258,13 @@ export function floodRegion(image: ImageData, seeds: { x: number; y: number }[])
  * its line drawn over the paint. Colour 'clear' makes the area see-through instead.
  * Returns the region (see floodRegion) so the caller can track see-through parts.
  */
-export function floodFill(ctx: CanvasRenderingContext2D, seeds: { x: number; y: number }[], material: Material, color: string) {
+export function floodFill(
+  ctx: CanvasRenderingContext2D,
+  seeds: { x: number; y: number }[],
+  material: Material,
+  color: string,
+  turn = 0,
+) {
   const { width, height } = ctx.canvas;
   const image = ctx.getImageData(0, 0, width, height);
   const d = image.data;
@@ -235,7 +276,7 @@ export function floodFill(ctx: CanvasRenderingContext2D, seeds: { x: number; y: 
     return mask;
   }
 
-  const tile = materialTile(material, color);
+  const tile = materialTile(material, color, turn);
   for (let i = 0; i < mask.length; i++) {
     if (!mask[i]) continue;
     const x = i % width;

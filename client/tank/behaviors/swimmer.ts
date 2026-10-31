@@ -15,6 +15,10 @@ type Personality = 'curious' | 'shy' | 'easygoing' | 'hunter';
 
 type Spot = { x: number; y: number; z: number };
 
+/** Show-off moves for the camera. */
+type Trick = 'loop' | 'dash' | 'waggle' | 'bubbles' | 'puff';
+const TRICK_SECONDS: Record<Trick, number> = { loop: 1.6, dash: 1.4, waggle: 1.6, bubbles: 1.8, puff: 4 };
+
 /**
  * Anything that swims in open water. The drawing is a mesh bent by its body style (a fish's tail wave,
  * an eel's S-wave, a jellyfish's pulse...), while the body steers toward a target.
@@ -27,7 +31,7 @@ type Spot = { x: number; y: number; z: number };
 export class Swimmer implements Creature {
   readonly view = new Container();
   readonly style: BodyStyle;
-  private body: BodyState;
+  private bodyState: BodyState;
   private mesh: MeshPlane;
   private positions: Float32Array;
   private rest: Float32Array;
@@ -82,6 +86,13 @@ export class Swimmer implements Creature {
   private spin = 0;
   private spikes: Graphics | null = null;
   private spikeColor = 0;
+  /** Documentary mode is filming it: it comes right up front and does tricks. */
+  private starring = false;
+  private trickIn = 0;
+  private trick: { kind: Trick; t: number; length: number } | null = null;
+  private lastTrick: Trick | null = null;
+  private spinBase = 0;
+  private trailIn = 0;
 
   constructor(
     readonly drawing: Drawing,
@@ -109,7 +120,7 @@ export class Swimmer implements Creature {
     this.mesh = new MeshPlane({ texture, verticesX: this.style.columns, verticesY: this.style.rows });
     this.texW = texture.width;
     this.texH = texture.height;
-    this.body = { phase: this.phase, effort: 1, texW: this.texW, texH: this.texH };
+    this.bodyState = { phase: this.phase, effort: 1, texW: this.texW, texH: this.texH };
     this.mesh.pivot.set(this.texW / 2, this.texH / 2);
     this.positions = this.mesh.geometry.getAttribute('aPosition').buffer.data as Float32Array;
     this.rest = this.positions.slice();
@@ -165,6 +176,18 @@ export class Swimmer implements Creature {
     this.applyDepth();
   }
 
+  get body() {
+    return this.mesh;
+  }
+
+  /** Documentary mode starts (or stops) filming this fish. */
+  star(on: boolean) {
+    this.starring = on;
+    this.trickIn = 2;
+    if (!on && this.trick) this.endTrick();
+    this.applyDepth();
+  }
+
   /** Puffers blow up into a ball (from the console: doodlearium.creature().puffUp()). */
   puffUp() {
     if (!this.style.puffs || this.puffing) return;
@@ -191,6 +214,7 @@ export class Swimmer implements Creature {
     this.dropTime -= dt;
     this.dartCooldown -= dt;
     this.decide(dt, world);
+    if (this.trick) this.doTrick(dt, world);
 
     // Glide toward the depth we want: forward to the glass, back home, or alongside the school.
     if (Math.abs(this.zGoal - this.z) > 0.001) {
@@ -249,8 +273,8 @@ export class Swimmer implements Creature {
 
     const effort = clamp(Math.hypot(this.vx, this.vy) / baseSpeed, 0.2, 2.5);
     this.phase += dt * style.beat(effort) * (1 - this.drowsy * 0.65);
-    this.body.phase = this.phase;
-    this.body.effort = effort;
+    this.bodyState.phase = this.phase;
+    this.bodyState.effort = effort;
     this.bend();
     // Extras ride the same body motion as the drawing underneath them.
     const bend = (u: number, v: number) => this.shape(clamp(u, 0, 1), clamp(v, 0, 1));
@@ -271,6 +295,10 @@ export class Swimmer implements Creature {
   private decide(dt: number, world: World) {
     this.sleeping = false;
     if (this.dropTime > 0) return;
+    if (this.starring) {
+      if (!this.chaseFood(world)) this.perform(dt, world);
+      return;
+    }
     if (this.flee(world)) return;
     if (this.chaseFood(world)) return;
     if (this.sleep(world)) return;
@@ -283,6 +311,81 @@ export class Swimmer implements Creature {
     if (this.retargetIn <= 0 || Math.hypot(this.target.x - this.x, this.target.y - this.y) < 20) {
       this.pickTarget(world);
     }
+  }
+
+/** On camera: swims a slow figure-eight right at the front of the tank, with a trick every few seconds. */
+  private perform(dt: number, world: World) {
+    this.visit = null;
+    this.stalk = null;
+    this.hide = null;
+    this.bed = null;
+    this.zGoal = 0.02;
+    const b = this.bounds(world);
+    if (this.trick?.kind !== 'dash') {
+      const t = world.time * 0.22 + this.phase;
+      this.target.x = clamp(world.width * (0.5 + 0.18 * Math.sin(t)), b.left, b.right);
+      this.target.y = clamp(world.height * (0.42 + 0.09 * Math.sin(t * 2)), b.top, b.bottom);
+      this.legSpeed = 0.9;
+    }
+    this.trickIn -= dt;
+    if (!this.trick && this.trickIn <= 0) {
+      const kinds: Trick[] = this.style.puffs ? ['puff', 'puff', 'loop', 'bubbles'] : ['loop', 'dash', 'waggle', 'bubbles'];
+      const options = kinds.filter((k) => k !== this.lastTrick);
+      const kind = options[Math.floor(Math.random() * options.length)];
+      this.trick = { kind, t: 0, length: TRICK_SECONDS[kind] };
+      this.lastTrick = kind;
+      this.spinBase = this.spin;
+      if (kind === 'puff') this.puffUp();
+      if (kind === 'dash') {
+        // Zoom off across the middle, trailing bubbles.
+        const dir = this.x < world.width / 2 ? 1 : -1;
+        this.target.x = clamp(this.x + dir * world.width * 0.35, b.left, b.right);
+        this.target.y = clamp(this.y - world.height * 0.05, b.top, b.bottom);
+        this.legSpeed = 3;
+      }
+    }
+  }
+
+  private doTrick(dt: number, world: World) {
+    const trick = this.trick!;
+    trick.t += dt;
+    const k = clamp(trick.t / trick.length, 0, 1);
+    switch (trick.kind) {
+      case 'loop':
+        // A full loop-the-loop, easing in and out.
+        this.spin = this.spinBase + TAU * k * k * (3 - 2 * k);
+        break;
+      case 'waggle':
+        // A happy, extra-wiggly swim.
+        this.phase += dt * 10 * Math.sin(k * Math.PI);
+        break;
+      case 'bubbles':
+        // Stops to blow a stream of bubbles, then a heart.
+        this.legSpeed = 0.15;
+        this.trailIn -= dt;
+        if (this.trailIn <= 0 && k < 0.8) {
+          this.trailIn = 0.07;
+          world.scene.bubble(this.headX(), this.y - this.halfLength * 0.1, 2 + Math.random() * 4);
+        }
+        break;
+      case 'dash':
+        this.trailIn -= dt;
+        if (this.trailIn <= 0) {
+          this.trailIn = 0.06;
+          world.scene.bubble(this.x - this.halfLength * Math.sign(this.facing || 1), this.y, 2 + Math.random() * 3);
+        }
+        break;
+    }
+    if (k >= 1) {
+      if (trick.kind === 'bubbles') world.scene.heart(this.headX(), this.y - this.halfLength * 0.4, Math.max(6, this.halfLength * 0.15));
+      this.endTrick();
+    }
+  }
+
+  private endTrick() {
+    if (this.trick?.kind === 'loop') this.spin = this.spinBase;
+    this.trick = null;
+    this.trickIn = 2.5 + Math.random() * 2;
   }
 
   /** Day fish swim down beside a plant (or to the bottom) and doze. Food still wakes them. */
@@ -516,12 +619,13 @@ export class Swimmer implements Creature {
     this.mesh.tint = depthTint(this.z);
     if (this.spikes) this.spikes.tint = depthTint(this.z);
     this.mesh.alpha = 1 - Math.max(0, this.z) * 0.1;
-    this.view.zIndex = depthOrder(this.z);
+    // The star of the show swims in front of everyone.
+    this.view.zIndex = this.starring ? 3000 : depthOrder(this.z);
   }
 
   /** How far the body style (and puffing up) moves the point at (u, v), in texture pixels. */
   private shape(u: number, v: number) {
-    const d = this.style.deform(u, v, this.body);
+    const d = this.style.deform(u, v, this.bodyState);
     if (this.puff <= 0) return d;
     // Squares map onto a disc, so the whole drawing rounds out into a ball.
     const a = u * 2 - 1;
@@ -550,7 +654,7 @@ export class Swimmer implements Creature {
       // A slow, lopsided tumble: speeds up, nearly stops, sometimes rocks back.
       this.spin += dt * (0.45 + 0.75 * Math.sin(world.time * 1.1 + this.phase) + 0.3 * Math.sin(world.time * 2.9));
       this.vy -= world.height * 0.01 * dt;
-    } else {
+    } else if (this.trick?.kind !== 'loop') {
       // Settle back the right way up by the shortest way round.
       const upright = Math.round(this.spin / TAU) * TAU;
       this.spin += (upright - this.spin) * Math.min(1, dt * 1.5);

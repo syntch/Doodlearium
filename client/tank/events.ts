@@ -177,7 +177,8 @@ export class Events {
 
   constructor(
     private layers: EventLayers,
-    private packs: string[],
+    /** Which packs can come along; changes with the season. */
+    public packs: string[],
     firstIn = 360 + Math.random() * 360,
   ) {
     this.nextAt = firstIn;

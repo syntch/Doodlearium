@@ -42,23 +42,30 @@ type DrawingMeta = {
   attachments: Attachment[];
   nocturnal: boolean;
   parts: Part[];
+  glow: boolean;
   parents?: [string, string];
   hatchAt?: number;
   nest?: number;
 };
 
-const partsFile = (id: string) => join(DRAWINGS_DIR, `${id}.parts.png`);
+/** Images that go with a drawing: which pixels are moving parts, and which glow. */
+export type ExtraImages = { parts: Buffer | null; glow: Buffer | null };
+const NO_EXTRAS: ExtraImages = { parts: null, glow: null };
 
-/** Saves or (with no parts) removes the drawing's part image. */
-async function writeParts(id: string, partsPng: Buffer | null) {
-  if (partsPng) await writeFile(partsFile(id), partsPng);
-  else await rm(partsFile(id), { force: true });
+/** Saves the drawing's extra images, removing any it no longer has. */
+async function writeExtras(id: string, extra: ExtraImages) {
+  for (const kind of ['parts', 'glow'] as const) {
+    const file = join(DRAWINGS_DIR, `${id}.${kind}.png`);
+    const bytes = extra[kind];
+    if (bytes) await writeFile(file, bytes);
+    else await rm(file, { force: true });
+  }
 }
 
-export async function addDrawing(meta: DrawingMeta, png: Buffer, partsPng: Buffer | null): Promise<Drawing> {
+export async function addDrawing(meta: DrawingMeta, png: Buffer, extra: ExtraImages): Promise<Drawing> {
   const drawing: Drawing = { id: randomUUID(), createdAt: Date.now(), ...meta };
   await writeFile(join(DRAWINGS_DIR, `${drawing.id}.png`), png);
-  await writeParts(drawing.id, partsPng);
+  await writeExtras(drawing.id, extra);
   drawings.push(drawing);
   await save();
   return drawing;
@@ -68,12 +75,12 @@ export async function updateDrawing(
   id: string,
   meta: DrawingMeta,
   png: Buffer,
-  partsPng: Buffer | null,
+  extra: ExtraImages,
 ): Promise<Drawing | null> {
   const drawing = drawings.find((d) => d.id === id);
   if (!drawing) return null;
   await writeFile(join(DRAWINGS_DIR, `${id}.png`), png);
-  await writeParts(id, partsPng);
+  await writeExtras(id, extra);
   Object.assign(drawing, meta, { updatedAt: Date.now() });
   await save();
   return drawing;
@@ -85,6 +92,6 @@ export async function removeDrawing(id: string): Promise<boolean> {
   drawings.splice(index, 1);
   await save();
   await rm(join(DRAWINGS_DIR, `${id}.png`), { force: true });
-  await writeParts(id, null);
+  await writeExtras(id, NO_EXTRAS);
   return true;
 }

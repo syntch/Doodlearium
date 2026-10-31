@@ -2,6 +2,7 @@ import {
   MAX_ATTACHMENTS,
   MAX_PARTS,
   PART_MOTIONS,
+  glowUrl,
   imageUrl,
   motionOf,
   partsUrl,
@@ -12,7 +13,7 @@ import {
 } from '../../shared/types.ts';
 import { fetchDrawings, setupFeedButton, submitDrawing, updateDrawing } from '../shared/api.ts';
 import { enclosedHoles, exportDrawing, inkBounds, type PlacedAttachment, type PlacedPart } from './export.ts';
-import { MATERIALS, MATERIAL_LABELS, floodFill, floodRegion, materialPreview, type Material } from './fill.ts';
+import { MATERIALS, MATERIAL_LABELS, MATERIAL_TURNS, floodFill, floodRegion, materialPreview, type Material } from './fill.ts';
 import { readPhoto, removePaper } from './photo.ts';
 import { Selection, applyTransform, maskHas, type TransformOp } from './selection.ts';
 import { PART_INFO, carryParts, cloneCanvas, findHinge, partsFromImage, type EditorPart } from './parts.ts';
@@ -28,24 +29,32 @@ const SIZES = [4, 10, 22, 40];
 /** The same four size buttons double as the size of extras. */
 const EXTRA_SCALES = [0.6, 1, 1.5, 2.2];
 
+/** There's no emoji for one round googly eye, so it's drawn: white, outlined, with its pupil hanging low. */
+const GOOGLY_ICON =
+  '<svg class="icon" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.6" fill="#fff" stroke="#111" stroke-width="1.6"/>' +
+  '<circle cx="10.6" cy="12.6" r="4.4" fill="#111"/><circle cx="9.2" cy="11.2" r="1.1" fill="#fff"/></svg>';
+
+/** icon is HTML: an emoji, or a small picture. */
 const EXTRAS: { kind: AttachmentKind; icon: string; label: string; hint: string }[] = [
   { kind: 'bubbles', icon: '🫧', label: 'Bubbles', hint: 'Bubbles float up from here' },
   { kind: 'sparkles', icon: '✨', label: 'Sparkles', hint: 'Twinkling sparkles in your colour' },
   { kind: 'glow', icon: '💡', label: 'Glow', hint: 'A soft light, best at night' },
-  { kind: 'googly', icon: '👀', label: 'Googly eye', hint: 'A wobbly googly eye' },
+  { kind: 'googly', icon: GOOGLY_ICON, label: 'Googly eye', hint: 'A wobbly googly eye' },
   { kind: 'flag', icon: '🚩', label: 'Flag', hint: 'A flag waving in the current, in your colour' },
   { kind: 'propeller', icon: '🌀', label: 'Propeller', hint: 'A spinning propeller' },
 ];
 const EXTRA_ICONS = Object.fromEntries(EXTRAS.map((e) => [e.kind, e.icon])) as Record<AttachmentKind, string>;
 
 type Tool = 'brush' | 'eraser' | 'fill' | 'extras' | 'select';
+/** Glow paint always glows; blacklight (uv) paint only glows when the tank's blacklight is on. */
+type Paint = 'normal' | 'glow' | 'uv';
 type Mirror = 'off' | 'updown' | 'leftright';
 type Point = { x: number; y: number; pressure: number };
 
 /** Everything on the paper is a replayable list of operations, so undo works the same for every tool. */
 type Op =
-  | { type: 'stroke'; color: string; size: number; erase: boolean; mirror: Mirror; points: Point[] }
-  | { type: 'fill'; x: number; y: number; color: string; material: Material; mirror: Mirror }
+  | { type: 'stroke'; color: string; size: number; erase: boolean; mirror: Mirror; points: Point[]; paint?: Paint }
+  | { type: 'fill'; x: number; y: number; color: string; material: Material; mirror: Mirror; paint?: Paint; turn?: number }
   | { type: 'attach'; attachment: PlacedAttachment }
   | { type: 'detach'; target: PlacedAttachment }
   | { type: 'part'; part: EditorPart }
@@ -75,6 +84,9 @@ const state = {
   color: COLORS[0][0],
   sizeIndex: 1,
   material: 'solid' as Material,
+  paint: 'normal' as Paint,
+  /** Which way each material is turned (an index into MATERIAL_TURNS). */
+  turns: {} as Partial<Record<Material, number>>,
   extra: 'bubbles' as AttachmentKind,
   mirror: 'off' as Mirror,
   facingLeft: false,
@@ -84,7 +96,13 @@ let current: Extract<Op, { type: 'stroke' }> | null = null;
 /** When editing an existing drawing: the drawing, its image under the new ops, and its saved extras. */
 let editing: Drawing | null = null;
 /** Under the new ops; holes are its see-through areas, when re-editing a saved drawing. */
-let base: { image: HTMLImageElement | HTMLCanvasElement; x: number; y: number; holes?: HTMLCanvasElement } | null = null;
+let base: {
+  image: HTMLImageElement | HTMLCanvasElement;
+  x: number;
+  y: number;
+  holes?: HTMLCanvasElement;
+  glow?: Record<'glow' | 'uv', HTMLCanvasElement>;
+} | null = null;
 let baseAttachments: PlacedAttachment[] = [];
 let baseParts: EditorPart[] = [];
 const selection = new Selection(paper.width, paper.height);
@@ -92,6 +110,19 @@ const selection = new Selection(paper.width, paper.height);
 const holesCanvas = Object.assign(document.createElement('canvas'), { width: paper.width, height: paper.height });
 const holesView = document.querySelector<HTMLDivElement>('#holes')!;
 const holes = holesCanvas.getContext('2d', { willReadFrequently: true })!;
+/** Like holes: where glow paint and blacklight paint are. Shown on the paper as a soft halo. */
+const glowCanvases = {
+  glow: Object.assign(document.createElement('canvas'), { width: paper.width, height: paper.height }),
+  uv: Object.assign(document.createElement('canvas'), { width: paper.width, height: paper.height }),
+};
+const glowCtx = {
+  glow: glowCanvases.glow.getContext('2d', { willReadFrequently: true })!,
+  uv: glowCanvases.uv.getContext('2d', { willReadFrequently: true })!,
+};
+const glowViews = {
+  glow: document.querySelector<HTMLCanvasElement>('#glow-view')!.getContext('2d')!,
+  uv: document.querySelector<HTMLCanvasElement>('#uv-view')!.getContext('2d')!,
+};
 const overlay = document.querySelector<HTMLCanvasElement>('#selection-overlay')!.getContext('2d')!;
 /** The paper as committed, under a selection that is being moved around. */
 const snapshot = Object.assign(document.createElement('canvas'), { width: paper.width, height: paper.height });
@@ -138,6 +169,20 @@ function pickColor(color: string) {
   if (state.tool === 'eraser') setTool('brush');
   press(colorButtons, (b) => b.dataset.color === color);
   renderMaterials();
+  renderPaintKind();
+}
+
+const paintEl = document.querySelector<HTMLDivElement>('#paint-kind')!;
+const paintButtons = paintEl.querySelectorAll<HTMLButtonElement>('[data-paint]');
+paintButtons.forEach(
+  (b) =>
+    (b.onclick = () => {
+      state.paint = b.dataset.paint as Paint;
+      press(paintButtons, (x) => x === b);
+    }),
+);
+function renderPaintKind() {
+  paintEl.hidden = !(state.tool === 'brush' || state.tool === 'fill') || state.color === 'clear';
 }
 
 const sizesEl = document.querySelector<HTMLDivElement>('#sizes')!;
@@ -163,10 +208,23 @@ const materialButtons = MATERIALS.map((material) => {
   b.onclick = () => {
     state.material = material;
     press(materialButtons, (m) => m === b);
+    renderMaterials();
   };
   materialsEl.append(b);
   return b;
 });
+/** Turns the picked material: scales point another way, planks run up and down... */
+const turnButton = document.createElement('button');
+turnButton.className = 'turn';
+turnButton.onclick = () => {
+  const options = MATERIAL_TURNS[state.material]!;
+  state.turns[state.material] = ((state.turns[state.material] ?? 0) + 1) % options.length;
+  renderMaterials();
+};
+materialsEl.append(turnButton);
+
+/** The quarter turns for the picked material. */
+const materialTurn = (material = state.material) => MATERIAL_TURNS[material]?.[state.turns[material] ?? 0]?.turn ?? 0;
 
 /** Material swatches are shown in the current colour, so brick in blue looks like blue brick. */
 function renderMaterials() {
@@ -175,14 +233,21 @@ function renderMaterials() {
   if (materialsEl.hidden) return;
   MATERIALS.forEach((material, i) => {
     const color = state.color === 'rainbow' || material === 'rainbow' ? 'rainbow' : state.color;
-    materialButtons[i].innerHTML = `<img alt="" src="${materialPreview(material, color)}" />${MATERIAL_LABELS[material]}`;
+    materialButtons[i].innerHTML = `<img alt="" src="${materialPreview(material, color, materialTurn(material))}" />${MATERIAL_LABELS[material]}`;
   });
+  const options = MATERIAL_TURNS[state.material];
+  turnButton.hidden = !options;
+  if (options) {
+    const option = options[state.turns[state.material] ?? 0];
+    turnButton.innerHTML = `<span class="arrow">${option.label}</span>Turn`;
+    turnButton.title = `${option.title}. Tap to turn it.`;
+  }
 }
 
 const extrasEl = document.querySelector<HTMLDivElement>('#extras')!;
 const extraButtons = EXTRAS.map((extra) => {
   const b = document.createElement('button');
-  b.textContent = `${extra.icon} ${extra.label}`;
+  b.innerHTML = `${extra.icon} ${extra.label}`;
   b.title = extra.hint;
   b.onclick = () => {
     state.extra = extra.kind;
@@ -209,6 +274,7 @@ function setTool(tool: Tool) {
   paper.style.cursor = tool === 'fill' ? 'cell' : tool === 'extras' ? 'copy' : tool === 'select' ? 'crosshair' : 'none';
   renderSelectBar();
   renderMaterials();
+  renderPaintKind();
   renderHint();
 }
 
@@ -411,7 +477,16 @@ paper.addEventListener('pointerdown', (e) => {
     return;
   }
   if (state.tool === 'fill') {
-    const op: Op = { type: 'fill', x: p.x, y: p.y, color: state.color, material: state.material, mirror: state.mirror };
+    const op: Op = {
+      type: 'fill',
+      x: p.x,
+      y: p.y,
+      color: state.color,
+      material: state.material,
+      mirror: state.mirror,
+      paint: state.paint,
+      turn: materialTurn(),
+    };
     ops.push(op);
     applyFill(op);
     changed();
@@ -442,6 +517,7 @@ paper.addEventListener('pointerdown', (e) => {
     erase: state.tool === 'eraser',
     mirror: state.mirror,
     points: [p],
+    paint: state.tool === 'eraser' ? 'normal' : state.paint,
   };
   ops.push(current);
   drawSegment(current, 0);
@@ -535,6 +611,15 @@ function drawSegment(stroke: Extract<Op, { type: 'stroke' }>, i: number) {
     line(holes);
     showHoles();
   }
+  // Glow paint marks its kind of glow; anything else painted (or erased) over it puts it out.
+  const paint = invisible || stroke.erase ? 'normal' : (stroke.paint ?? 'normal');
+  for (const kind of ['glow', 'uv'] as const) {
+    const c = glowCtx[kind];
+    c.globalCompositeOperation = paint === kind ? 'source-over' : 'destination-out';
+    c.strokeStyle = '#000';
+    line(c);
+  }
+  showGlow();
 }
 
 /** On-paper width of a brush stroke; pen pressure scales it from 0.4x to 2.4x. */
@@ -545,12 +630,36 @@ function brushWidth(size: number, pressure: number, erase: boolean) {
 function applyFill(op: Extract<Op, { type: 'fill' }>) {
   ctx.globalCompositeOperation = 'source-over';
   const material = op.material === 'solid' && op.color === 'rainbow' ? 'rainbow' : op.material;
-  const area = floodFill(ctx, withMirror(op, op.mirror), material, op.color);
+  const area = floodFill(ctx, withMirror(op, op.mirror), material, op.color, op.turn ?? 0);
   const image = holes.getImageData(0, 0, holesCanvas.width, holesCanvas.height);
   const alpha = op.color === 'clear' ? 255 : 0;
   for (let i = 0; i < area.length; i++) if (area[i] === 1) image.data[i * 4 + 3] = alpha;
   holes.putImageData(image, 0, 0);
   showHoles();
+  const paint = op.color === 'clear' ? 'normal' : (op.paint ?? 'normal');
+  for (const kind of ['glow', 'uv'] as const) {
+    const c = glowCtx[kind];
+    const marks = c.getImageData(0, 0, paper.width, paper.height);
+    const value = paint === kind ? 255 : 0;
+    for (let i = 0; i < area.length; i++) if (area[i] === 1) marks.data[i * 4 + 3] = value;
+    c.putImageData(marks, 0, 0);
+  }
+  showGlow();
+}
+
+let glowTimer = 0;
+/** The paper's own colours, wherever there's glow paint, softly blurred on top of the paper by CSS. */
+function showGlow() {
+  clearTimeout(glowTimer);
+  glowTimer = window.setTimeout(() => {
+    for (const kind of ['glow', 'uv'] as const) {
+      const v = glowViews[kind];
+      v.globalCompositeOperation = 'copy';
+      v.drawImage(paper, 0, 0);
+      v.globalCompositeOperation = 'destination-in';
+      v.drawImage(glowCanvases[kind], 0, 0);
+    }
+  }, 40);
 }
 
 function redraw() {
@@ -560,15 +669,23 @@ function redraw() {
   holes.clearRect(0, 0, holesCanvas.width, holesCanvas.height);
   if (base) ctx.drawImage(base.image, base.x, base.y);
   if (base?.holes) holes.drawImage(base.holes, base.x, base.y);
+  for (const kind of ['glow', 'uv'] as const) {
+    glowCtx[kind].globalCompositeOperation = 'source-over';
+    glowCtx[kind].clearRect(0, 0, paper.width, paper.height);
+    if (base?.glow) glowCtx[kind].drawImage(base.glow[kind], base.x, base.y);
+  }
   for (const op of ops) {
     if (op.type === 'stroke') op.points.forEach((_, i) => drawSegment(op, i));
     else if (op.type === 'fill') applyFill(op);
     else if (op.type === 'transform') {
       applyTransform(ctx, op);
       applyTransform(holes, op);
+      applyTransform(glowCtx.glow, op);
+      applyTransform(glowCtx.uv, op);
     }
   }
   showHoles();
+  showGlow();
   snapshotPaper();
   renderSelection();
   changed();
@@ -627,7 +744,7 @@ function renderMarkers() {
   markers.replaceChildren(
     ...currentAttachments().map((a) => {
       const el = document.createElement('span');
-      el.textContent = EXTRA_ICONS[a.kind];
+      el.innerHTML = EXTRA_ICONS[a.kind];
       el.style.left = `${(a.x / paper.width) * 100}%`;
       el.style.top = `${(a.y / paper.height) * 100}%`;
       el.style.fontSize = `${Math.max(14, 70 * a.scale * pxPerUnit)}px`;
@@ -714,7 +831,10 @@ function commitSelection() {
   const op = selection.pendingOp();
   ops.push(op);
   applyTransform(holes, op);
+  applyTransform(glowCtx.glow, op);
+  applyTransform(glowCtx.uv, op);
   showHoles();
+  showGlow();
   selection.settle();
   snapshotPaper();
   renderSelection();
@@ -960,6 +1080,7 @@ function exportCurrent() {
     mirror: hasFacing(state.motion) && state.facingLeft,
     paperFill: document.querySelector<HTMLInputElement>('#paper-fill')!.checked,
     holes: holesCanvas,
+    glow: glowCanvases,
     attachments: currentAttachments(),
     parts: placedParts(),
   });
@@ -1031,6 +1152,13 @@ const workspace = document.querySelector<HTMLDivElement>('#workspace')!;
 let preview: Promise<import('../tank/mini.ts').Preview> | null = null;
 let previewTimer = 0;
 
+const previewBlacklight = document.querySelector<HTMLButtonElement>('#preview-blacklight')!;
+previewBlacklight.onclick = async () => {
+  const on = previewBlacklight.getAttribute('aria-pressed') !== 'true';
+  previewBlacklight.setAttribute('aria-pressed', String(on));
+  (await preview)?.setBlacklight(on);
+};
+
 previewToggle.onclick = () => {
   const open = Boolean(previewEl.hidden);
   previewEl.hidden = !open;
@@ -1039,7 +1167,11 @@ previewToggle.onclick = () => {
   previewToggle.textContent = open ? '⏹ Preview' : '▶ Preview';
   renderMarkers();
   if (open) {
-    preview ??= import('../tank/mini.ts').then((m) => m.createPreview(previewEl));
+    preview ??= import('../tank/mini.ts').then(async (m) => {
+      const view = await m.createPreview(previewEl);
+      view.setBlacklight(previewBlacklight.getAttribute('aria-pressed') === 'true');
+      return view;
+    });
     void refreshPreview();
   }
 };
@@ -1061,14 +1193,17 @@ async function refreshPreview() {
     await image.decode();
     return image;
   };
-  const [{ Texture }, { splitParts, toCutout }, view, image, partsImage] = await Promise.all([
+  const [{ Texture }, { splitParts, toCutout }, { glowTextures }, view, image, partsImage, glowImage] = await Promise.all([
     import('pixi.js'),
     import('../tank/parts.ts'),
+    import('../tank/glow.ts'),
     preview,
     load(exported.dataUrl),
     load(exported.partsImage),
+    load(exported.glowImage),
   ]);
   const cutout = partsImage ? toCutout(splitParts(image!, partsImage, exported.parts)) : null;
+  const glow = glowImage ? glowTextures(image!, glowImage, partsImage ?? undefined) : null;
   view.show(
     {
       // This id seeds an easygoing creature near the front glass at a typical size.
@@ -1083,9 +1218,11 @@ async function refreshPreview() {
       attachments: exported.attachments,
       nocturnal: nocturnalInput.checked,
       parts: exported.parts,
+      glow: Boolean(glow),
     },
     cutout?.body ?? Texture.from(image!),
     cutout,
+    glow,
   );
 }
 document.querySelector<HTMLInputElement>('#paper-fill')!.addEventListener('change', schedulePreview);
@@ -1119,6 +1256,7 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
     nocturnal: nocturnalInput.checked,
     parts: exported.parts,
     partsImage: exported.partsImage,
+    glowImage: exported.glowImage,
   };
 
   sendButton.disabled = true;
@@ -1152,6 +1290,26 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
 
 // --- editing an existing drawing (/draw/?edit=<id>) ----------------------
 
+/** Splits a saved glow image back into the glow and blacklight masks. */
+async function loadGlowMasks(drawing: Drawing) {
+  const image = new Image();
+  image.src = glowUrl(drawing);
+  await image.decode();
+  const { width, height } = image;
+  const read = Object.assign(document.createElement('canvas'), { width, height }).getContext('2d', { willReadFrequently: true })!;
+  read.drawImage(image, 0, 0);
+  const marks = read.getImageData(0, 0, width, height).data;
+  const mask = (channel: number) => {
+    const canvas = Object.assign(document.createElement('canvas'), { width, height });
+    const c = canvas.getContext('2d')!;
+    const out = c.createImageData(width, height);
+    for (let i = 0; i < marks.length; i += 4) out.data[i + 3] = marks[i + channel];
+    c.putImageData(out, 0, 0);
+    return canvas;
+  };
+  return { glow: mask(0), uv: mask(1) };
+}
+
 async function loadForEditing(id: string) {
   const drawing = (await fetchDrawings()).find((d) => d.id === id);
   if (!drawing) {
@@ -1169,6 +1327,7 @@ async function loadForEditing(id: string) {
     x: Math.round((paper.width - image.width) / 2),
     y: Math.round((paper.height - image.height) / 2),
     holes: enclosedHoles(image),
+    glow: drawing.glow ? await loadGlowMasks(drawing) : undefined,
   };
   baseAttachments = (drawing.attachments ?? []).map((a) => ({
     ...a,

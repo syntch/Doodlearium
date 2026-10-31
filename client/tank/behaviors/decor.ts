@@ -36,6 +36,10 @@ export class Decor implements Creature {
     this.layout(world);
   }
 
+  get body() {
+    return this.sprite;
+  }
+
   layout(world: World) {
     const { width, height } = this.sprite.texture;
     const byHeight = (world.height * 0.2 * this.size * depthScale(this.z)) / height;

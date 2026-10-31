@@ -72,6 +72,8 @@ export interface Drawing {
   hatchAt?: number;
   /** Where across the tank (0..1) the egg was laid. */
   nest?: number;
+  /** Has glowing paint, marked in a separate image (`glowUrl`). */
+  glow?: boolean;
 }
 
 export interface NewDrawing {
@@ -85,6 +87,8 @@ export interface NewDrawing {
   parts?: Part[];
   /** PNG data URL, the same size as image, marking each part's pixels. */
   partsImage?: string;
+  /** PNG data URL, the same size as image: red where the paint glows, green where it's blacklight paint. */
+  glowImage?: string;
 }
 
 /** A baby made by the tank from two parents, sent to be laid as an egg. */
@@ -93,15 +97,23 @@ export interface NewEgg extends NewDrawing {
   nest: number;
 }
 
+/** Things the tank's ⚙️ menu can do, on one screen or every open tank. */
+export const TANK_COMMANDS = ['time', 'season', 'blacklight', 'film', 'visit', 'current', 'school', 'egg', 'puff'] as const;
+export type TankCommand = (typeof TANK_COMMANDS)[number];
+export type TankCommandValue = string | number | boolean | null;
+
 export type ServerMessage =
   | { type: 'drawing:added'; drawing: Drawing }
   | { type: 'drawing:updated'; drawing: Drawing }
   | { type: 'drawing:removed'; id: string }
   /** Feeding time: x is where across the tank (0..1) the food drops. */
-  | { type: 'feed'; x: number };
+  | { type: 'feed'; x: number }
+  | { type: 'tank'; command: TankCommand; value: TankCommandValue };
 
 /** Images are served with a long cache lifetime, so the version query makes edits show up. */
 export const imageUrl = (d: Pick<Drawing, 'id' | 'createdAt' | 'updatedAt'>) =>
   `/drawings/${d.id}.png?v=${d.updatedAt ?? d.createdAt}`;
 export const partsUrl = (d: Pick<Drawing, 'id' | 'createdAt' | 'updatedAt'>) =>
   `/drawings/${d.id}.parts.png?v=${d.updatedAt ?? d.createdAt}`;
+export const glowUrl = (d: Pick<Drawing, 'id' | 'createdAt' | 'updatedAt'>) =>
+  `/drawings/${d.id}.glow.png?v=${d.updatedAt ?? d.createdAt}`;

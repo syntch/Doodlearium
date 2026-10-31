@@ -14,16 +14,103 @@
         animation: fade 1s 6s forwards;
       }
       @keyframes fade { to { opacity: 0; } }
-      #sound {
-        position: fixed; right: 16px; top: 12px; font-size: 22px; padding: 4px 10px; border-radius: 999px;
-        border: 0; background: rgba(6, 36, 59, 0.55); color: #fff; cursor: pointer; transition: opacity 0.4s;
+      /* Buttons show while someone moves the mouse or taps, and fade away when it's left alone. */
+      .chrome { transition: opacity 0.4s; }
+      body.idle .chrome { opacity: 0; pointer-events: none; }
+      .bar {
+        position: fixed; left: 12px; top: 10px; display: flex; gap: 8px; flex-wrap: wrap;
+        font: bold 16px 'Trebuchet MS', sans-serif;
       }
-      body.idle #sound { opacity: 0; pointer-events: none; }
+      .bar a, .bar button, #sound {
+        display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 999px;
+        border: 0; background: rgba(6, 36, 59, 0.6); color: #fff; text-decoration: none; cursor: pointer;
+        font: inherit; backdrop-filter: blur(4px);
+      }
+      .bar a:hover, .bar button:hover, #sound:hover { background: rgba(6, 36, 59, 0.85); }
+      #sound { position: fixed; right: 16px; top: 10px; font-size: 20px; padding: 4px 10px; }
+      .info {
+        position: fixed; z-index: 5; pointer-events: none; max-width: 260px; padding: 10px 14px; border-radius: 12px;
+        background: rgba(6, 36, 59, 0.85); color: #dff3ff; font: 14px/1.4 'Trebuchet MS', sans-serif;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+      }
+      .info b { display: block; color: #fff; font-size: 17px; }
+      .menu {
+        position: fixed; z-index: 10; top: 56px; left: 12px; width: min(380px, calc(100vw - 24px));
+        max-height: calc(100vh - 72px); overflow-y: auto; box-sizing: border-box; padding: 12px 14px 14px;
+        border-radius: 16px; background: rgba(6, 36, 59, 0.92); color: #fff; font: 15px 'Trebuchet MS', sans-serif;
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4); backdrop-filter: blur(6px);
+      }
+      .menu h2 { margin: 0 0 4px; font-size: 18px; display: flex; justify-content: space-between; align-items: center; }
+      .menu h3 { margin: 12px 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #9cc9e6; }
+      .menu .row { display: flex; flex-wrap: wrap; gap: 6px; }
+      .menu button {
+        padding: 7px 11px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.15);
+        background: rgba(255, 255, 255, 0.08); color: #fff; font: inherit; cursor: pointer;
+      }
+      .menu button:hover { background: rgba(255, 255, 255, 0.18); }
+      .menu button[aria-pressed='true'] { background: #2e86c1; border-color: #7cc4f0; }
+      .menu label { display: flex; gap: 8px; align-items: center; color: #cfe7f7; font-size: 14px; cursor: pointer; }
+      .menu .status { min-height: 1.2em; margin: 10px 0 0; color: #ffd98a; font-size: 14px; }
+      .menu .close { padding: 2px 10px; }
     </style>
   </head>
   <body>
     <div class="hint">Double-click for full screen</div>
-    <button id="sound" title="Sound on or off (S)">🔇</button>
+    <nav class="bar chrome">
+      <a href="/">🐠 Doodlearium</a>
+      <a href="/draw/">✏️ Draw</a>
+      <a href="/gallery/">🖼️ Gallery</a>
+      <button id="menu-toggle" title="Tank controls: time, holidays, documentary...">⚙️</button>
+    </nav>
+    <button id="sound" class="chrome" title="Sound on or off (S)">🔇</button>
+    <div class="info" id="info" hidden></div>
+
+    <div class="menu" id="menu" hidden>
+      <h2>⚙️ Tank controls <button class="close" id="menu-close" title="Close">✕</button></h2>
+      <label title="Off: only this screen changes"><input type="checkbox" id="every-tank" checked /> 📺 Change every open tank (so a phone can control the TV)</label>
+
+      <h3>Time of day</h3>
+      <div class="row" data-group="time">
+        <button data-cmd="time" data-value="auto" aria-pressed="true">🕒 Real time</button>
+        <button data-cmd="time" data-value="7">🌅 Morning</button>
+        <button data-cmd="time" data-value="12">☀️ Day</button>
+        <button data-cmd="time" data-value="19.5">🌇 Evening</button>
+        <button data-cmd="time" data-value="23">🌙 Night</button>
+      </div>
+
+      <h3>Holiday</h3>
+      <div class="row" data-group="season">
+        <button data-cmd="season" data-value="auto" aria-pressed="true">📅 By the date</button>
+        <button data-cmd="season" data-value="none">None</button>
+        <button data-cmd="season" data-value="halloween">🎃 Halloween</button>
+        <button data-cmd="season" data-value="christmas">🎄 Christmas</button>
+        <button data-cmd="season" data-value="snow">❄️ Snow</button>
+        <button data-cmd="season" data-value="valentine">💕 Valentine's</button>
+      </div>
+
+      <h3>Blacklight</h3>
+      <div class="row" data-group="blacklight">
+        <button data-cmd="blacklight" data-value="off" aria-pressed="true">💡 Off</button>
+        <button data-cmd="blacklight" data-value="on">🟣 On</button>
+      </div>
+
+      <h3>Make something happen</h3>
+      <div class="row">
+        <button data-cmd="film">🎬 Documentary</button>
+        <button data-cmd="feed">🍤 Feed</button>
+        <button data-cmd="school">🐟 School of fish</button>
+        <button data-cmd="current">🌊 Current</button>
+        <button data-cmd="puff">🐡 Puff the puffers</button>
+        <button data-cmd="egg">🥚 Lay an egg</button>
+      </div>
+      <h3>Visitors</h3>
+      <div class="row">
+        <button data-cmd="visit" data-value="whale">🐋 Whale</button>
+        <button data-cmd="visit" data-value="diver">🤿 Diver</button>
+        <button data-cmd="visit" data-value="ghost">👻 Ghost</button>
+      </div>
+      <p class="status" id="menu-status" role="status"></p>
+    </div>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

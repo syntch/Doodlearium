@@ -6,6 +6,7 @@ import {
   MAX_PARTS,
   MOTIONS,
   PART_MOTIONS,
+  TANK_COMMANDS,
   habitatOf,
   isAttachmentColor,
   motionOf,
@@ -54,6 +55,13 @@ function parseDrawing(body: any) {
       return { error: 'partsImage must be a PNG the same size as image' };
     }
   }
+  let glowPng = null;
+  if (body.glowImage !== undefined) {
+    glowPng = decodePng(body.glowImage);
+    if (!glowPng || glowPng.width !== width || glowPng.height !== height) {
+      return { error: 'glowImage must be a PNG the same size as image' };
+    }
+  }
   const attachments = parseAttachments(body.attachments);
   if (!attachments) return { error: `attachments must be a list of at most ${MAX_ATTACHMENTS} valid extras` };
   const meta = {
@@ -66,8 +74,9 @@ function parseDrawing(body: any) {
     attachments,
     nocturnal: body.nocturnal === true,
     parts,
+    glow: glowPng !== null,
   };
-  return { meta, png: png.bytes, partsPng: partsPng?.bytes ?? null };
+  return { meta, png: png.bytes, extra: { parts: partsPng?.bytes ?? null, glow: glowPng?.bytes ?? null } };
 }
 
 /** A PNG data URL's bytes and size, or null if it isn't one. */
@@ -129,7 +138,7 @@ api.post('/drawings', async (req, res) => {
     res.status(400).json({ error: parsed.error });
     return;
   }
-  const drawing = await addDrawing(parsed.meta, parsed.png, parsed.partsPng);
+  const drawing = await addDrawing(parsed.meta, parsed.png, parsed.extra);
   broadcast({ type: 'drawing:added', drawing });
   res.status(201).json(drawing);
 });
@@ -140,7 +149,7 @@ api.put('/drawings/:id', async (req, res) => {
     res.status(400).json({ error: parsed.error });
     return;
   }
-  const drawing = await updateDrawing(req.params.id, parsed.meta, parsed.png, parsed.partsPng);
+  const drawing = await updateDrawing(req.params.id, parsed.meta, parsed.png, parsed.extra);
   if (!drawing) {
     res.status(404).json({ error: 'not found' });
     return;
@@ -168,13 +177,15 @@ api.post('/eggs', async (req, res) => {
   }
   const now = Date.now();
   const lastEgg = Math.max(0, ...all.filter((d) => d.parents).map((d) => d.createdAt));
-  if (now - lastEgg < EGG_GAP) {
+  // The tank's ⚙️ menu can lay one any time.
+  if (now - lastEgg < EGG_GAP && req.body.now !== true) {
     res.status(429).json({ error: 'Not time for another egg yet' });
     return;
   }
   const nest = typeof req.body.nest === 'number' ? Math.min(0.95, Math.max(0.05, req.body.nest)) : 0.5;
   const meta = { ...parsed.meta, parents: [parents[0], parents[1]] as [string, string], hatchAt: now + HATCH_TIME, nest };
-  const drawing = await addDrawing(meta, parsed.png, null);
+  // Babies take after their parents' moving parts and glowing paint too.
+  const drawing = await addDrawing(meta, parsed.png, parsed.extra);
   broadcast({ type: 'drawing:added', drawing });
   res.status(201).json(drawing);
 });
@@ -190,6 +201,18 @@ api.post('/feed', (req, res) => {
   lastFeed = now;
   const x = typeof req.body?.x === 'number' && req.body.x >= 0 && req.body.x <= 1 ? req.body.x : 0.15 + Math.random() * 0.7;
   broadcast({ type: 'feed', x });
+  res.status(204).end();
+});
+
+/** The tank's ⚙️ menu: passes a command on to every open tank. */
+api.post('/tank', (req, res) => {
+  const { command, value = null } = req.body ?? {};
+  const okValue = value === null || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value)) || (typeof value === 'string' && value.length <= 20);
+  if (!TANK_COMMANDS.includes(command) || !okValue) {
+    res.status(400).json({ error: `command must be one of ${TANK_COMMANDS.join(', ')}` });
+    return;
+  }
+  broadcast({ type: 'tank', command, value });
   res.status(204).end();
 });
 

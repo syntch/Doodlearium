@@ -64,6 +64,10 @@ export interface Creature {
   layout(world: World): void;
   /** Where its name label floats, in screen coordinates. */
   labelAnchor(): { x: number; y: number };
+  /** The drawing itself (a bent mesh or a sprite), for glowing paint to follow. */
+  readonly body?: Container;
+  /** Documentary mode is filming it: time to show off. */
+  star?(on: boolean): void;
 }
 
 export const TAU = Math.PI * 2;

@@ -96,12 +96,26 @@ export class Scene {
       g.poly([x - s * 1.02, h.y, x + s * 1.02, h.y, x, h.y + s * 1.1]).fill({ color: 0xff5c8a, alpha });
     }
 
-    this.darkness = nightDarkness();
-    this.night.clear().rect(0, 0, world.width, world.height).fill({ color: 0x020d24, alpha: this.darkness });
+    // Eases toward the hour's darkness, so switching the time from the ⚙️ menu fades rather than snaps.
+    const want = nightDarkness(this.hour);
+    this.darkness = this.started ? this.darkness + (want - this.darkness) * Math.min(1, dt * 0.7) : want;
+    if (Math.abs(want - this.darkness) < 0.002) this.darkness = want;
+    this.started = true;
+    this.blacklight += ((this.blacklightOn ? 1 : 0) - this.blacklight) * Math.min(1, dt * 1.2);
+    // Under the blacklight the water goes a deep violet and almost everything dims, except blacklight paint.
+    const b = this.blacklight;
+    const color = mixColor(0x020d24, 0x14052e, b);
+    this.night.clear().rect(0, 0, world.width, world.height).fill({ color, alpha: Math.max(this.darkness, 0.78 * b) });
   }
 
   /** 0 in daylight, 0.5 at full night. */
   darkness = 0;
+  private started = false;
+  /** The hour to show, or null for the real time. Starts from `/tank/?hour=22`. */
+  hour: number | null = Number.isFinite(HOUR_OVERRIDE) ? HOUR_OVERRIDE % 24 : null;
+  /** The blacklight: on or off, and how far it has faded in (0..1). */
+  blacklightOn = new URLSearchParams(location.search).has('blacklight');
+  blacklight = 0;
 
   /** Night creatures come out once it's getting properly dark. */
   get isNight() {
@@ -173,10 +187,15 @@ function waterGradient(height: number) {
 /** `/tank/?hour=22` pretends it's that hour, to preview night (or day) any time. */
 const HOUR_OVERRIDE = Number.parseFloat(new URLSearchParams(location.search).get('hour') ?? '');
 
+const mixColor = (a: number, b: number, t: number) => {
+  const ch = (shift: number) => Math.round(((a >> shift) & 255) + ((((b >> shift) & 255) - ((a >> shift) & 255)) * t));
+  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+};
+
 /** 0 during the day, up to 0.5 at night, easing through dawn (5–8h) and dusk (18–21h). */
-function nightDarkness() {
+function nightDarkness(override: number | null) {
   const now = new Date();
-  const hour = Number.isFinite(HOUR_OVERRIDE) ? HOUR_OVERRIDE % 24 : now.getHours() + now.getMinutes() / 60;
+  const hour = override ?? now.getHours() + now.getMinutes() / 60;
   const max = 0.5;
   if (hour >= 8 && hour < 18) return 0;
   if (hour >= 21 || hour < 5) return max;

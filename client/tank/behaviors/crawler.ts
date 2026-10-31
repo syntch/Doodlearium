@@ -30,6 +30,9 @@ export class Crawler implements Creature {
   private stride = 0;
   private meal: Flake | null = null;
   private scale = 1;
+  /** Documentary mode is filming it: it hops about for the camera. */
+  private starring = false;
+  private hopIn = 0;
 
   constructor(
     readonly drawing: Drawing,
@@ -69,6 +72,16 @@ export class Crawler implements Creature {
     return { x: this.view.x, y: this.view.y - this.sprite.texture.height * this.scale - 8 };
   }
 
+  get body() {
+    return this.sprite;
+  }
+
+  star(on: boolean) {
+    this.starring = on;
+    this.hopIn = 1.5;
+    this.view.zIndex = on ? 3000 : depthOrder(this.z);
+  }
+
   private get halfWidth() {
     return (this.sprite.texture.width * this.scale) / 2;
   }
@@ -91,6 +104,15 @@ export class Crawler implements Creature {
 
   update(dt: number, world: World) {
     const ground = sandY(world, this.z);
+    if (this.starring && this.air === 0) {
+      this.hopIn -= dt;
+      if (this.hopIn <= 0) {
+        // A happy little hop for the camera.
+        this.hopIn = 2 + Math.random() * 2;
+        this.air = 0.01;
+        this.fallSpeed = -world.height * 0.32;
+      }
+    }
 
     if (this.air > 0) {
       // Dropping in: sink like a pebble, then a little bounce on landing.

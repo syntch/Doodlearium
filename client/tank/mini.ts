@@ -1,4 +1,5 @@
-import { Application, Container, Texture } from 'pixi.js';
+import { Application, Container, RenderLayer, Texture } from 'pixi.js';
+import { Glow, type GlowTextures } from './glow.ts';
 import { motionOf, type Drawing } from '../../shared/types.ts';
 import { Swimmer } from './behaviors/swimmer.ts';
 import { createCreature } from './creatures.ts';
@@ -13,7 +14,9 @@ const ZOOM = 2;
 
 export interface Preview {
   /** Swaps in a new version of the drawing (the preview owns the texture, or cutout, from then on). */
-  show(drawing: Drawing, texture: Texture, cutout?: Cutout | null): void;
+  show(drawing: Drawing, texture: Texture, cutout?: Cutout | null, glow?: GlowTextures | null): void;
+  /** Turns the preview tank's blacklight on or off. */
+  setBlacklight(on: boolean): void;
   destroy(): void;
 }
 
@@ -34,13 +37,15 @@ export async function createPreview(container: HTMLElement): Promise<Preview> {
   const nightLayer = new Container({ sortableChildren: true });
   food.view.zIndex = 500;
   creatureLayer.addChild(food.view);
-  app.stage.addChild(scene.back, creatureLayer, scene.front, nightLayer);
+  const glowLayer = new RenderLayer();
+  app.stage.addChild(scene.back, creatureLayer, scene.front, nightLayer, glowLayer);
   // A handle for poking at the preview from the browser console, like the tank's.
   Object.assign(window, { doodlearium: { world, creature: () => creature } });
 
   let creature: Creature | null = null;
   let texture: Texture | null = null;
   let cutout: Cutout | null = null;
+  let glow: Glow | null = null;
 
   /** Plants and decorations sit in the middle so they're easy to see. */
   const place = () => {
@@ -93,6 +98,7 @@ export async function createPreview(container: HTMLElement): Promise<Preview> {
     food.update(dt, world);
     try {
       creature?.update(dt, world);
+      glow?.update(0.4 + scene.darkness * 1.2 + scene.blacklight * 0.3, scene.blacklight * 1.1);
       follow(Math.min(1, dt * 3));
     } catch (err) {
       console.warn('Preview creature failed', err);
@@ -101,6 +107,8 @@ export async function createPreview(container: HTMLElement): Promise<Preview> {
   });
 
   function clear() {
+    glow?.destroy();
+    glow = null;
     creature?.view.destroy({ children: true });
     if (cutout) cutout.destroy();
     else texture?.destroy(true);
@@ -110,7 +118,7 @@ export async function createPreview(container: HTMLElement): Promise<Preview> {
   }
 
   return {
-    show(drawing, newTexture, newCutout = null) {
+    show(drawing, newTexture, newCutout = null, glowTextures = null) {
       // Carry on from where the previous version was, so redrawing doesn't make it jump around.
       const was = creature instanceof Swimmer ? { x: creature.x, y: creature.y, facing: creature.facing } : null;
       clear();
@@ -119,8 +127,12 @@ export async function createPreview(container: HTMLElement): Promise<Preview> {
       creature = createCreature(drawing, newTexture, world, false, newCutout?.pieces);
       if (was && creature instanceof Swimmer) Object.assign(creature, was);
       (drawing.nocturnal ? nightLayer : creatureLayer).addChild(creature.view);
+      if (glowTextures && creature.body) glow = new Glow(creature.body, glowTextures, glowLayer);
       place();
       follow(1);
+    },
+    setBlacklight(on) {
+      scene.blacklightOn = on;
     },
     destroy() {
       clear();
