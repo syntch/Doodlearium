@@ -90,6 +90,25 @@ export class Selection {
     this.changedMask();
   }
 
+  /**
+   * Adds a flood region (see floodRegion) to the selection, grown a few pixels so the shape's own
+   * outline comes along with it.
+   */
+  addRegion(region: Uint8Array, grow: number) {
+    const shape = newCanvas(this.width, this.height);
+    const s = shape.getContext('2d')!;
+    const image = s.createImageData(this.width, this.height);
+    for (let i = 0; i < region.length; i++) if (region[i]) image.data[i * 4 + 3] = 255;
+    s.putImageData(image, 0, 0);
+    const m = this.mctx;
+    m.globalCompositeOperation = 'source-over';
+    for (let dx = -grow; dx <= grow; dx += grow) {
+      for (let dy = -grow; dy <= grow; dy += grow) m.drawImage(shape, dx, dy);
+    }
+    m.drawImage(shape, 0, 0);
+    this.changedMask();
+  }
+
   /** Painting a loop around a part selects everything inside it too. */
   fillHoles() {
     fillEnclosed(this.mctx, this.width, this.height);

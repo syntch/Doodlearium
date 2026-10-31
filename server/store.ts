@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Attachment, CreatureType, Drawing, Motion } from '../shared/types.ts';
+import type { Attachment, CreatureType, Drawing, Motion, Part } from '../shared/types.ts';
 
 export const DATA_DIR = join(import.meta.dirname, '..', 'data');
 export const DRAWINGS_DIR = join(DATA_DIR, 'drawings');
@@ -41,20 +41,36 @@ type DrawingMeta = {
   height: number;
   attachments: Attachment[];
   nocturnal: boolean;
+  parts: Part[];
 };
 
-export async function addDrawing(meta: DrawingMeta, png: Buffer): Promise<Drawing> {
+const partsFile = (id: string) => join(DRAWINGS_DIR, `${id}.parts.png`);
+
+/** Saves or (with no parts) removes the drawing's part image. */
+async function writeParts(id: string, partsPng: Buffer | null) {
+  if (partsPng) await writeFile(partsFile(id), partsPng);
+  else await rm(partsFile(id), { force: true });
+}
+
+export async function addDrawing(meta: DrawingMeta, png: Buffer, partsPng: Buffer | null): Promise<Drawing> {
   const drawing: Drawing = { id: randomUUID(), createdAt: Date.now(), ...meta };
   await writeFile(join(DRAWINGS_DIR, `${drawing.id}.png`), png);
+  await writeParts(drawing.id, partsPng);
   drawings.push(drawing);
   await save();
   return drawing;
 }
 
-export async function updateDrawing(id: string, meta: DrawingMeta, png: Buffer): Promise<Drawing | null> {
+export async function updateDrawing(
+  id: string,
+  meta: DrawingMeta,
+  png: Buffer,
+  partsPng: Buffer | null,
+): Promise<Drawing | null> {
   const drawing = drawings.find((d) => d.id === id);
   if (!drawing) return null;
   await writeFile(join(DRAWINGS_DIR, `${id}.png`), png);
+  await writeParts(id, partsPng);
   Object.assign(drawing, meta, { updatedAt: Date.now() });
   await save();
   return drawing;
@@ -66,5 +82,6 @@ export async function removeDrawing(id: string): Promise<boolean> {
   drawings.splice(index, 1);
   await save();
   await rm(join(DRAWINGS_DIR, `${id}.png`), { force: true });
+  await writeParts(id, null);
   return true;
 }

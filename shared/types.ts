@@ -29,6 +29,21 @@ export interface Attachment {
   color: string;
 }
 
+/** How a selected part of a drawing moves on its own, on top of the whole-body motion. */
+export const PART_MOTIONS = ['popout', 'flap', 'spin', 'pulse', 'blink'] as const;
+export type PartMotion = (typeof PART_MOTIONS)[number];
+export const MAX_PARTS = 8;
+
+/**
+ * An animated part. Which pixels belong to it is stored in a separate image (`partsUrl`), where a pixel's
+ * red value is 30 × (its part's index + 1).
+ */
+export interface Part {
+  motion: PartMotion;
+  /** Where it's attached: a line from (x1, y1) to (x2, y2), as fractions of the image's width and height. */
+  hinge: [number, number, number, number];
+}
+
 export const isAttachmentColor = (c: unknown): c is string =>
   typeof c === 'string' && (c === 'rainbow' || /^#[0-9a-f]{6}$/i.test(c));
 
@@ -47,6 +62,7 @@ export interface Drawing {
   attachments?: Attachment[];
   /** Night creatures only come out after dark. */
   nocturnal?: boolean;
+  parts?: Part[];
 }
 
 export interface NewDrawing {
@@ -57,6 +73,9 @@ export interface NewDrawing {
   image: string;
   attachments?: Attachment[];
   nocturnal?: boolean;
+  parts?: Part[];
+  /** PNG data URL, the same size as image, marking each part's pixels. */
+  partsImage?: string;
 }
 
 export type ServerMessage =
@@ -69,3 +88,5 @@ export type ServerMessage =
 /** Images are served with a long cache lifetime, so the version query makes edits show up. */
 export const imageUrl = (d: Pick<Drawing, 'id' | 'createdAt' | 'updatedAt'>) =>
   `/drawings/${d.id}.png?v=${d.updatedAt ?? d.createdAt}`;
+export const partsUrl = (d: Pick<Drawing, 'id' | 'createdAt' | 'updatedAt'>) =>
+  `/drawings/${d.id}.parts.png?v=${d.updatedAt ?? d.createdAt}`;

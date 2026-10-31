@@ -1,6 +1,7 @@
 import { Container, MeshPlane, type Texture } from 'pixi.js';
 import { motionOf, type Drawing } from '../../../shared/types.ts';
 import { Attachments } from '../attachments.ts';
+import { Parts, type Cutout } from '../parts.ts';
 import { BODY_STYLES, type BodyState, type BodyStyle } from '../bodies.ts';
 import type { Flake } from '../food.ts';
 import { TAU, clamp, depthOrder, depthScale, depthTint, seededRandom, type Creature, type World } from '../world.ts';
@@ -48,6 +49,7 @@ export class Swimmer implements Creature {
   private bubbleIn: number;
   private dropTime = 0;
   private attachments: Attachments;
+  private parts: Parts;
   private baseScale = 1;
   private scale = 1;
 
@@ -63,6 +65,7 @@ export class Swimmer implements Creature {
     texture: Texture,
     world: World,
     dropIn: boolean,
+    pieces: Cutout['pieces'] = [],
   ) {
     const rand = seededRandom(drawing.id);
     const roll = rand();
@@ -84,7 +87,8 @@ export class Swimmer implements Creature {
     this.positions = this.mesh.geometry.getAttribute('aPosition').buffer.data as Float32Array;
     this.rest = this.positions.slice();
     this.attachments = new Attachments(drawing.attachments, this.texW, this.texH, { x: this.texW / 2, y: this.texH / 2 });
-    this.view.addChild(this.mesh, this.attachments.container);
+    this.parts = new Parts(pieces, this.texW, this.texH, { x: this.texW / 2, y: this.texH / 2 });
+    this.view.addChild(this.mesh, this.parts.container, this.attachments.container);
     this.applyDepth();
 
     this.layout(world);
@@ -184,7 +188,9 @@ export class Swimmer implements Creature {
     this.body.effort = effort;
     this.bend();
     // Extras ride the same body motion as the drawing underneath them.
-    this.attachments.update(dt, world, (u, v) => style.deform(clamp(u, 0, 1), clamp(v, 0, 1), this.body));
+    const bend = (u: number, v: number) => style.deform(clamp(u, 0, 1), clamp(v, 0, 1), this.body);
+    this.parts.update(dt, effort, bend);
+    this.attachments.update(dt, world, bend);
 
     this.tryToEat(world);
 

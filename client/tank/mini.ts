@@ -3,6 +3,7 @@ import { motionOf, type Drawing } from '../../shared/types.ts';
 import { Swimmer } from './behaviors/swimmer.ts';
 import { createCreature } from './creatures.ts';
 import { Food } from './food.ts';
+import type { Cutout } from './parts.ts';
 import { Scene } from './scene.ts';
 import type { Creature, World } from './world.ts';
 
@@ -11,8 +12,8 @@ const FLOOR = 0.86;
 const ZOOM = 2;
 
 export interface Preview {
-  /** Swaps in a new version of the drawing (the preview owns the texture from then on). */
-  show(drawing: Drawing, texture: Texture): void;
+  /** Swaps in a new version of the drawing (the preview owns the texture, or cutout, from then on). */
+  show(drawing: Drawing, texture: Texture, cutout?: Cutout | null): void;
   destroy(): void;
 }
 
@@ -39,6 +40,7 @@ export async function createPreview(container: HTMLElement): Promise<Preview> {
 
   let creature: Creature | null = null;
   let texture: Texture | null = null;
+  let cutout: Cutout | null = null;
 
   /** Plants and decorations sit in the middle so they're easy to see. */
   const place = () => {
@@ -100,18 +102,21 @@ export async function createPreview(container: HTMLElement): Promise<Preview> {
 
   function clear() {
     creature?.view.destroy({ children: true });
-    texture?.destroy(true);
+    if (cutout) cutout.destroy();
+    else texture?.destroy(true);
     creature = null;
     texture = null;
+    cutout = null;
   }
 
   return {
-    show(drawing, newTexture) {
+    show(drawing, newTexture, newCutout = null) {
       // Carry on from where the previous version was, so redrawing doesn't make it jump around.
       const was = creature instanceof Swimmer ? { x: creature.x, y: creature.y, facing: creature.facing } : null;
       clear();
       texture = newTexture;
-      creature = createCreature(drawing, newTexture, world, false);
+      cutout = newCutout;
+      creature = createCreature(drawing, newTexture, world, false, newCutout?.pieces);
       if (was && creature instanceof Swimmer) Object.assign(creature, was);
       (drawing.nocturnal ? nightLayer : creatureLayer).addChild(creature.view);
       place();

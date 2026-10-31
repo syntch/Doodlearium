@@ -58,6 +58,20 @@ The style picked on the draw page decides how a drawing moves and where it lives
 
 Drawings made before motion styles existed keep working: fish become 🐟 Fish. To change a drawing's style, open it from the gallery with **Edit**.
 
+## Moving parts
+
+Any part of a drawing can move on its own, on top of the whole-body motion. With **⬚ Select**, tap a shape (or paint over a part) and press **✨ Animate**:
+
+| Motion | Good for |
+| --- | --- |
+| 🪽 Pop-out | side fins and flaps: lifts up out of the paper where it's attached, uncovering a cut-out shadow |
+| 🦋 Flap | tails, jaws, flippers: swings back and forth where it's attached |
+| 🌀 Spin | propellers, wheels |
+| 💓 Pulse | hearts, lights |
+| 😉 Blink | eyes |
+
+Pop-out and Flap show an orange line where the part is attached. It's found automatically, but if it's in the wrong place, tap **📍** on the part's chip under the drawing and draw a new line. Moving parts are saved with the drawing (as  beside it) and come back when it's edited.
+
 ## How the animation works
 
 The motion style picks the behaviour (`client/tank/creatures.ts`):
@@ -66,6 +80,7 @@ The motion style picks the behaviour (`client/tank/creatures.ts`):
 - **Crawlers** (`behaviors/crawler.ts`): walk along the sand, pause, turn, and scuttle over to food on the sand.
 - **Plants** (`behaviors/plant.ts`): rooted at the bottom, swaying more toward the tip.
 - **Decorations** (`behaviors/decor.ts`): sit still on the sand.
+- **Moving parts** (`parts.ts`): drawings with parts are split when loaded into a body and one piece per part. Each piece animates around its hinge or middle and rides the body's bend, like extras do.
 
 Random depth makes far-away things smaller and bluer. The tank shows the newest 40 swimmers, 10 crawlers, 24 plants and 14 decorations; older ones stay in the gallery.
 

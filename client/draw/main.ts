@@ -1,9 +1,21 @@
-import { MAX_ATTACHMENTS, imageUrl, motionOf, type AttachmentKind, type Drawing, type Motion } from '../../shared/types.ts';
+import {
+  MAX_ATTACHMENTS,
+  MAX_PARTS,
+  PART_MOTIONS,
+  imageUrl,
+  motionOf,
+  partsUrl,
+  type AttachmentKind,
+  type Drawing,
+  type Motion,
+  type PartMotion,
+} from '../../shared/types.ts';
 import { fetchDrawings, setupFeedButton, submitDrawing, updateDrawing } from '../shared/api.ts';
-import { enclosedHoles, exportDrawing, inkBounds, type PlacedAttachment } from './export.ts';
-import { MATERIALS, MATERIAL_LABELS, floodFill, materialPreview, type Material } from './fill.ts';
+import { enclosedHoles, exportDrawing, inkBounds, type PlacedAttachment, type PlacedPart } from './export.ts';
+import { MATERIALS, MATERIAL_LABELS, floodFill, floodRegion, materialPreview, type Material } from './fill.ts';
 import { readPhoto, removePaper } from './photo.ts';
 import { Selection, applyTransform, maskHas, type TransformOp } from './selection.ts';
+import { PART_INFO, carryParts, cloneCanvas, findHinge, partsFromImage, type EditorPart } from './parts.ts';
 
 /** Colour and the name shown when hovering it. 'clear' paints and fills see-through. */
 const COLORS: [string, string][] = [
@@ -36,6 +48,10 @@ type Op =
   | { type: 'fill'; x: number; y: number; color: string; material: Material; mirror: Mirror }
   | { type: 'attach'; attachment: PlacedAttachment }
   | { type: 'detach'; target: PlacedAttachment }
+  | { type: 'part'; part: EditorPart }
+  | { type: 'unpart'; target: EditorPart }
+  /** A hand-drawn hinge; result is the part with it, made once so later ops can find it. */
+  | { type: 'hinge'; target: EditorPart; hinge: [number, number, number, number]; result?: EditorPart }
   | TransformOp;
 
 const paper = document.querySelector<HTMLCanvasElement>('#paper')!;
@@ -68,6 +84,7 @@ let editing: Drawing | null = null;
 /** Under the new ops; holes are its see-through areas, when re-editing a saved drawing. */
 let base: { image: HTMLImageElement | HTMLCanvasElement; x: number; y: number; holes?: HTMLCanvasElement } | null = null;
 let baseAttachments: PlacedAttachment[] = [];
+let baseParts: EditorPart[] = [];
 const selection = new Selection(paper.width, paper.height);
 /** Where the drawing has been made see-through on purpose, so "Fill inside white" leaves it be. */
 const holesCanvas = Object.assign(document.createElement('canvas'), { width: paper.width, height: paper.height });
@@ -80,6 +97,11 @@ let selectMode: 'add' | 'remove' = 'add';
 /** A selection drag in progress: where it started and where the selection was then. */
 let drag: { x: number; y: number; dx: number; dy: number } | null = null;
 let selectStroke: Point | null = null;
+/** Where a selection stroke started and how far it has strayed, to tell a tap from painting. */
+let selectStart: { x: number; y: number; moved: number } | null = null;
+/** The part whose hinge is being drawn, and the line so far. */
+let hingeFor: EditorPart | null = null;
+let hingeLine: [number, number, number, number] | null = null;
 
 try {
   artistInput.value = localStorage.getItem('doodlearium.artist') ?? '';
@@ -189,6 +211,10 @@ function setTool(tool: Tool) {
 }
 
 function renderHint() {
+  if (hingeFor) {
+    hint.textContent = '📍 Draw a line on the drawing where this part is attached.';
+    return;
+  }
   const extra = EXTRAS.find((e) => e.kind === state.extra)!;
   hint.textContent =
     state.tool === 'fill'
@@ -196,7 +222,7 @@ function renderHint() {
       : state.tool === 'extras'
         ? `${extra.hint}. Tap the drawing to add one, tap it again to remove it. Extras come alive in the tank!`
         : state.tool === 'select'
-          ? 'Paint over a part to select it, then drag it to move it, or use the buttons to resize, turn, flip, copy or delete it.'
+          ? 'Tap a shape or paint over a part to select it. Drag it to move it, or use the buttons to resize, turn, flip, copy, delete or ✨ animate it.'
           : '';
 }
 
@@ -324,6 +350,7 @@ function changed() {
   clearTimeout(suggestTimer);
   suggestTimer = window.setTimeout(suggestMotion, 800);
   schedulePreview();
+  scheduleParts();
 }
 
 document.querySelector<HTMLButtonElement>('#undo')!.onclick = undo;
@@ -332,6 +359,7 @@ document.querySelector<HTMLButtonElement>('#clear')!.onclick = () => {
   ops.length = 0;
   base = null;
   baseAttachments = [];
+  baseParts = [];
   selection.clear();
   closePhotoPanel();
   redraw();
@@ -372,6 +400,11 @@ function withMirror<T extends { x: number; y: number }>(p: T, mirror: Mirror): T
 paper.addEventListener('pointerdown', (e) => {
   if (e.button !== 0) return;
   const p = toCanvas(e);
+  if (hingeFor) {
+    paper.setPointerCapture(e.pointerId);
+    hingeLine = [p.x, p.y, p.x, p.y];
+    return;
+  }
   if (state.tool === 'fill') {
     const op: Op = { type: 'fill', x: p.x, y: p.y, color: state.color, material: state.material, mirror: state.mirror };
     ops.push(op);
@@ -392,6 +425,7 @@ paper.addEventListener('pointerdown', (e) => {
       // Painting more of the selection starts from where the part is now.
       commitSelection();
       selectStroke = p;
+      selectStart = { x: p.x, y: p.y, moved: 0 };
       paintSelection(p);
     }
     return;
@@ -408,6 +442,13 @@ paper.addEventListener('pointerdown', (e) => {
   drawSegment(current, 0);
 });
 paper.addEventListener('pointermove', (e) => {
+  if (hingeLine) {
+    const p = toCanvas(e);
+    hingeLine[2] = p.x;
+    hingeLine[3] = p.y;
+    renderParts();
+    return;
+  }
   if (drag) {
     const p = toCanvas(e);
     selection.dx = drag.dx + p.x - drag.x;
@@ -416,7 +457,9 @@ paper.addEventListener('pointermove', (e) => {
     return;
   }
   if (selectStroke) {
-    paintSelection(toCanvas(e));
+    const p = toCanvas(e);
+    if (selectStart) selectStart.moved = Math.max(selectStart.moved, Math.hypot(p.x - selectStart.x, p.y - selectStart.y));
+    paintSelection(p);
     return;
   }
   if (!current) return;
@@ -428,6 +471,24 @@ paper.addEventListener('pointermove', (e) => {
 });
 const endStroke = () => {
   if (current || drag) changed();
+  if (hingeLine && hingeFor) {
+    const [x1, y1, x2, y2] = hingeLine;
+    if (Math.hypot(x2 - x1, y2 - y1) > 10) {
+      ops.push({ type: 'hinge', target: hingeFor, hinge: hingeLine });
+      showToast('Hinge moved! Check it in ▶ Preview.');
+    }
+    hingeFor = null;
+    hingeLine = null;
+    renderHint();
+    changed();
+  }
+  if (selectStroke && selectStart && selectStart.moved < 6 && selectMode === 'add') {
+    // A tap selects the whole shape under it, outline and all.
+    const image = ctx.getImageData(0, 0, paper.width, paper.height);
+    const i = (Math.floor(selectStart.y) * paper.width + Math.floor(selectStart.x)) * 4;
+    if (image.data[i + 3] >= 128) selection.addRegion(floodRegion(image, [selectStart]), 3);
+  }
+  selectStart = null;
   if (selectStroke) {
     if (selectMode === 'add') selection.fillHoles();
     renderSelection();
@@ -666,6 +727,7 @@ function renderSelectBar() {
   selectBar.querySelectorAll<HTMLButtonElement>('[data-select]').forEach((b) => {
     b.disabled = b.dataset.select !== 'all' && selection.empty;
   });
+  if (selection.empty || state.tool !== 'select') animatePanel.hidden = true;
 }
 
 selectBar.querySelectorAll<HTMLButtonElement>('[data-select-mode]').forEach((b) => {
@@ -696,6 +758,9 @@ const SELECT_ACTIONS: Record<string, () => void> = {
     selection.clear();
     redraw();
   },
+  animate() {
+    animatePanel.hidden = !animatePanel.hidden;
+  },
   none: finishSelection,
   done: finishSelection,
 };
@@ -708,6 +773,159 @@ selectBar.querySelectorAll<HTMLButtonElement>('[data-select]').forEach((b) => {
     changed();
   };
 });
+
+// --- animated parts ------------------------------------------------------------
+
+const animatePanel = document.querySelector<HTMLDivElement>('#animate-panel')!;
+const partsList = document.querySelector<HTMLDivElement>('#parts-list')!;
+const partsOverlay = document.querySelector<HTMLCanvasElement>('#parts-overlay')!.getContext('2d')!;
+
+for (const motion of PART_MOTIONS) {
+  const info = PART_INFO[motion];
+  const b = document.createElement('button');
+  b.textContent = `${info.icon} ${info.label}`;
+  b.title = info.hint;
+  b.onclick = () => makePart(motion);
+  animatePanel.append(b);
+}
+
+/** Turns the selected area into an animated part. */
+function makePart(motion: PartMotion) {
+  if (selection.empty) return;
+  if (currentParts().length >= MAX_PARTS) {
+    showToast(`That's a lot of moving parts! The limit is ${MAX_PARTS}.`, true);
+    return;
+  }
+  commitSelection();
+  ops.push({ type: 'part', part: { mask: cloneCanvas(selection.mask), motion } });
+  selection.clear();
+  animatePanel.hidden = true;
+  renderSelection();
+  renderSelectBar();
+  changed();
+  showToast(`${PART_INFO[motion].icon} ${PART_INFO[motion].label} added! Open ▶ Preview to see it move.`);
+}
+
+function currentParts(): EditorPart[] {
+  const list = [...baseParts];
+  for (const op of ops) {
+    if (op.type === 'part') list.push(op.part);
+    else if (op.type === 'unpart') {
+      const i = list.indexOf(op.target);
+      if (i >= 0) list.splice(i, 1);
+    } else if (op.type === 'hinge') {
+      const i = list.indexOf(op.target);
+      if (i >= 0) list[i] = op.result ??= { ...op.target, hinge: op.hinge };
+    } else if (op.type === 'transform') carryParts(list, op);
+  }
+  if (selection.moved) carryParts(list, selection.pendingOp());
+  return list;
+}
+
+/** Parts with their hinges worked out from the drawing as it is now. */
+function placedParts(): PlacedPart[] {
+  const parts = currentParts();
+  if (!parts.length) return [];
+  const ink = ctx.getImageData(0, 0, paper.width, paper.height);
+  const headRight = !(hasFacing(state.motion) && state.facingLeft);
+  return parts.flatMap((part) => {
+    const hinge = findHinge(ink, part, headRight);
+    return hinge ? [{ ...part, hinge }] : [];
+  });
+}
+
+let partsTimer = 0;
+function scheduleParts() {
+  clearTimeout(partsTimer);
+  partsTimer = window.setTimeout(renderParts, 150);
+}
+
+/** Shows each part tinted orange with its icon, plus the hinge it pops out or flaps from. */
+function renderParts() {
+  const parts = placedParts();
+  partsOverlay.clearRect(0, 0, paper.width, paper.height);
+  for (const part of parts) {
+    const tint = document.createElement('canvas');
+    tint.width = paper.width;
+    tint.height = paper.height;
+    const t = tint.getContext('2d')!;
+    t.drawImage(part.mask, 0, 0);
+    t.globalCompositeOperation = 'source-in';
+    t.fillStyle = 'rgba(255, 140, 26, 0.22)';
+    t.fillRect(0, 0, paper.width, paper.height);
+    partsOverlay.drawImage(tint, 0, 0);
+    const [x1, y1, x2, y2] = part.hinge;
+    if (part.motion === 'popout' || part.motion === 'flap') {
+      partsOverlay.save();
+      partsOverlay.lineWidth = 6;
+      partsOverlay.lineCap = 'round';
+      partsOverlay.setLineDash([12, 8]);
+      partsOverlay.strokeStyle = 'rgba(230, 110, 0, 0.9)';
+      partsOverlay.beginPath();
+      partsOverlay.moveTo(x1, y1);
+      partsOverlay.lineTo(x2, y2);
+      partsOverlay.stroke();
+      partsOverlay.restore();
+    }
+    const b = inkBounds(part.mask);
+    if (b) {
+      partsOverlay.font = '36px sans-serif';
+      partsOverlay.textAlign = 'center';
+      partsOverlay.textBaseline = 'middle';
+      partsOverlay.fillText(PART_INFO[part.motion].icon, (b.left + b.right) / 2, (b.top + b.bottom) / 2);
+    }
+  }
+  if (hingeLine) {
+    partsOverlay.save();
+    partsOverlay.lineWidth = 8;
+    partsOverlay.lineCap = 'round';
+    partsOverlay.strokeStyle = 'rgba(230, 110, 0, 0.9)';
+    partsOverlay.beginPath();
+    partsOverlay.moveTo(hingeLine[0], hingeLine[1]);
+    partsOverlay.lineTo(hingeLine[2], hingeLine[3]);
+    partsOverlay.stroke();
+    partsOverlay.restore();
+  }
+  partsList.hidden = parts.length === 0;
+  partsList.replaceChildren(
+    document.createTextNode('Moving parts:'),
+    ...currentParts().map((part) => {
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.textContent = `${PART_INFO[part.motion].icon} ${PART_INFO[part.motion].label}`;
+      const remove = document.createElement('button');
+      remove.textContent = '✕';
+      remove.title = 'Stop this part moving';
+      remove.onclick = () => {
+        ops.push({ type: 'unpart', target: part });
+        changed();
+      };
+      if (part.motion === 'popout' || part.motion === 'flap') {
+        const pin = document.createElement('button');
+        pin.textContent = '📍';
+        pin.title = 'Draw where it is attached';
+        pin.onclick = () => {
+          hingeFor = part;
+          renderHint();
+        };
+        chip.append(pin);
+      }
+      chip.append(remove);
+      return chip;
+    }),
+  );
+}
+
+/** The drawing as it would be sent, with its parts. */
+function exportCurrent() {
+  return exportDrawing(paper, {
+    mirror: hasFacing(state.motion) && state.facingLeft,
+    paperFill: document.querySelector<HTMLInputElement>('#paper-fill')!.checked,
+    holes: holesCanvas,
+    attachments: currentAttachments(),
+    parts: placedParts(),
+  });
+}
 
 // --- photo of a paper drawing ----------------------------------------------
 
@@ -733,6 +951,7 @@ photoInput.onchange = async () => {
   }
   ops.length = 0;
   baseAttachments = [];
+  baseParts = [];
   selection.clear();
   photoPanel.hidden = false;
   applyPhoto();
@@ -795,16 +1014,23 @@ function schedulePreview() {
 
 async function refreshPreview() {
   if (previewEl.hidden || !preview) return;
-  const exported = exportDrawing(paper, {
-    mirror: hasFacing(state.motion) && state.facingLeft,
-    paperFill: document.querySelector<HTMLInputElement>('#paper-fill')!.checked,
-    holes: holesCanvas,
-    attachments: currentAttachments(),
-  });
+  const exported = exportCurrent();
   if (!exported) return;
-  const image = new Image();
-  image.src = exported.dataUrl;
-  const [{ Texture }, view] = await Promise.all([import('pixi.js'), preview, image.decode()]);
+  const load = async (src?: string) => {
+    if (!src) return null;
+    const image = new Image();
+    image.src = src;
+    await image.decode();
+    return image;
+  };
+  const [{ Texture }, { splitParts, toCutout }, view, image, partsImage] = await Promise.all([
+    import('pixi.js'),
+    import('../tank/parts.ts'),
+    preview,
+    load(exported.dataUrl),
+    load(exported.partsImage),
+  ]);
+  const cutout = partsImage ? toCutout(splitParts(image!, partsImage, exported.parts)) : null;
   view.show(
     {
       // This id seeds an easygoing creature near the front glass at a typical size.
@@ -818,8 +1044,10 @@ async function refreshPreview() {
       height: exported.height,
       attachments: exported.attachments,
       nocturnal: nocturnalInput.checked,
+      parts: exported.parts,
     },
-    Texture.from(image),
+    cutout?.body ?? Texture.from(image!),
+    cutout,
   );
 }
 document.querySelector<HTMLInputElement>('#paper-fill')!.addEventListener('change', schedulePreview);
@@ -838,12 +1066,7 @@ function showToast(message: string, error = false) {
 document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) => {
   e.preventDefault();
   finishSelection();
-  const exported = exportDrawing(paper, {
-    mirror: hasFacing(state.motion) && state.facingLeft,
-    paperFill: document.querySelector<HTMLInputElement>('#paper-fill')!.checked,
-    holes: holesCanvas,
-    attachments: currentAttachments(),
-  });
+  const exported = exportCurrent();
   if (!exported) {
     showToast('Draw something first!', true);
     return;
@@ -856,6 +1079,8 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
     image: exported.dataUrl,
     attachments: exported.attachments,
     nocturnal: nocturnalInput.checked,
+    parts: exported.parts,
+    partsImage: exported.partsImage,
   };
 
   sendButton.disabled = true;
@@ -874,6 +1099,7 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
     ops.length = 0;
     base = null;
     baseAttachments = [];
+    baseParts = [];
     nameInput.value = '';
     nocturnalInput.checked = false;
     suggestDismissed = false;
@@ -911,6 +1137,18 @@ async function loadForEditing(id: string) {
     x: base!.x + a.x * image.width,
     y: base!.y + a.y * image.height,
   }));
+  baseParts = [];
+  if (drawing.parts?.length) {
+    const partsImage = new Image();
+    partsImage.src = partsUrl(drawing);
+    await partsImage.decode();
+    baseParts = partsFromImage(
+      partsImage,
+      drawing.parts.map((p) => p.motion),
+      paper,
+      base,
+    );
+  }
   setMotion(motionOf(drawing));
   nameInput.value = drawing.name;
   artistInput.value = drawing.artist;

@@ -1,6 +1,7 @@
 import { Container, Sprite, type Texture } from 'pixi.js';
 import type { Drawing } from '../../../shared/types.ts';
 import { Attachments } from '../attachments.ts';
+import { Parts, type Cutout } from '../parts.ts';
 import type { Flake } from '../food.ts';
 import { clamp, depthOrder, seededRandom, depthScale, depthTint, sandY, TAU, type Creature, type World } from '../world.ts';
 
@@ -13,6 +14,7 @@ export class Crawler implements Creature {
   readonly view = new Container();
   private sprite: Sprite;
   private attachments: Attachments;
+  private parts: Parts;
   private z: number;
   private size: number;
   private pace: number;
@@ -34,6 +36,7 @@ export class Crawler implements Creature {
     texture: Texture,
     world: World,
     dropIn: boolean,
+    pieces: Cutout['pieces'] = [],
   ) {
     const rand = seededRandom(drawing.id);
     this.z = rand(0.2, 0.9);
@@ -45,7 +48,8 @@ export class Crawler implements Creature {
       x: texture.width / 2,
       y: texture.height,
     });
-    this.view.addChild(this.sprite, this.attachments.container);
+    this.parts = new Parts(pieces, texture.width, texture.height, { x: texture.width / 2, y: texture.height });
+    this.view.addChild(this.sprite, this.parts.container, this.attachments.container);
     this.view.zIndex = depthOrder(this.z);
     this.x = world.width * (0.1 + Math.random() * 0.8);
     this.facing = Math.random() < 0.5 ? -1 : 1;
@@ -139,6 +143,7 @@ export class Crawler implements Creature {
     this.view.position.set(this.x, ground - this.air - bounce * h * 0.06);
     this.view.scale.set(this.facing * this.scale * (1 + bounce * 0.04), this.scale * (1 - bounce * 0.05 + breathe));
     this.view.rotation = Math.sin(this.step * 2) * 0.04 * this.stride * Math.sign(this.facing);
+    this.parts.update(dt, 1 + this.stride);
     this.attachments.update(dt, world);
   }
 }

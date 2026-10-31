@@ -1,4 +1,4 @@
-import type { Attachment } from '../../shared/types.ts';
+import type { Attachment, Part, PartMotion } from '../../shared/types.ts';
 
 const MAX_SIZE = 512;
 const PADDING = 6;
@@ -9,10 +9,18 @@ const ALPHA_WALL = 128;
 /** An extra placed on the paper, in paper pixel coordinates. */
 export type PlacedAttachment = Omit<Attachment, 'x' | 'y'> & { x: number; y: number };
 
+/** An animated part on the paper: its area, and its hinge line in paper pixels. */
+export interface PlacedPart {
+  mask: HTMLCanvasElement;
+  motion: PartMotion;
+  hinge: [number, number, number, number];
+}
+
 /**
  * Crops the drawing to its inked area, scales it down, optionally mirrors it so it faces right,
  * and optionally fills enclosed regions white so outline-only drawings look like paper cut-outs.
- * Extras are converted to fractions of the exported image.
+ * Extras and part hinges are converted to fractions of the exported image, and parts get an image of
+ * their own marking which pixels belong to which part.
  */
 export function exportDrawing(
   source: HTMLCanvasElement,
@@ -21,23 +29,38 @@ export function exportDrawing(
     paperFill,
     attachments,
     holes,
+    parts = [],
   }: {
     mirror: boolean;
     paperFill: boolean;
     attachments: PlacedAttachment[];
     /** Areas painted invisible, which the white fill must leave see-through. */
     holes?: HTMLCanvasElement;
+    parts?: PlacedPart[];
   },
-): { dataUrl: string; width: number; height: number; attachments: Attachment[] } | null {
+): {
+  dataUrl: string;
+  width: number;
+  height: number;
+  attachments: Attachment[];
+  parts: Part[];
+  partsImage?: string;
+} | null {
   const bounds = inkBounds(source);
   if (!bounds) return null;
 
   const cropW = bounds.right - bounds.left + 1 + PADDING * 2;
   const cropH = bounds.bottom - bounds.top + 1 + PADDING * 2;
   const clampFraction = (v: number) => Math.min(1.5, Math.max(-0.5, v));
-  const exportedAttachments = attachments.map((a) => {
-    const x = clampFraction((a.x - (bounds.left - PADDING)) / cropW);
-    return { ...a, x: mirror ? 1 - x : x, y: clampFraction((a.y - (bounds.top - PADDING)) / cropH) };
+  const toFraction = (px: number, py: number) => {
+    const x = clampFraction((px - (bounds.left - PADDING)) / cropW);
+    return { x: mirror ? 1 - x : x, y: clampFraction((py - (bounds.top - PADDING)) / cropH) };
+  };
+  const exportedAttachments = attachments.map((a) => ({ ...a, ...toFraction(a.x, a.y) }));
+  const exportedParts: Part[] = parts.map(({ motion, hinge: [x1, y1, x2, y2] }) => {
+    const a = toFraction(x1, y1);
+    const b = toFraction(x2, y2);
+    return { motion, hinge: [a.x, a.y, b.x, b.y] };
   });
   const scale = Math.min(1, MAX_SIZE / Math.max(cropW, cropH));
   const width = Math.max(1, Math.round(cropW * scale));
@@ -68,7 +91,33 @@ export function exportDrawing(
     }
     fillEnclosed(ctx, width, height, keepClear);
   }
-  return { dataUrl: out.toDataURL('image/png'), width, height, attachments: exportedAttachments };
+  let partsImage: string | undefined;
+  if (parts.length) {
+    // Later parts win where they overlap.
+    const marks = Object.assign(document.createElement('canvas'), { width, height });
+    const mctx = marks.getContext('2d', { willReadFrequently: true })!;
+    const result = mctx.createImageData(width, height);
+    parts.forEach((part, index) => {
+      mctx.clearRect(0, 0, width, height);
+      place(mctx, part.mask);
+      const area = mctx.getImageData(0, 0, width, height).data;
+      for (let i = 0; i < area.length; i += 4) {
+        if (area[i + 3] < 128) continue;
+        result.data[i] = (index + 1) * 30;
+        result.data[i + 3] = 255;
+      }
+    });
+    mctx.putImageData(result, 0, 0);
+    partsImage = marks.toDataURL('image/png');
+  }
+  return {
+    dataUrl: out.toDataURL('image/png'),
+    width,
+    height,
+    attachments: exportedAttachments,
+    parts: exportedParts,
+    partsImage,
+  };
 }
 
 export function inkBounds(canvas: HTMLCanvasElement) {

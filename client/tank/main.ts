@@ -4,11 +4,14 @@ import { connectLive, feedFish, fetchDrawings } from '../shared/api.ts';
 import { Swimmer } from './behaviors/swimmer.ts';
 import { CAPS, createCreature } from './creatures.ts';
 import { Food } from './food.ts';
+import { loadCutout, type Cutout } from './parts.ts';
 import { Scene } from './scene.ts';
 import type { Creature, World } from './world.ts';
 
 interface Entry {
   creature: Creature;
+  /** Drawings with animated parts are split into their own textures, freed with the entry. */
+  cutout?: Cutout;
   fade: number;
   removing: boolean;
 }
@@ -68,8 +71,14 @@ async function addDrawing(drawing: Drawing, dropIn: boolean) {
   if (entries.has(drawing.id) || loading.has(drawing.id)) return;
   loading.add(drawing.id);
   let texture: Texture;
+  let cutout: Cutout | undefined;
   try {
-    texture = await Assets.load<Texture>(imageUrl(drawing));
+    if (drawing.parts?.length) {
+      cutout = await loadCutout(drawing, imageUrl(drawing));
+      texture = cutout.body;
+    } else {
+      texture = await Assets.load<Texture>(imageUrl(drawing));
+    }
   } catch (err) {
     console.warn(`Could not load ${drawing.id}`, err);
     return;
@@ -77,8 +86,8 @@ async function addDrawing(drawing: Drawing, dropIn: boolean) {
     loading.delete(drawing.id);
   }
 
-  const creature = createCreature(drawing, texture, world, dropIn);
-  const entry: Entry = { creature, fade: 0, removing: false };
+  const creature = createCreature(drawing, texture, world, dropIn, cutout?.pieces);
+  const entry: Entry = { creature, cutout, fade: 0, removing: false };
   creature.view.alpha = 0;
   entries.set(drawing.id, entry);
   (drawing.nocturnal ? nightLayer : creatureLayer).addChild(creature.view);
@@ -140,9 +149,10 @@ function safeUpdate(entry: Entry, dt: number) {
   }
 }
 
-function destroyEntry({ creature }: Entry) {
+function destroyEntry({ creature, cutout }: Entry) {
   creature.view.destroy({ children: true });
-  void Assets.unload(imageUrl(creature.drawing));
+  if (cutout) cutout.destroy();
+  else void Assets.unload(imageUrl(creature.drawing));
 }
 
 /** Keeps only the newest N of the drawing's type in the tank. */

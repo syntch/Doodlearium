@@ -168,17 +168,11 @@ export function materialPreview(material: Material, color: string) {
 }
 
 /**
- * Bucket fill from one or more seed points. Each seed floods the area of similar colour around it
- * (transparent areas count as one colour), then the area grows by one pixel so it tucks under
- * anti-aliased line edges, which are drawn back on top.
+ * The area of similar colour around each seed (transparent areas count as one colour), plus a one-pixel
+ * ring around it so fills tuck under anti-aliased line edges. In the result, 1 = area and 2 = ring.
  */
-/**
- * Fills the area under each seed. Colour 'clear' makes the area see-through instead.
- * Returns the area (1 = filled, 2 = its edge ring) so the caller can track see-through parts.
- */
-export function floodFill(ctx: CanvasRenderingContext2D, seeds: { x: number; y: number }[], material: Material, color: string) {
-  const { width, height } = ctx.canvas;
-  const image = ctx.getImageData(0, 0, width, height);
+export function floodRegion(image: ImageData, seeds: { x: number; y: number }[]) {
+  const { width, height } = image;
   const d = image.data;
   const mask = new Uint8Array(width * height); // 1 = filled area, 2 = edge ring
   const stack = new Int32Array(width * height);
@@ -221,6 +215,19 @@ export function floodFill(ctx: CanvasRenderingContext2D, seeds: { x: number; y: 
     if (i >= width && !mask[i - width]) mask[i - width] = 2;
     if (i < width * (height - 1) && !mask[i + width]) mask[i + width] = 2;
   }
+  return mask;
+}
+
+/**
+ * Bucket fill from one or more seed points: the flood region takes the paint, and its edge ring keeps
+ * its line drawn over the paint. Colour 'clear' makes the area see-through instead.
+ * Returns the region (see floodRegion) so the caller can track see-through parts.
+ */
+export function floodFill(ctx: CanvasRenderingContext2D, seeds: { x: number; y: number }[], material: Material, color: string) {
+  const { width, height } = ctx.canvas;
+  const image = ctx.getImageData(0, 0, width, height);
+  const d = image.data;
+  const mask = floodRegion(image, seeds);
 
   if (color === 'clear') {
     for (let i = 0; i < mask.length; i++) if (mask[i] === 1) d[i * 4 + 3] = 0;

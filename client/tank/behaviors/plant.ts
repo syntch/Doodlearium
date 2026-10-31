@@ -1,6 +1,7 @@
 import { Container, MeshPlane, type Texture } from 'pixi.js';
 import type { Drawing } from '../../../shared/types.ts';
 import { Attachments } from '../attachments.ts';
+import { Parts, type Cutout } from '../parts.ts';
 import { TAU, clamp, depthOrder, depthScale, depthTint, sandY, seededRandom, type Creature, type World } from '../world.ts';
 
 const ROWS = 12;
@@ -20,11 +21,13 @@ export class Plant implements Creature {
   private swaySpeed: number;
   private scale = 1;
   private attachments: Attachments;
+  private parts: Parts;
 
   constructor(
     readonly drawing: Drawing,
     texture: Texture,
     world: World,
+    pieces: Cutout['pieces'] = [],
   ) {
     const rand = seededRandom(drawing.id);
     this.z = rand();
@@ -41,7 +44,8 @@ export class Plant implements Creature {
     this.positions = this.mesh.geometry.getAttribute('aPosition').buffer.data as Float32Array;
     this.rest = this.positions.slice();
     this.attachments = new Attachments(drawing.attachments, this.texW, this.texH, { x: this.texW / 2, y: this.texH });
-    this.view.addChild(this.mesh, this.attachments.container);
+    this.parts = new Parts(pieces, this.texW, this.texH, { x: this.texW / 2, y: this.texH });
+    this.view.addChild(this.mesh, this.parts.container, this.attachments.container);
     this.view.zIndex = depthOrder(this.z);
     this.layout(world);
   }
@@ -65,7 +69,9 @@ export class Plant implements Creature {
       p[i] = this.rest[i] + this.swayAt(1 - this.rest[i + 1] / this.texH, t);
     }
     this.mesh.geometry.getAttribute('aPosition').buffer.update();
-    this.attachments.update(dt, world, (_u, y) => ({ dx: this.swayAt(clamp(1 - y, 0, 1), t), dy: 0 }));
+    const bend = (_u: number, y: number) => ({ dx: this.swayAt(clamp(1 - y, 0, 1), t), dy: 0 });
+    this.parts.update(dt, 1, bend);
+    this.attachments.update(dt, world, bend);
   }
 
   /** Sideways offset at height v (0 roots .. 1 tip). */

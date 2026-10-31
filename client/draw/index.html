@@ -38,6 +38,7 @@
           <div class="holes" id="holes" aria-hidden="true"></div>
           <canvas id="paper" width="1000" height="750"></canvas>
           <div class="guide" id="guide" aria-hidden="true"></div>
+          <canvas class="selection-overlay" id="parts-overlay" width="1000" height="750" aria-hidden="true"></canvas>
           <canvas class="selection-overlay" id="selection-overlay" width="1000" height="750" aria-hidden="true"></canvas>
           <div class="markers" id="markers" aria-hidden="true"></div>
           <div class="brush-cursor" id="brush-cursor" hidden></div>
@@ -84,13 +85,18 @@
             <button data-select="left" title="Turn left">↺</button>
             <button data-select="right" title="Turn right">↻</button>
             <button data-select="flip" title="Flip it around">⇋ Flip</button>
+            <button data-select="animate" title="Make this part move on its own">✨ Animate</button>
             <button data-select="copy" title="Make a copy (then drag it)">📄 Copy</button>
             <button data-select="delete" title="Delete the selected part">🗑 Delete</button>
             <button data-select="done" class="primary" title="Finish and unselect">✓ Done</button>
           </span>
         </div>
       </div>
+      <div class="animate-panel" id="animate-panel" hidden>
+        <span>Make the selected part:</span>
+      </div>
       <p class="hint" id="hint"></p>
+      <div class="parts-list" id="parts-list" hidden></div>
 
       <form class="submit" id="submit-form">
         <input type="text" id="name" placeholder="Name it (e.g. Bubbles)" maxlength="40" />

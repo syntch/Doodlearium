@@ -1,6 +1,7 @@
 import { Container, Sprite, type Texture } from 'pixi.js';
 import type { Drawing } from '../../../shared/types.ts';
 import { Attachments } from '../attachments.ts';
+import { Parts, type Cutout } from '../parts.ts';
 import { depthOrder, depthScale, depthTint, sandY, seededRandom, type Creature, type World } from '../world.ts';
 
 /** Sits still on the sand. */
@@ -11,11 +12,13 @@ export class Decor implements Creature {
   private nx: number;
   private size: number;
   private attachments: Attachments;
+  private parts: Parts;
 
   constructor(
     readonly drawing: Drawing,
     texture: Texture,
     world: World,
+    pieces: Cutout['pieces'] = [],
   ) {
     const rand = seededRandom(drawing.id);
     this.z = rand();
@@ -27,7 +30,8 @@ export class Decor implements Creature {
       x: texture.width / 2,
       y: texture.height,
     });
-    this.view.addChild(this.sprite, this.attachments.container);
+    this.parts = new Parts(pieces, texture.width, texture.height, { x: texture.width / 2, y: texture.height });
+    this.view.addChild(this.sprite, this.parts.container, this.attachments.container);
     this.view.zIndex = depthOrder(this.z);
     this.layout(world);
   }
@@ -45,6 +49,7 @@ export class Decor implements Creature {
   }
 
   update(dt: number, world: World) {
+    this.parts.update(dt);
     this.attachments.update(dt, world);
   }
 }

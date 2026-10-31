@@ -3,12 +3,15 @@ import {
   ATTACHMENT_KINDS,
   CREATURE_TYPES,
   MAX_ATTACHMENTS,
+  MAX_PARTS,
   MOTIONS,
+  PART_MOTIONS,
   habitatOf,
   isAttachmentColor,
   motionOf,
   type Attachment,
   type Motion,
+  type Part,
 } from '../shared/types.ts';
 import { addDrawing, listDrawings, removeDrawing, updateDrawing } from './store.ts';
 import { broadcast } from './ws.ts';
@@ -36,15 +39,20 @@ function parseDrawing(body: any) {
       ? motionOf({ type })
       : undefined;
   if (!motion) return { error: `motion must be one of ${MOTIONS.join(', ')}` };
-  const prefix = 'data:image/png;base64,';
-  if (typeof image !== 'string' || !image.startsWith(prefix)) return { error: 'image must be a PNG data URL' };
-  const png = Buffer.from(image.slice(prefix.length), 'base64');
-  if (png.length < 24 || !png.subarray(0, 8).equals(PNG_SIGNATURE)) return { error: 'image is not a valid PNG' };
-  // IHDR chunk: width and height are big-endian uint32s at bytes 16 and 20.
-  const width = png.readUInt32BE(16);
-  const height = png.readUInt32BE(20);
+  const png = decodePng(image);
+  if (!png) return { error: 'image must be a PNG data URL' };
+  const { width, height } = png;
   if (!width || !height || width > MAX_DIMENSION || height > MAX_DIMENSION) {
     return { error: `image must be at most ${MAX_DIMENSION}px on each side` };
+  }
+  const parts = parseParts(body.parts);
+  if (!parts) return { error: `parts must be a list of at most ${MAX_PARTS} valid parts` };
+  let partsPng = null;
+  if (parts.length) {
+    partsPng = decodePng(body.partsImage);
+    if (!partsPng || partsPng.width !== width || partsPng.height !== height) {
+      return { error: 'partsImage must be a PNG the same size as image' };
+    }
   }
   const attachments = parseAttachments(body.attachments);
   if (!attachments) return { error: `attachments must be a list of at most ${MAX_ATTACHMENTS} valid extras` };
@@ -57,8 +65,38 @@ function parseDrawing(body: any) {
     height,
     attachments,
     nocturnal: body.nocturnal === true,
+    parts,
   };
-  return { meta, png };
+  return { meta, png: png.bytes, partsPng: partsPng?.bytes ?? null };
+}
+
+/** A PNG data URL's bytes and size, or null if it isn't one. */
+function decodePng(value: unknown) {
+  const prefix = 'data:image/png;base64,';
+  if (typeof value !== 'string' || !value.startsWith(prefix)) return null;
+  const bytes = Buffer.from(value.slice(prefix.length), 'base64');
+  if (bytes.length < 24 || !bytes.subarray(0, 8).equals(PNG_SIGNATURE)) return null;
+  // IHDR chunk: width and height are big-endian uint32s at bytes 16 and 20.
+  return { bytes, width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+}
+
+function parseParts(value: unknown): Part[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > MAX_PARTS) return null;
+  const result: Part[] = [];
+  for (const p of value) {
+    const hinge = p?.hinge;
+    if (
+      !PART_MOTIONS.includes(p?.motion) ||
+      !Array.isArray(hinge) ||
+      hinge.length !== 4 ||
+      !hinge.every((n: unknown) => typeof n === 'number' && n >= -1 && n <= 2)
+    ) {
+      return null;
+    }
+    result.push({ motion: p.motion, hinge: [hinge[0], hinge[1], hinge[2], hinge[3]] });
+  }
+  return result;
 }
 
 function parseAttachments(value: unknown): Attachment[] | null {
@@ -87,7 +125,7 @@ api.post('/drawings', async (req, res) => {
     res.status(400).json({ error: parsed.error });
     return;
   }
-  const drawing = await addDrawing(parsed.meta, parsed.png);
+  const drawing = await addDrawing(parsed.meta, parsed.png, parsed.partsPng);
   broadcast({ type: 'drawing:added', drawing });
   res.status(201).json(drawing);
 });
@@ -98,7 +136,7 @@ api.put('/drawings/:id', async (req, res) => {
     res.status(400).json({ error: parsed.error });
     return;
   }
-  const drawing = await updateDrawing(req.params.id, parsed.meta, parsed.png);
+  const drawing = await updateDrawing(req.params.id, parsed.meta, parsed.png, parsed.partsPng);
   if (!drawing) {
     res.status(404).json({ error: 'not found' });
     return;
