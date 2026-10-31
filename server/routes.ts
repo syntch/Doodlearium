@@ -94,7 +94,11 @@ function parseParts(value: unknown): Part[] | null {
     ) {
       return null;
     }
-    result.push({ motion: p.motion, hinge: [hinge[0], hinge[1], hinge[2], hinge[3]] });
+    const tuning = (n: unknown) => (n === undefined ? 1 : typeof n === 'number' && n >= 0.25 && n <= 3 ? n : null);
+    const speed = tuning(p.speed);
+    const amount = tuning(p.amount);
+    if (speed === null || amount === null) return null;
+    result.push({ motion: p.motion, hinge: [hinge[0], hinge[1], hinge[2], hinge[3]], speed, amount });
   }
   return result;
 }
@@ -143,6 +147,36 @@ api.put('/drawings/:id', async (req, res) => {
   }
   broadcast({ type: 'drawing:updated', drawing });
   res.json(drawing);
+});
+
+/** Eggs are a treat: at most one every few hours, however many tanks are open. */
+const EGG_GAP = Number(process.env.EGG_GAP_MINUTES ?? 360) * 60_000;
+const HATCH_TIME = Number(process.env.HATCH_SECONDS ?? 180) * 1000;
+
+api.post('/eggs', async (req, res) => {
+  const parsed = parseDrawing(req.body);
+  if ('error' in parsed) {
+    res.status(400).json({ error: parsed.error });
+    return;
+  }
+  const all = listDrawings();
+  const parents = req.body?.parents;
+  const valid = (id: unknown) => all.some((d) => d.id === id && !d.parents);
+  if (!Array.isArray(parents) || parents.length !== 2 || parents[0] === parents[1] || !parents.every(valid)) {
+    res.status(400).json({ error: 'parents must be two different drawings that are not babies themselves' });
+    return;
+  }
+  const now = Date.now();
+  const lastEgg = Math.max(0, ...all.filter((d) => d.parents).map((d) => d.createdAt));
+  if (now - lastEgg < EGG_GAP) {
+    res.status(429).json({ error: 'Not time for another egg yet' });
+    return;
+  }
+  const nest = typeof req.body.nest === 'number' ? Math.min(0.95, Math.max(0.05, req.body.nest)) : 0.5;
+  const meta = { ...parsed.meta, parents: [parents[0], parents[1]] as [string, string], hatchAt: now + HATCH_TIME, nest };
+  const drawing = await addDrawing(meta, parsed.png, null);
+  broadcast({ type: 'drawing:added', drawing });
+  res.status(201).json(drawing);
 });
 
 let lastFeed = 0;

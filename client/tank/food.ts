@@ -63,7 +63,7 @@ export class Food {
       const restY = world.floorY + f.size * 2;
       if (f.y < restY) {
         f.y = Math.min(restY, f.y + world.height * 0.045 * dt);
-        f.x += Math.sin(f.age * 2 + f.phase) * f.drift * dt;
+        f.x += (Math.sin(f.age * 2 + f.phase) * f.drift + world.current) * dt;
       } else {
         f.landedFor += dt;
       }

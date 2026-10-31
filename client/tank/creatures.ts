@@ -7,8 +7,12 @@ import { Swimmer } from './behaviors/swimmer.ts';
 import type { Cutout } from './parts.ts';
 import type { Creature, World } from './world.ts';
 
+/** Babies get their own few places, so they never crowd out the family's drawings. */
+export type Bucket = CreatureType | 'baby';
+export const bucketOf = (d: Drawing): Bucket => (d.parents ? 'baby' : d.type);
+
 /** How many of each kind the tank shows at once; older ones retire to the gallery. */
-export const CAPS: Record<CreatureType, number> = { swimmer: 40, crawler: 10, plant: 24, decor: 14 };
+export const CAPS: Record<Bucket, number> = { swimmer: 40, crawler: 10, plant: 24, decor: 14, baby: 6 };
 
 /**
  * The drawing's motion style picks its behaviour; every open-water style shares the swimmer brain.

@@ -5,7 +5,7 @@ import { createCreature } from './creatures.ts';
 import { Food } from './food.ts';
 import type { Cutout } from './parts.ts';
 import { Scene } from './scene.ts';
-import type { Creature, World } from './world.ts';
+import { newWorld, type Creature } from './world.ts';
 
 const FLOOR = 0.86;
 /** The camera shows part of the tank, close up, so the creature is big enough to watch. */
@@ -29,7 +29,7 @@ export async function createPreview(container: HTMLElement): Promise<Preview> {
 
   const scene = new Scene();
   const food = new Food();
-  const world: World = { width: 0, height: 0, floorY: 0, time: 0, scene, food, fish: [], school: null };
+  const world = newWorld(scene, food);
   const creatureLayer = new Container({ sortableChildren: true });
   const nightLayer = new Container({ sortableChildren: true });
   food.view.zIndex = 500;

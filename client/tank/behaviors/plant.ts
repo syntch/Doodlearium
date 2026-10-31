@@ -2,7 +2,7 @@ import { Container, MeshPlane, type Texture } from 'pixi.js';
 import type { Drawing } from '../../../shared/types.ts';
 import { Attachments } from '../attachments.ts';
 import { Parts, type Cutout } from '../parts.ts';
-import { TAU, clamp, depthOrder, depthScale, depthTint, sandY, seededRandom, type Creature, type World } from '../world.ts';
+import { TAU, clamp, depthOrder, depthScale, depthTint, sandY, seededRandom, type Creature, type Hideout, type World } from '../world.ts';
 
 const ROWS = 12;
 
@@ -58,6 +58,16 @@ export class Plant implements Creature {
     this.view.scale.set(this.scale);
   }
 
+  hideout(): Hideout {
+    return {
+      x: this.view.x,
+      bottom: this.view.y,
+      height: this.texH * this.scale,
+      halfWidth: (this.texW * this.scale) / 2,
+      z: this.z,
+    };
+  }
+
   labelAnchor() {
     return { x: this.view.x, y: this.view.y - this.texH * this.scale - 8 };
   }
@@ -66,17 +76,19 @@ export class Plant implements Creature {
     const t = world.time * this.swaySpeed;
     const p = this.positions;
     for (let i = 0; i < p.length; i += 2) {
-      p[i] = this.rest[i] + this.swayAt(1 - this.rest[i + 1] / this.texH, t);
+      p[i] = this.rest[i] + this.swayAt(1 - this.rest[i + 1] / this.texH, t, world);
     }
     this.mesh.geometry.getAttribute('aPosition').buffer.update();
-    const bend = (_u: number, y: number) => ({ dx: this.swayAt(clamp(1 - y, 0, 1), t), dy: 0 });
+    const bend = (_u: number, y: number) => ({ dx: this.swayAt(clamp(1 - y, 0, 1), t, world), dy: 0 });
     this.parts.update(dt, 1, bend);
     this.attachments.update(dt, world, bend);
   }
 
   /** Sideways offset at height v (0 roots .. 1 tip). */
-  private swayAt(v: number, t: number) {
+  private swayAt(v: number, t: number, world: World) {
     const bend = Math.pow(v, 1.6);
-    return this.texH * 0.06 * bend * (Math.sin(t + this.seed + v * 1.8) + 0.3 * Math.sin(t * 2.3 + this.seed * 2));
+    // A current leans the plant over; it's divided by the plant's own scale to stay in texture pixels.
+    const lean = (world.current / (world.height * 0.03 || 1)) * this.texH * 0.12 * bend;
+    return lean + this.texH * 0.06 * bend * (Math.sin(t + this.seed + v * 1.8) + 0.3 * Math.sin(t * 2.3 + this.seed * 2));
   }
 }

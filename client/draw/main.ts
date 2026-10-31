@@ -52,6 +52,8 @@ type Op =
   | { type: 'unpart'; target: EditorPart }
   /** A hand-drawn hinge; result is the part with it, made once so later ops can find it. */
   | { type: 'hinge'; target: EditorPart; hinge: [number, number, number, number]; result?: EditorPart }
+  /** A part made faster, slower, bigger or smaller. */
+  | { type: 'tune'; target: EditorPart; speed: number; amount: number; result?: EditorPart }
   | TransformOp;
 
 const paper = document.querySelector<HTMLCanvasElement>('#paper')!;
@@ -242,10 +244,11 @@ facingButton.onclick = () => {
 
 const MOTION_LABELS: Record<Motion, string> = {
   fish: '🐟 Fish',
+  puffer: '🐡 Puffer',
   eel: '🐍 Eel',
   jelly: '🪼 Jellyfish',
   seahorse: '🦄 Seahorse',
-  flapper: '🐢 Flapper',
+  flapper: '🐢 Glider',
   vessel: '🚢 Vessel',
   crawler: '🦀 Crawler',
   plant: '🌿 Plant',
@@ -254,6 +257,7 @@ const MOTION_LABELS: Record<Motion, string> = {
 
 const PLACEHOLDERS: Record<Motion, string> = {
   fish: 'Name it (e.g. Bubbles)',
+  puffer: 'Name it (e.g. Spike)',
   eel: 'Name it (e.g. Noodle)',
   jelly: 'Name it (e.g. Wobbles)',
   seahorse: 'Name it (e.g. Sir Prance)',
@@ -289,6 +293,7 @@ function renderGuide() {
   const ground = (text: string) => `<div class="ground">${text}</div>`;
   const guides: Record<Motion, string> = {
     fish: top(way('head this way')),
+    puffer: top(way('head this way')),
     eel: top(way('head this way')),
     flapper: top(way('head this way')),
     vessel: top(way('front this way')),
@@ -816,6 +821,9 @@ function currentParts(): EditorPart[] {
     } else if (op.type === 'hinge') {
       const i = list.indexOf(op.target);
       if (i >= 0) list[i] = op.result ??= { ...op.target, hinge: op.hinge };
+    } else if (op.type === 'tune') {
+      const i = list.indexOf(op.target);
+      if (i >= 0) list[i] = op.result ??= { ...op.target, speed: op.speed, amount: op.amount };
     } else if (op.type === 'transform') carryParts(list, op);
   }
   if (selection.moved) carryParts(list, selection.pendingOp());
@@ -840,7 +848,20 @@ function scheduleParts() {
   partsTimer = window.setTimeout(renderParts, 150);
 }
 
-/** Shows each part tinted orange with its icon, plus the hinge it pops out or flaps from. */
+/** A ring around the mask, width px wide, so the part shows up whatever colour it is. */
+function outline(mask: HTMLCanvasElement, width: number, color: string) {
+  const ring = Object.assign(document.createElement('canvas'), { width: mask.width, height: mask.height });
+  const r = ring.getContext('2d')!;
+  for (let a = 0; a < 16; a++) r.drawImage(mask, Math.cos((a / 16) * Math.PI * 2) * width, Math.sin((a / 16) * Math.PI * 2) * width);
+  r.globalCompositeOperation = 'source-in';
+  r.fillStyle = color;
+  r.fillRect(0, 0, ring.width, ring.height);
+  r.globalCompositeOperation = 'destination-out';
+  r.drawImage(mask, 0, 0);
+  return ring;
+}
+
+/** Shows each part tinted and outlined with its icon, plus the hinge it pops out or flaps from. */
 function renderParts() {
   const parts = placedParts();
   partsOverlay.clearRect(0, 0, paper.width, paper.height);
@@ -854,6 +875,9 @@ function renderParts() {
     t.fillStyle = 'rgba(255, 140, 26, 0.22)';
     t.fillRect(0, 0, paper.width, paper.height);
     partsOverlay.drawImage(tint, 0, 0);
+    // Dark outside, white inside: visible on orange, white and black parts alike.
+    partsOverlay.drawImage(outline(part.mask, 5, 'rgba(20, 30, 60, 0.85)'), 0, 0);
+    partsOverlay.drawImage(outline(part.mask, 2.5, 'rgba(255, 255, 255, 0.95)'), 0, 0);
     const [x1, y1, x2, y2] = part.hinge;
     if (part.motion === 'popout' || part.motion === 'flap') {
       partsOverlay.save();
@@ -900,6 +924,20 @@ function renderParts() {
         ops.push({ type: 'unpart', target: part });
         changed();
       };
+      const tune = (key: 'speed' | 'amount', title: string, steps: [number, string][]) => {
+        const i = Math.max(0, steps.findIndex(([v]) => v === (part[key] ?? 1)));
+        const button = document.createElement('button');
+        button.textContent = steps[i][1];
+        button.title = title;
+        button.onclick = () => {
+          const tuned = { speed: part.speed ?? 1, amount: part.amount ?? 1, [key]: steps[(i + 1) % steps.length][0] };
+          ops.push({ type: 'tune', target: part, ...tuned });
+          changed();
+        };
+        chip.append(button);
+      };
+      tune('speed', 'Speed (tap to change): normal, fast or slow', [[1, '▶'], [1.8, '⏩'], [0.5, '🐢']]);
+      tune('amount', 'How far it moves (tap to change): normal, big or small', [[1, '◐'], [1.6, '⬤'], [0.5, '·']]);
       if (part.motion === 'popout' || part.motion === 'flap') {
         const pin = document.createElement('button');
         pin.textContent = '📍';
@@ -1144,7 +1182,7 @@ async function loadForEditing(id: string) {
     await partsImage.decode();
     baseParts = partsFromImage(
       partsImage,
-      drawing.parts.map((p) => p.motion),
+      drawing.parts,
       paper,
       base,
     );

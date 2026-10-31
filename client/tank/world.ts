@@ -17,7 +17,37 @@ export interface World {
   fish: Swimmer[];
   /** A group of fish swimming together for a while, following the leader. */
   school: School | null;
+  /** 0 by day, 1 deep in the night: day creatures get drowsy and doze off. */
+  sleepiness: number;
+  /** Plants and decorations, where fish sleep and hide. */
+  hideouts: Hideout[];
+  /** A gentle sideways current, in pixels per second (negative flows left). */
+  current: number;
 }
+
+/** Something on the sand a fish can tuck in beside or behind. */
+export interface Hideout {
+  x: number;
+  /** Its base on the sand, and how tall and wide it is on screen. */
+  bottom: number;
+  height: number;
+  halfWidth: number;
+  z: number;
+}
+
+export const newWorld = (scene: Scene, food: Food): World => ({
+  width: 0,
+  height: 0,
+  floorY: 0,
+  time: 0,
+  scene,
+  food,
+  fish: [],
+  school: null,
+  sleepiness: 0,
+  hideouts: [],
+  current: 0,
+});
 
 export interface School {
   leader: Swimmer;

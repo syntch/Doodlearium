@@ -42,6 +42,9 @@ type DrawingMeta = {
   attachments: Attachment[];
   nocturnal: boolean;
   parts: Part[];
+  parents?: [string, string];
+  hatchAt?: number;
+  nest?: number;
 };
 
 const partsFile = (id: string) => join(DRAWINGS_DIR, `${id}.parts.png`);

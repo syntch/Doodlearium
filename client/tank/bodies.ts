@@ -34,6 +34,8 @@ export interface BodyStyle {
   darts: boolean;
   /** Whether it joins schools with others of the same style. */
   schools: boolean;
+  /** Puffer fish: now and then (and when a hunter comes) blows up into a spiky ball. */
+  puffs?: boolean;
   /** 'pulse' moves in jellyfish-style bursts instead of steady swimming. */
   move: 'cruise' | 'pulse';
   /** Bob amplitude as a share of tank height. */
@@ -68,8 +70,22 @@ const fish: BodyStyle = {
   deform(u, _v, s) {
     const amp = s.texH * 0.08 * (0.6 + s.effort * 0.4);
     const tail = 1 - u;
-    return { dx: 0, dy: amp * (0.15 + tail * tail) * Math.sin(s.phase - u * 3.2) };
+    return { dx: 0, dy: amp * (0.15 + tail * tail) * Math.sin(s.phase + u * 3.2) };
   },
+};
+
+const puffer: BodyStyle = {
+  ...fish,
+  // Enough grid to round the body out into a ball.
+  columns: 12,
+  rows: 10,
+  size: 0.2,
+  heightWeight: 1.2,
+  cruise: 0.7,
+  darts: false,
+  schools: false,
+  puffs: true,
+  beat: (effort) => 3 + effort * 3,
 };
 
 const eel: BodyStyle = {
@@ -154,30 +170,31 @@ const seahorse: BodyStyle = {
   },
 };
 
+/**
+ * The glider (stored as 'flapper'): sails along in long, smooth swoops, its edges rippling gently like a
+ * ray's. Flippers and wings flap best as moving parts (✨ Animate → Flap) on top of this.
+ */
 const flapper: BodyStyle = {
-  columns: 6,
-  rows: 10,
+  columns: 10,
+  rows: 8,
   size: 0.24,
   heightWeight: 1.2,
-  cruise: 0.6,
-  vertical: 0.6,
-  tilt: 0.5,
+  cruise: 0.55,
+  vertical: 0.5,
+  tilt: 0.8,
   flips: true,
   darts: false,
   schools: false,
   move: 'cruise',
-  bob: 0.003,
-  beat: (effort) => 2 + effort * 0.8,
-  // A burst of speed on each power stroke, then a glide.
-  thrust: (phase) => 0.6 + 0.9 * Math.max(0, Math.sin(phase)),
-  // Top and bottom edges (flippers or wings) sweep out and back; the middle of the body stays rigid.
+  bob: 0.012,
+  beat: (effort) => 1.1 + effort * 0.5,
+  // A slow surge and coast, never jerky.
+  thrust: (phase) => 0.85 + 0.3 * Math.sin(phase),
+  // The top and bottom edges ripple from front to back; the middle barely moves.
   deform(u, v, s) {
     const fromMiddle = (v - 0.5) * 2;
-    const edge = Math.pow(Math.abs(fromMiddle), 1.5);
-    return {
-      dx: -s.texW * 0.04 * edge * Math.cos(s.phase),
-      dy: Math.sign(fromMiddle) * s.texH * 0.14 * edge * Math.sin(s.phase - u * 0.8),
-    };
+    const edge = fromMiddle * fromMiddle;
+    return { dx: 0, dy: Math.sign(fromMiddle) * s.texH * 0.05 * edge * Math.sin(s.phase + u * 2.4) };
   },
 };
 
@@ -200,4 +217,4 @@ const vessel: BodyStyle = {
   deform: () => none,
 };
 
-export const BODY_STYLES: Partial<Record<Motion, BodyStyle>> = { fish, eel, jelly, seahorse, flapper, vessel };
+export const BODY_STYLES: Partial<Record<Motion, BodyStyle>> = { fish, puffer, eel, jelly, seahorse, flapper, vessel };

@@ -3,7 +3,7 @@ export const CREATURE_TYPES = ['swimmer', 'crawler', 'plant', 'decor'] as const;
 export type CreatureType = (typeof CREATURE_TYPES)[number];
 
 /** How a drawing moves. Picking a motion style also decides where it lives. */
-export const MOTIONS = ['fish', 'eel', 'jelly', 'seahorse', 'flapper', 'vessel', 'crawler', 'plant', 'decor'] as const;
+export const MOTIONS = ['fish', 'puffer', 'eel', 'jelly', 'seahorse', 'flapper', 'vessel', 'crawler', 'plant', 'decor'] as const;
 export type Motion = (typeof MOTIONS)[number];
 
 export const habitatOf = (motion: Motion): CreatureType =>
@@ -42,6 +42,9 @@ export interface Part {
   motion: PartMotion;
   /** Where it's attached: a line from (x1, y1) to (x2, y2), as fractions of the image's width and height. */
   hinge: [number, number, number, number];
+  /** How fast and how far it moves, 0.25 to 3 (1 = normal). */
+  speed?: number;
+  amount?: number;
 }
 
 export const isAttachmentColor = (c: unknown): c is string =>
@@ -63,6 +66,12 @@ export interface Drawing {
   /** Night creatures only come out after dark. */
   nocturnal?: boolean;
   parts?: Part[];
+  /** Babies: the two drawings that schooled together and laid the egg it hatched from. */
+  parents?: [string, string];
+  /** When a baby's egg hatches (until then the tank shows an egg). */
+  hatchAt?: number;
+  /** Where across the tank (0..1) the egg was laid. */
+  nest?: number;
 }
 
 export interface NewDrawing {
@@ -76,6 +85,12 @@ export interface NewDrawing {
   parts?: Part[];
   /** PNG data URL, the same size as image, marking each part's pixels. */
   partsImage?: string;
+}
+
+/** A baby made by the tank from two parents, sent to be laid as an egg. */
+export interface NewEgg extends NewDrawing {
+  parents: [string, string];
+  nest: number;
 }
 
 export type ServerMessage =

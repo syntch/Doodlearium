@@ -10,6 +10,13 @@ interface Bubble {
   phase: number;
 }
 
+interface Heart {
+  x: number;
+  y: number;
+  size: number;
+  age: number;
+}
+
 const AERATORS = [0.14, 0.86];
 const RAY_COUNT = 6;
 
@@ -24,6 +31,10 @@ export class Scene {
   private bubbleGfx = new Graphics();
   private night = new Graphics();
   private bubbles: Bubble[] = [];
+  private hearts: Heart[] = [];
+  /** Called for every aerator bubble burst, e.g. to make a sound. */
+  onBloop: (() => void) | null = null;
+  private bloopIn = 3;
   private aeratorTimers = AERATORS.map(() => 0);
   private rayShape = Array.from({ length: RAY_COUNT }, (_, i) => ({
     x: (i + 0.5) / RAY_COUNT + (Math.random() - 0.5) * 0.08,
@@ -56,15 +67,33 @@ export class Scene {
         this.bubble(AERATORS[i] * world.width + (Math.random() - 0.5) * 10, world.floorY + 10, 2 + Math.random() * 5);
       }
     });
+    this.bloopIn -= dt;
+    if (this.bloopIn <= 0) {
+      this.bloopIn = 3 + Math.random() * 7;
+      this.onBloop?.();
+    }
 
     const g = this.bubbleGfx.clear();
     this.bubbles = this.bubbles.filter((b) => b.y > -20);
     for (const b of this.bubbles) {
       b.y -= b.speed * dt;
+      b.x += world.current * 1.3 * dt;
       b.phase += dt * 3;
       const x = b.x + Math.sin(b.phase) * b.wobble;
       g.circle(x, b.y, b.r).fill({ color: 0xffffff, alpha: 0.12 }).stroke({ width: 1.2, color: 0xe8f7ff, alpha: 0.55 });
       g.circle(x - b.r * 0.35, b.y - b.r * 0.35, b.r * 0.25).fill({ color: 0xffffff, alpha: 0.7 });
+    }
+    this.hearts = this.hearts.filter((h) => h.age < 2.4);
+    for (const h of this.hearts) {
+      h.age += dt;
+      h.y -= dt * h.size * 2.5;
+      const s = h.size * Math.min(1, h.age * 4);
+      const x = h.x + Math.sin(h.age * 4) * h.size * 0.3;
+      const alpha = Math.min(1, (2.4 - h.age) / 0.8);
+      // Two bumps and a point.
+      g.circle(x - s * 0.5, h.y - s * 0.2, s * 0.55).fill({ color: 0xff5c8a, alpha });
+      g.circle(x + s * 0.5, h.y - s * 0.2, s * 0.55).fill({ color: 0xff5c8a, alpha });
+      g.poly([x - s * 1.02, h.y, x + s * 1.02, h.y, x, h.y + s * 1.1]).fill({ color: 0xff5c8a, alpha });
     }
 
     this.darkness = nightDarkness();
@@ -82,6 +111,11 @@ export class Scene {
   bubble(x: number, y: number, r: number) {
     if (this.bubbles.length > 300) return;
     this.bubbles.push({ x, y, r, speed: 40 + r * 14 + Math.random() * 20, wobble: 2 + Math.random() * 4, phase: Math.random() * TAU });
+  }
+
+  /** A little heart that floats up and fades, e.g. from a fish that's had a good meal. */
+  heart(x: number, y: number, size: number) {
+    if (this.hearts.length < 40) this.hearts.push({ x, y, size, age: 0 });
   }
 
   /** A splash of bubbles, used when a new drawing drops into the tank. */

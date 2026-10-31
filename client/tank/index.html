@@ -14,10 +14,16 @@
         animation: fade 1s 6s forwards;
       }
       @keyframes fade { to { opacity: 0; } }
+      #sound {
+        position: fixed; right: 16px; top: 12px; font-size: 22px; padding: 4px 10px; border-radius: 999px;
+        border: 0; background: rgba(6, 36, 59, 0.55); color: #fff; cursor: pointer; transition: opacity 0.4s;
+      }
+      body.idle #sound { opacity: 0; pointer-events: none; }
     </style>
   </head>
   <body>
     <div class="hint">Double-click for full screen</div>
+    <button id="sound" title="Sound on or off (S)">🔇</button>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

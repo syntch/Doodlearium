@@ -1,4 +1,4 @@
-import type { PartMotion } from '../../shared/types.ts';
+import type { Part, PartMotion } from '../../shared/types.ts';
 import { inkBounds } from './export.ts';
 import type { TransformOp } from './selection.ts';
 
@@ -8,6 +8,9 @@ export interface EditorPart {
   motion: PartMotion;
   /** A hinge drawn by hand, in paper pixels; otherwise it's found automatically. */
   hinge?: [number, number, number, number];
+  /** 1 = normal; see Part. */
+  speed?: number;
+  amount?: number;
 }
 
 /** Moves a hand-drawn hinge along with its part. */
@@ -69,7 +72,7 @@ export function carryParts(list: EditorPart[], op: TransformOp) {
           !!b && !!opBounds && b.left >= opBounds.left && b.right <= opBounds.right && b.top >= opBounds.top && b.bottom <= opBounds.bottom;
         const hinge = whole ? moveHinge(part.hinge, op.matrix) : part.hinge;
         if (op.copy) {
-          result = [part, { mask: moved, motion: part.motion, hinge: moveHinge(part.hinge, op.matrix) }];
+          result = [part, { ...part, mask: moved, hinge: moveHinge(part.hinge, op.matrix) }];
         } else {
           const rest = cloneCanvas(part.mask);
           const rc = rest.getContext('2d')!;
@@ -77,7 +80,7 @@ export function carryParts(list: EditorPart[], op: TransformOp) {
           rc.drawImage(op.mask, 0, 0);
           rc.globalCompositeOperation = 'source-over';
           if (!op.remove) rc.drawImage(moved, 0, 0);
-          result = maskBounds(rest) ? [{ mask: rest, motion: part.motion, hinge }] : [];
+          result = maskBounds(rest) ? [{ ...part, mask: rest, hinge }] : [];
         }
       }
       op.carried.set(part, result);
@@ -181,14 +184,14 @@ function lineThrough(points: { x: number; y: number }[]): [number, number, numbe
 /** Rebuilds part masks from a saved drawing's part image, placed where the drawing sits on the paper. */
 export function partsFromImage(
   partsImage: HTMLImageElement,
-  motions: PartMotion[],
+  saved: Part[],
   paper: { width: number; height: number },
   at: { x: number; y: number },
 ): EditorPart[] {
   const placed = newCanvas(paper.width, paper.height).getContext('2d', { willReadFrequently: true })!;
   placed.drawImage(partsImage, at.x, at.y);
   const marks = placed.getImageData(0, 0, paper.width, paper.height);
-  return motions.map((motion, index) => {
+  return saved.map(({ motion, speed, amount }, index) => {
     const mask = newCanvas(paper.width, paper.height);
     const c = mask.getContext('2d')!;
     const out = c.createImageData(paper.width, paper.height);
@@ -197,6 +200,6 @@ export function partsFromImage(
       if (marks.data[i + 3] >= 128 && Math.abs(marks.data[i] - value) <= 10) out.data[i + 3] = 255;
     }
     c.putImageData(out, 0, 0);
-    return { mask, motion };
+    return { mask, motion, speed, amount };
   });
 }

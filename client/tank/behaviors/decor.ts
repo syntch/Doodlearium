@@ -2,7 +2,7 @@ import { Container, Sprite, type Texture } from 'pixi.js';
 import type { Drawing } from '../../../shared/types.ts';
 import { Attachments } from '../attachments.ts';
 import { Parts, type Cutout } from '../parts.ts';
-import { depthOrder, depthScale, depthTint, sandY, seededRandom, type Creature, type World } from '../world.ts';
+import { depthOrder, depthScale, depthTint, sandY, seededRandom, type Creature, type Hideout, type World } from '../world.ts';
 
 /** Sits still on the sand. */
 export class Decor implements Creature {
@@ -42,6 +42,17 @@ export class Decor implements Creature {
     const byWidth = (world.width * 0.25) / width;
     this.view.scale.set(Math.min(byHeight, byWidth));
     this.view.position.set(this.nx * world.width, sandY(world, this.z));
+  }
+
+  hideout(): Hideout {
+    const { width, height } = this.sprite.texture;
+    return {
+      x: this.view.x,
+      bottom: this.view.y,
+      height: height * this.view.scale.y,
+      halfWidth: (width * this.view.scale.x) / 2,
+      z: this.z,
+    };
   }
 
   labelAnchor() {

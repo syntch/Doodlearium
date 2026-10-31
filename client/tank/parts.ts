@@ -154,9 +154,10 @@ export class Parts {
   }
 
   /** effort: how hard the creature is swimming (1 = normal), so fins work harder when it hurries. */
-  update(dt: number, effort = 1, deform?: Deform) {
+  /** sleepy (0..1) slowly closes blinking eyes. */
+  update(dt: number, effort = 1, deform?: Deform, sleepy = 0) {
     for (const l of this.live) {
-      const m = this.motion(l, dt, effort);
+      const m = this.motion(l, dt * (l.piece.part.speed ?? 1), effort, sleepy);
       // Pieces follow the body's bend at the point they're attached.
       const at = l.piece.part.motion === 'popout' || l.piece.part.motion === 'flap' ? l.mid : l.centre;
       const bend = deform?.(at.x / this.texW, at.y / this.texH) ?? { dx: 0, dy: 0 };
@@ -166,27 +167,28 @@ export class Parts {
   }
 
   /** The piece's own motion, as a matrix in texture pixels. */
-  private motion(l: Live, dt: number, effort: number) {
+  private motion(l: Live, dt: number, effort: number, sleepy: number) {
     const m = new Matrix();
+    const amount = l.piece.part.amount ?? 1;
     switch (l.piece.part.motion) {
       case 'popout': {
         // Lifts up out of the paper around its hinge and settles back: seen from the front, the side
         // away from the hinge swings in toward it (the fin foreshortens), uncovering its shadow.
         l.phase += dt * (2 + effort * 1.2);
-        const lift = (0.5 - 0.5 * Math.cos(l.phase)) * 1.25; // up to about 70°
+        const lift = (0.5 - 0.5 * Math.cos(l.phase)) * Math.min(1.45, 1.25 * amount); // up to about 70°
         const angle = Math.atan2(l.h2.y - l.h1.y, l.h2.x - l.h1.x);
         // Lifting toward the viewer, it also looks a little bigger along the hinge.
         return aroundPoint(l.mid, m.rotate(-angle).scale(1 + Math.sin(lift) * 0.12, Math.cos(lift)).rotate(angle));
       }
       case 'flap':
         l.phase += dt * (3 + effort);
-        return aroundPoint(l.mid, m.rotate(Math.sin(l.phase) * 0.45));
+        return aroundPoint(l.mid, m.rotate(Math.sin(l.phase) * 0.45 * amount));
       case 'spin':
-        l.phase += dt * 4;
+        l.phase += dt * 4 * amount;
         return aroundPoint(l.centre, m.rotate(l.phase));
       case 'pulse': {
         l.phase += dt * 3;
-        const s = 1 + Math.sin(l.phase) * 0.14;
+        const s = 1 + Math.sin(l.phase) * 0.14 * amount;
         return aroundPoint(l.centre, m.scale(s, s));
       }
       case 'blink': {
@@ -195,8 +197,10 @@ export class Parts {
         if (l.timer < 0) {
           const t = -l.timer / 0.22;
           if (t >= 1) l.timer = 2 + Math.random() * 4;
-          else squash = 1 - Math.sin(t * Math.PI) * 0.9;
+          else squash = 1 - Math.sin(t * Math.PI) * Math.min(0.95, 0.9 * amount);
         }
+        // Sleepy eyes droop shut.
+        squash = Math.min(squash, 1 - sleepy * 0.9);
         return aroundPoint(l.centre, m.scale(1, squash));
       }
     }

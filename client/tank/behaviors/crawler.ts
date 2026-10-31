@@ -116,6 +116,9 @@ export class Crawler implements Creature {
         this.resting = 0.6;
       }
 
+      // Day crawlers stay put at night (unless there's food).
+      const asleep = !this.drawing.nocturnal && world.sleepiness > 0.5 && !this.meal;
+      if (asleep) this.resting = Math.max(this.resting, 0.5);
       if (this.resting > 0) {
         this.resting -= dt;
         if (this.resting <= 0) this.pickGoal(world);
@@ -143,7 +146,7 @@ export class Crawler implements Creature {
     this.view.position.set(this.x, ground - this.air - bounce * h * 0.06);
     this.view.scale.set(this.facing * this.scale * (1 + bounce * 0.04), this.scale * (1 - bounce * 0.05 + breathe));
     this.view.rotation = Math.sin(this.step * 2) * 0.04 * this.stride * Math.sign(this.facing);
-    this.parts.update(dt, 1 + this.stride);
+    this.parts.update(dt, 1 + this.stride, undefined, this.drawing.nocturnal ? 0 : world.sleepiness);
     this.attachments.update(dt, world);
   }
 }

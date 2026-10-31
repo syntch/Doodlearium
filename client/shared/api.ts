@@ -1,4 +1,4 @@
-import type { Drawing, NewDrawing, ServerMessage } from '../../shared/types.ts';
+import type { Drawing, NewDrawing, NewEgg, ServerMessage } from '../../shared/types.ts';
 
 export async function fetchDrawings(): Promise<Drawing[]> {
   const res = await fetch('/api/drawings');
@@ -24,6 +24,16 @@ export async function updateDrawing(id: string, drawing: NewDrawing): Promise<Dr
   });
   if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `Save failed (${res.status})`);
   return res.json();
+}
+
+/** Asks the server to lay an egg; resolves to false if it isn't time for one yet. */
+export async function layEgg(egg: NewEgg): Promise<boolean> {
+  const res = await fetch('/api/eggs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(egg),
+  });
+  return res.ok;
 }
 
 /** Drops food into every open tank. Resolves to false if the fish were fed moments ago. */
