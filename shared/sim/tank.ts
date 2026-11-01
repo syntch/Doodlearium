@@ -53,15 +53,15 @@ export class Tank {
     return creature;
   }
 
-  private make({ id, drawing, hatchAt, nest, grownFrom }: Spec, dropIn: boolean, saved?: Saved): SimCreature {
+  private make({ id, drawing, hatchAt, nest, grownFrom, placement }: Spec, dropIn: boolean, saved?: Saved): SimCreature {
     if ((hatchAt ?? 0) > Date.now()) return new SimEgg(id, drawing, this.world, dropIn, hatchAt!, nest ?? 0.5);
     switch (motionOf(drawing)) {
       case 'crawler':
         return new SimCrawler(id, drawing, this.world, dropIn, saved);
       case 'plant':
-        return new SimStill(id, drawing, 'plant', this.world);
+        return new SimStill(id, drawing, 'plant', this.world, placement);
       case 'decor':
-        return new SimStill(id, drawing, 'decor', this.world);
+        return new SimStill(id, drawing, 'decor', this.world, placement);
       default:
         return new SimSwimmer(id, drawing, this.world, dropIn, saved, grownFrom);
     }
@@ -94,10 +94,9 @@ export class Tank {
     for (const spec of specs) {
       const had = this.specs.get(spec.id);
       if (!had) this.add(spec, dropIn && !saved[spec.id], saved[spec.id]);
-      else if (had.drawing.updatedAt !== spec.drawing.updatedAt || had.drawing !== spec.drawing) {
-        if (had.drawing.updatedAt !== spec.drawing.updatedAt) this.replace(spec);
-        else this.specs.set(spec.id, { ...had, drawing: spec.drawing });
-      }
+      else if (had.drawing.updatedAt !== spec.drawing.updatedAt || JSON.stringify(had.placement) !== JSON.stringify(spec.placement)) {
+        this.replace(spec);
+      } else if (had.drawing !== spec.drawing) this.specs.set(spec.id, { ...had, drawing: spec.drawing });
     }
   }
 

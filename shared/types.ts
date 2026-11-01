@@ -92,7 +92,11 @@ export interface Drawing {
   group?: boolean;
   /** The place the named original lives (unset: wherever suits it). */
   home?: string;
+  /** Roughly how big its kind grows (unset: medium). Each one still varies around it. */
+  size?: SpeciesSize;
 }
+
+export type SpeciesSize = 'small' | 'big';
 
 export interface NewDrawing {
   motion: Motion;
@@ -110,6 +114,7 @@ export interface NewDrawing {
   habitats?: Biome[];
   group?: boolean;
   home?: string;
+  size?: SpeciesSize;
 }
 
 /** A baby made by the tank from two parents, sent to be laid as an egg (in the place the parents are). */

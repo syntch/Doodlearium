@@ -13,7 +13,8 @@ export async function fetchPopulation(): Promise<Record<string, SpeciesWhere>> {
   return res.json();
 }
 
-export async function submitDrawing(drawing: NewDrawing): Promise<Drawing> {
+/** Adds a new species: the reply says which place its original moved into. */
+export async function submitDrawing(drawing: NewDrawing): Promise<Drawing & { place?: string }> {
   const res = await fetch('/api/drawings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -62,6 +63,16 @@ export async function sendTankCommand(command: TankCommand, value: TankCommandVa
   });
   if (!res.ok) throw new Error(`Command failed (${res.status})`);
   return (await res.json()).say ?? '';
+}
+
+/** Moves or resizes a plant or decoration in a place (null: puts it back where it grew). */
+export async function arrangeStill(place: string, id: string, placement: { x: number; z: number; scale: number } | null) {
+  const res = await fetch('/api/arrange', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ place, id, ...(placement ?? { reset: true }) }),
+  });
+  if (!res.ok) throw new Error(`Arranging failed (${res.status})`);
 }
 
 /** Sends every screen to a place. */

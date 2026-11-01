@@ -159,31 +159,64 @@ const ghost: TankEvent = {
 const ducks: TankEvent = {
   name: 'ducks',
   start(world, layers, rand, seconds) {
-    // Seen from under the water: a mother duck and her ducklings paddling across the surface.
+    // A mother duck and her ducklings paddle across the top of the pond, feet kicking away under the water.
     const node = new Container();
-    const s = world.height * 0.07;
-    const feet: Graphics[] = [];
+    const s = world.height * 0.075;
+    const parts: { duck: Container; head: Container; feet: Graphics[]; r: number }[] = [];
     [1, 0.55, 0.5, 0.45].forEach((size, i) => {
       const duck = new Container();
       const r = s * size;
-      const belly = new Graphics().ellipse(0, 0, r, r * 0.42).fill(i ? 0xd9b64a : 0x8a6a45).ellipse(0, -r * 0.1, r * 0.8, r * 0.3).fill({ color: 0xffffff, alpha: 0.12 });
-      for (const side of [-1, 1]) {
+      const [coat, wingColor] = i ? [0xf2cf48, 0xd9ad2b] : [0x9a7650, 0x6e5236];
+      // Feet first, so the body covers the tops of the legs.
+      const feet: Graphics[] = [];
+      for (const k of [0, 1]) {
         const foot = new Graphics()
-          .moveTo(0, 0).lineTo(0, r * 0.6).stroke({ width: Math.max(2, r * 0.08), color: 0xe08a1e })
-          .poly([-r * 0.22, r * 0.6, r * 0.22, r * 0.6, 0, r * 0.78]).fill(0xf29a2e);
-        foot.position.set(side * r * 0.25, r * 0.25);
+          .moveTo(0, 0).lineTo(0, r * 0.45).stroke({ width: Math.max(2, r * 0.08), color: 0xe08a1e, cap: 'round' })
+          .poly([-r * 0.05, r * 0.42, r * 0.3, r * 0.47, -r * 0.05, r * 0.56]).fill(0xf29a2e);
+        foot.position.set(-r * 0.05 + k * r * 0.15, r * 0.2);
         feet.push(foot);
         duck.addChild(foot);
       }
-      duck.addChild(belly);
+      const body = new Graphics()
+        // The tail, perked up at the back.
+        .poly([-r * 0.75, -r * 0.2, -r * 1.15, -r * 0.55, -r * 0.95, -r * 0.05]).fill(coat)
+        .ellipse(0, -r * 0.1, r * 0.9, r * 0.42).fill(coat)
+        // A folded wing.
+        .ellipse(-r * 0.15, -r * 0.2, r * 0.5, r * 0.22).fill(wingColor)
+        .poly([-r * 0.55, -r * 0.25, -r * 0.85, -r * 0.35, -r * 0.5, -r * 0.08]).fill(wingColor)
+        // The neck.
+        .roundRect(r * 0.42, -r * 0.85, r * 0.3, r * 0.7, r * 0.15).fill(coat);
+      // Under the waterline the body looks a little blue.
+      const wet = new Graphics().ellipse(0, -r * 0.1, r * 0.9, r * 0.42).fill({ color: 0x3f7f86, alpha: 0.35 });
+      const mask = new Graphics().rect(-r * 1.2, 0, r * 2.4, r).fill(0xffffff);
+      wet.mask = mask;
+      const head = new Container();
+      head.addChild(
+        new Graphics()
+          .circle(0, 0, r * 0.3).fill(i ? coat : 0x2f6b3a)
+          .poly([r * 0.2, -r * 0.06, r * 0.55, r * 0.02, r * 0.5, r * 0.08, r * 0.2, r * 0.1]).fill(0xf29a2e)
+          .circle(r * 0.1, -r * 0.08, Math.max(1.5, r * 0.06)).fill(0x1b1b1b)
+          .circle(r * 0.12, -r * 0.1, Math.max(0.6, r * 0.02)).fill(0xffffff),
+      );
+      head.position.set(r * 0.6, -r * 0.9);
+      if (!i) body.ellipse(r * 0.57, -r * 0.6, r * 0.17, r * 0.05).fill(0xffffff); // her white collar
+      duck.addChild(body, wet, mask, head);
       duck.position.set(-i * s * 1.6 - (i ? s * 0.5 : 0), 0);
       node.addChild(duck);
+      parts.push({ duck, head, feet, r });
     });
     layers.front.addChild(node);
-    const move = crossing(node, world, seconds, world.waterTop + s * 0.05, 1.5, rand);
+    const move = crossing(node, world, seconds, world.waterTop, 1.5, rand);
     return {
       update(_dt, _world, t) {
-        feet.forEach((f, i) => (f.rotation = Math.sin(t * 9 + i * Math.PI) * 0.6));
+        parts.forEach(({ duck, head, feet, r }, i) => {
+          // Ducklings paddle faster, and everyone bobs and nods.
+          const pace = i ? 12 : 8;
+          feet.forEach((f, k) => (f.rotation = Math.sin(t * pace + k * Math.PI) * 0.7));
+          duck.y = Math.sin(t * 2.2 + i * 1.3) * r * 0.05;
+          duck.rotation = Math.sin(t * 2.2 + i * 1.3 + 1) * 0.04;
+          head.rotation = Math.max(0, Math.sin(t * 1.4 + i * 2)) * 0.35;
+        });
         return move(t);
       },
       destroy: () => node.destroy({ children: true }),

@@ -18,6 +18,8 @@ export interface RosterEntry {
   fresh?: boolean;
   /** Plants and decorations stay put: where they are. */
   still?: PackedPose;
+  /** Put there by hand (so it can be put back). */
+  arranged?: boolean;
 }
 
 /** A visitor (a whale passing, a diver...) and when it started, so every screen shows it in the same place. */

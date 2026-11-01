@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Saved, Spec } from '../shared/sim/creature.ts';
+import type { Placement, Saved, Spec } from '../shared/sim/creature.ts';
 import { SEASONS, clamp, seasonOf, type Season } from '../shared/sim/math.ts';
 import {
   packFlake,
@@ -187,7 +187,21 @@ function toSpec(i: Individual, d: Drawing): Spec {
     nest: i.nest ?? d.nest,
     // Babies grow up over a week from hatching: blended ones (the drawing's own egg) and members from eggs.
     grownFrom: i.hatchAt ?? (d.parents ? (d.hatchAt ?? d.createdAt) : undefined),
+    placement: i.placement,
   };
+}
+
+/** The family moved or resized a plant or decoration (or, with null, put it back where it grew). */
+export function arrange(place: string, id: string, placement: Placement | null) {
+  const spot = spotOf(place);
+  const i = individuals.find((x) => x.id === id && x.place === place);
+  const kind = spot?.tank.creatures.get(id)?.kind;
+  if (!spot || !i || (kind !== 'plant' && kind !== 'decor')) return false;
+  if (placement) i.placement = placement;
+  else delete i.placement;
+  spot.tank.sync(specsFor(place));
+  void saveWorld();
+  return true;
 }
 
 function specsFor(place: string): Spec[] {
@@ -264,7 +278,7 @@ function tick() {
     for (const spot of spots.values()) {
       if (!watchers(spot.id).length) continue;
       const list = roster(spot, true);
-      const signature = list.map((c) => `${c.id}:${c.kind}:${c.still?.[1] ?? ''}:${c.still?.[3] ?? ''}`).join(',');
+      const signature = list.map((c) => `${c.id}:${c.kind}:${c.still?.[1] ?? ''}:${c.still?.[2] ?? ''}:${c.still?.[3] ?? ''}:${c.arranged ?? ''}`).join(',');
       if (signature !== spot.rosterSent || spot.fresh.size) {
         spot.rosterSent = signature;
         broadcastTo(spot.id, { type: 'roster', place: spot.id, creatures: list });
@@ -297,6 +311,7 @@ function roster(spot: Spot, markFresh: boolean): RosterEntry[] {
     personality: c.personality,
     // Plants and decorations never move, so where they are comes with the roster instead of every frame.
     ...(c.kind === 'plant' || c.kind === 'decor' ? { still: packPose(c.id, c.pose) } : {}),
+    ...(spot.tank.specOf(c.id)?.placement ? { arranged: true } : {}),
     ...(c.kind === 'egg' ? { hatchAt: spot.tank.specOf(c.id)?.hatchAt } : {}),
     ...(markFresh && spot.fresh.has(c.id) ? { fresh: true } : {}),
   }));

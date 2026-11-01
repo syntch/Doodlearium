@@ -10,10 +10,10 @@
   <body>
     <nav class="nav">
       <a class="brand" href="/">🐠 Doodlearium</a>
-      <a href="/tank/">Tank</a>
+      <a href="/tank/">World</a>
       <a href="/gallery/">Gallery</a>
       <a href="/history/">History</a>
-      <button id="feed" title="Drop food into the tank">🍤 Feed</button>
+      <button id="feed" title="Drop food in for everyone">🍤 Feed</button>
     </nav>
     <main class="draw">
       <p class="editing" id="editing" hidden></p>
@@ -47,7 +47,7 @@
           <div class="markers" id="markers" aria-hidden="true"></div>
           <div class="brush-cursor" id="brush-cursor" hidden></div>
         </div>
-        <div class="preview" id="preview" hidden aria-label="Preview of how it moves in the tank">
+        <div class="preview" id="preview" hidden aria-label="Preview of how it moves in the world">
           <button class="preview-blacklight" id="preview-blacklight" aria-pressed="false" title="See blacklight paint glow">🟣 Blacklight</button>
         </div>
       </div>
@@ -63,7 +63,7 @@
         <button id="facing" title="Which way is your fish facing?">Facing →</button>
         <button id="undo" title="Undo (Ctrl+Z)">↶ Undo</button>
         <button id="clear">🗑 Clear</button>
-        <button id="preview-toggle" aria-pressed="false" title="See it move like it will in the tank">▶ Preview</button>
+        <button id="preview-toggle" aria-pressed="false" title="See it move like it will in the world">▶ Preview</button>
         <button id="photo" title="Use a photo of a drawing on paper (or paste a picture with Ctrl+V)">📷 Photo</button>
         <input type="file" id="photo-input" accept="image/*" hidden />
       </div>
@@ -77,7 +77,7 @@
       <div class="paint-kind" id="paint-kind" role="group" aria-label="Kind of paint">
         <button data-paint="normal" aria-pressed="true" title="Ordinary paint">🎨 Normal paint</button>
         <button data-paint="glow" aria-pressed="false" title="Glows softly, brightest at night">💡 Glow paint</button>
-        <button data-paint="uv" aria-pressed="false" title="Looks normal, but glows when the tank's blacklight is on">🟣 Blacklight paint</button>
+        <button data-paint="uv" aria-pressed="false" title="Looks normal, but glows when the blacklight is on">🟣 Blacklight paint</button>
       </div>
       <div class="options">
         <div class="sizes" id="sizes"></div>
@@ -113,7 +113,7 @@
         <input type="text" id="name" placeholder="Name it (e.g. Bubbles)" maxlength="40" />
         <input type="text" id="artist" placeholder="Your name" maxlength="40" />
         <label class="fill"><input type="checkbox" id="paper-fill" checked /> Fill inside white</label>
-        <label class="fill" title="Only comes out after dark, and stays bright while the tank dims">
+        <label class="fill" title="Only comes out after dark, and stays bright while the water dims">
           <input type="checkbox" id="nocturnal" /> 🌙 Night creature
         </label>
         <div class="where">
@@ -122,11 +122,13 @@
           <label class="fill" title="More of them turn up together, as a school, flock or herd">
             <input type="checkbox" id="group" /> 🐟🐟 Comes in a group
           </label>
+          <span class="fill" title="Roughly how big its kind grows (each one still comes out a little different)">Size:</span>
+          <span class="habitats" id="species-size"></span>
           <label class="fill" title="Where the one you drew lives (the world adds more of its kind wherever they suit)">
             🏠 <select id="home"></select>
           </label>
         </div>
-        <button class="primary" type="submit" id="send">Add to tank 🌊</button>
+        <button class="primary" type="submit" id="send">Add to the world 🌊</button>
       </form>
       <p class="toast" id="toast" role="status"></p>
     </main>

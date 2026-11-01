@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Doodlearium · Tank</title>
+    <title>Doodlearium · World</title>
     <style>
       html, body { margin: 0; height: 100%; overflow: hidden; background: #0a3456; }
       canvas { display: block; }
@@ -66,6 +66,23 @@
       body.idle .coming.chrome.soon-up { opacity: 1; }
       .menu:not([hidden]) ~ .coming { display: none; }
       #map-button[hidden] { display: none; }
+      /* Arranging plants and decorations by hand. */
+      .arrange {
+        position: fixed; z-index: 11; left: 50%; bottom: 16px; transform: translateX(-50%);
+        display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center;
+        width: max-content; max-width: calc(100vw - 32px); box-sizing: border-box; padding: 10px 14px;
+        border-radius: 16px; background: rgba(6, 36, 59, 0.92); color: #fff; font: 15px 'Trebuchet MS', sans-serif;
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+      }
+      .arrange[hidden] { display: none; }
+      .arrange span { flex-basis: 100%; text-align: center; }
+      .arrange button {
+        padding: 8px 14px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.2);
+        background: rgba(255, 255, 255, 0.1); color: #fff; font: inherit; cursor: pointer;
+      }
+      .arrange button:disabled { opacity: 0.4; cursor: default; }
+      .arrange button.done { background: #2e86c1; border-color: #7cc4f0; font-weight: bold; }
+      body.arranging canvas { cursor: grab; }
       .coming .go { pointer-events: auto; cursor: pointer; border-radius: 6px; }
       .coming .go:hover { background: rgba(255, 255, 255, 0.12); }
       body.idle .coming:not(.soon-up) .go { pointer-events: none; }
@@ -84,9 +101,16 @@
     <button id="sound" class="chrome" title="Sound on or off (S)">🔇</button>
     <div class="info" id="info" hidden></div>
 
+    <div class="arrange" id="arrange" hidden>
+      <span id="arrange-tip"></span>
+      <button id="arrange-smaller" title="Smaller (or scroll down)">➖ Smaller</button>
+      <button id="arrange-bigger" title="Bigger (or scroll up)">➕ Bigger</button>
+      <button id="arrange-reset" title="Back where (and how big) it grew by itself">↺ Put back</button>
+      <button id="arrange-done" class="done">✓ Done</button>
+    </div>
     <div class="menu" id="menu" hidden>
-      <h2>⚙️ Tank controls <button class="close" id="menu-close" title="Close">✕</button></h2>
-      <p class="note">There's one tank: changes show on every screen (so a phone can control the TV).</p>
+      <h2>⚙️ Controls <button class="close" id="menu-close" title="Close">✕</button></h2>
+      <p class="note">There's one world: changes show on every screen watching that place (so a phone can control the TV).</p>
       <label class="later" title="Instead of now, do the next thing you pick at this time">
         <input type="checkbox" id="later" /> ⏰ Do it later, at <input type="time" id="later-time" value="19:30" />
       </label>
@@ -125,6 +149,7 @@
         <button data-cmd="puff">🐡 Puff the puffers</button>
         <button data-cmd="egg">🥚 Lay an egg</button>
         <button data-cmd="show" title="Every screen (the TV too) goes to the place this one is showing">📺 Show this place on every screen</button>
+        <button id="arrange-button" title="Drag plants and decorations where you like, and make them bigger or smaller">✋ Move &amp; resize plants and decorations</button>
       </div>
       <h3>Visitors</h3>
       <div class="row">

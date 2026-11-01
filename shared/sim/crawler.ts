@@ -2,6 +2,7 @@ import type { Drawing } from '../types.ts';
 import { newPose, type Saved, type SimCreature } from './creature.ts';
 import type { Flake } from './food.ts';
 import { TAU, clamp, depthScale, seededRandom } from './math.ts';
+import { sizeFactor } from './styles.ts';
 import { burst, sandY, type World } from './world.ts';
 
 /**
@@ -40,10 +41,10 @@ export class SimCrawler implements SimCreature {
   ) {
     const rand = seededRandom(id);
     this.z = rand(0.2, 0.9);
-    this.size = rand(0.85, 1.15);
+    this.size = rand(0.85, 1.15) * sizeFactor(drawing);
     this.pace = rand(0.8, 1.2);
     this.scale =
-      Math.min((world.height * 0.13 * this.size) / drawing.height, (world.height * 0.3) / drawing.width) * depthScale(this.z);
+      Math.min((world.height * 0.13 * this.size) / drawing.height, (world.height * 0.3 * sizeFactor(drawing)) / drawing.width) * depthScale(this.z);
     this.x = saved?.x ?? world.width * (0.1 + Math.random() * 0.8);
     this.facing = saved?.facing ?? (Math.random() < 0.5 ? -1 : 1);
     if (dropIn) this.air = world.height;

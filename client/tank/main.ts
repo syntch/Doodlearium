@@ -2,9 +2,10 @@ import { Application, Assets, Container, Graphics, RenderLayer, Text, type Textu
 import { imageUrl, motionOf, type Drawing, type Motion, type TankCommand, type TankCommandValue } from '../../shared/types.ts';
 import { newPose, type Kind, type Personality, type Pose } from '../../shared/sim/creature.ts';
 import { unpackPose, type MapSummary, type RosterEntry, type Settings, type Upcoming } from '../../shared/sim/protocol.ts';
-import { WORLD_H, WORLD_W } from '../../shared/sim/world.ts';
+import { WORLD_H, WORLD_W, sandY } from '../../shared/sim/world.ts';
+import { depthScale } from '../../shared/sim/math.ts';
 import { MAP_H, MAP_W, placeById } from '../../shared/world/places.ts';
-import { connectLive, feedFish, fetchDrawings, layEgg, scheduleTankCommand, sendTankCommand, showEverywhere } from '../shared/api.ts';
+import { arrangeStill, connectLive, feedFish, fetchDrawings, layEgg, scheduleTankCommand, sendTankCommand, showEverywhere } from '../shared/api.ts';
 import { Glow, loadGlow, type GlowTextures } from './glow.ts';
 import { PORTHOLE, WorldMap } from './map.ts';
 import { makeEgg } from './babies.ts';
@@ -248,7 +249,8 @@ function applyRoster() {
     else if (entry.kind === 'egg' && r.kind !== 'egg') hatch(entry, r);
     else {
       entry.personality = r.personality;
-      if (r.still) unpackPose(r.still, entry.pose);
+      // Not while it's being moved here (the server's catching up).
+      if (r.still && !holding(entry)) unpackPose(r.still, entry.pose);
     }
   }
   if (missing) void refreshDrawings();
@@ -575,6 +577,7 @@ function enterPlace(id: string) {
 }
 
 function showMap() {
+  if (arranging) arrange(false);
   zoomTo = 0;
   info.hidden = true;
   remember('map');
@@ -673,7 +676,7 @@ app.canvas.addEventListener('click', (e) => {
     showMenu(false);
     return;
   }
-  if (tapWoke || zoom < 1 || !place) return;
+  if (tapWoke || zoom < 1 || !place || arranging) return;
   const at = camera.toLocal({ x: e.clientX, y: e.clientY });
   void feedFish(Math.min(1, Math.max(0, at.x / world.width)), place).catch(() => {});
 });
@@ -716,7 +719,10 @@ addEventListener('keydown', (e) => {
     if (zoomTo === 1) showMap();
     else enterPlace(focus);
   }
-  else if (e.key === 'Escape') showMenu(false);
+  else if (e.key === 'Escape') {
+    showMenu(false);
+    if (arranging) arrange(false);
+  }
 });
 
 // --- the ⚙️ menu: time, holidays, the blacklight and happenings, now or later -----------------------------
@@ -918,15 +924,18 @@ function touches(entry: Entry, x: number, y: number) {
   return false;
 }
 
-/** The creature under a point on screen; night creatures and nearer ones are on top. */
-function creatureAt(x: number, y: number) {
+/**
+ * The creature under a point on screen; night creatures and nearer ones are on top. only narrows who counts,
+ * and roughly skips the check for paint under the point (anywhere in its box will do).
+ */
+function creatureAt(x: number, y: number, only?: (entry: Entry) => boolean, roughly = false) {
   let best: Entry | null = null;
   let bestZ = -Infinity;
   for (const entry of entries.values()) {
     const view = entry.creature.view;
-    if (entry.removing || entry.fade < 0.5) continue;
+    if (entry.removing || entry.fade < 0.5 || (only && !only(entry))) continue;
     const b = view.getBounds();
-    if (x < b.x || x > b.x + b.width || y < b.y || y > b.y + b.height || !touches(entry, x, y)) continue;
+    if (x < b.x || x > b.x + b.width || y < b.y || y > b.y + b.height || (!roughly && !touches(entry, x, y))) continue;
     const z = view.zIndex + (view.parent === nightLayer ? 10_000 : 0);
     if (z > bestZ) {
       best = entry;
@@ -937,7 +946,7 @@ function creatureAt(x: number, y: number) {
 }
 
 function showInfo(x: number, y: number) {
-  const entry = zoom === 1 ? creatureAt(x, y) : null;
+  const entry = zoom === 1 && !arranging ? creatureAt(x, y) : null;
   info.hidden = !entry;
   if (!entry) return;
   const d = entry.drawing;
@@ -980,6 +989,124 @@ function toggleSound() {
 }
 soundButton.onclick = toggleSound;
 showSound();
+
+// --- arranging: the family can move plants and decorations about, and make them bigger or smaller ---------
+
+const arrangeBar = document.querySelector<HTMLDivElement>('#arrange')!;
+const arrangeTip = document.querySelector<HTMLSpanElement>('#arrange-tip')!;
+const arrangeButtons = ['#arrange-smaller', '#arrange-bigger', '#arrange-reset'].map((s) => document.querySelector<HTMLButtonElement>(s)!);
+const outlines = new Graphics();
+labelLayer.addChild(outlines);
+let arranging = false;
+/** The plant or decoration being arranged, and (while a finger or the mouse is down) how it's held. */
+let picked: Entry | null = null;
+let dragging: { pointer: number; dx: number; dy: number } | null = null;
+/** Until then, the server's roster doesn't move the picked one back (it hasn't heard yet). */
+let holdUntil = 0;
+let sendTimer = 0;
+
+const holding = (entry: Entry) => entry === picked && (dragging !== null || Date.now() < holdUntil);
+const isStill = (entry: Entry) => entry.kind === 'plant' || entry.kind === 'decor';
+
+function arrange(on: boolean) {
+  arranging = on && place !== null && zoomTo === 1;
+  arrangeBar.hidden = !arranging;
+  document.body.classList.toggle('arranging', arranging);
+  picked = null;
+  dragging = null;
+  info.hidden = true;
+  if (arranging) showMenu(false);
+  showPicked();
+}
+document.querySelector<HTMLButtonElement>('#arrange-button')!.onclick = () => {
+  if (place && zoomTo === 1) arrange(true);
+  else say('🗺️ Pick a place on the map first.');
+};
+document.querySelector<HTMLButtonElement>('#arrange-done')!.onclick = () => arrange(false);
+
+function showPicked(text?: string) {
+  const name = picked && (picked.named ? picked.drawing.name : `A ${picked.drawing.name}`);
+  arrangeTip.textContent = text ?? (name ? `✋ ${name}: drag it about, or make it bigger or smaller` : '✋ Tap a plant or decoration, then drag it where you like');
+  for (const b of arrangeButtons) b.disabled = !picked;
+}
+
+/** Its size at the back of the place (nearer, it looks bigger). */
+const backScale = (entry: Entry) => entry.pose.sx / depthScale(entry.pose.z);
+
+function placeAt(entry: Entry, x: number, z: number, scale: number) {
+  const s = scale * depthScale(z);
+  Object.assign(entry.pose, { x, z, y: sandY(world, z, x), sx: s, sy: s });
+}
+
+/** Tells the server (a moment after the last change, so a burst of resizing is one message). */
+function sendPlacement(entry: Entry, reset = false) {
+  holdUntil = Date.now() + 3000;
+  clearTimeout(sendTimer);
+  const where = place;
+  sendTimer = window.setTimeout(() => {
+    if (!where) return;
+    const placement = reset ? null : { x: entry.pose.x / world.width, z: entry.pose.z, scale: backScale(entry) };
+    void arrangeStill(where, entry.id, placement).catch(() => showPicked("Couldn't reach the server."));
+  }, reset ? 0 : 250);
+}
+
+function resize(by: number) {
+  if (!picked) return;
+  const big = Math.max(picked.drawing.width, picked.drawing.height);
+  const scale = Math.min(900 / big, Math.max(20 / big, backScale(picked) * by));
+  placeAt(picked, picked.pose.x, picked.pose.z, scale);
+  sendPlacement(picked);
+}
+arrangeButtons[0].onclick = () => resize(1 / 1.15);
+arrangeButtons[1].onclick = () => resize(1.15);
+arrangeButtons[2].onclick = () => {
+  if (!picked) return;
+  holdUntil = 0;
+  sendPlacement(picked, true);
+};
+
+app.canvas.addEventListener('pointerdown', (e) => {
+  if (!arranging) return;
+  picked = creatureAt(e.clientX, e.clientY, isStill) ?? creatureAt(e.clientX, e.clientY, isStill, true);
+  showPicked();
+  if (!picked) return;
+  const at = camera.toLocal({ x: e.clientX, y: e.clientY });
+  dragging = { pointer: e.pointerId, dx: at.x - picked.pose.x, dy: at.y - picked.pose.y };
+  app.canvas.setPointerCapture(e.pointerId);
+});
+app.canvas.addEventListener('pointermove', (e) => {
+  if (!dragging || !picked || e.pointerId !== dragging.pointer) return;
+  const at = camera.toLocal({ x: e.clientX, y: e.clientY });
+  const x = Math.min(world.width, Math.max(0, at.x - dragging.dx));
+  // Up and down is how far back it sits on the sand.
+  const z = Math.min(1, Math.max(0, 1 - (at.y - dragging.dy - world.floorAt(x) - 4) / (world.height * 0.105)));
+  placeAt(picked, x, z, backScale(picked));
+});
+for (const type of ['pointerup', 'pointercancel'] as const) {
+  app.canvas.addEventListener(type, (e) => {
+    if (!dragging || e.pointerId !== dragging.pointer) return;
+    dragging = null;
+    if (picked) sendPlacement(picked);
+  });
+}
+app.canvas.addEventListener('wheel', (e) => {
+  if (!arranging || e.ctrlKey || !picked) return;
+  e.preventDefault();
+  resize(e.deltaY < 0 ? 1.08 : 1 / 1.08);
+}, { passive: false });
+
+// Outlines show what can be moved, and which one is picked.
+app.ticker.add(() => {
+  outlines.clear();
+  if (!arranging) return;
+  outlines.zIndex = 1;
+  for (const entry of entries.values()) {
+    if (!isStill(entry) || entry.removing) continue;
+    const b = entry.creature.view.getBounds();
+    const on = entry === picked;
+    outlines.roundRect(b.x - 4, b.y - 4, b.width + 8, b.height + 8, 8).stroke(on ? { width: 3, color: 0xffd166 } : { width: 1.5, color: 0xffffff, alpha: 0.45 });
+  }
+});
 
 // --- TV niceties: fullscreen on double-click, hide the idle cursor, keep the screen awake ---
 

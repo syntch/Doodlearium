@@ -25,7 +25,7 @@ export const VISITOR_PACKS: Record<string, VisitorInfo[]> = {
     { name: 'whale', icon: '🐋', text: 'a whale', weight: 1, seconds: 45, biomes: ['ocean'] },
     { name: 'diver', icon: '🤿', text: 'a diver', weight: 1, seconds: 30, biomes: ['lake', 'ocean'] },
     { name: 'heron', icon: '🪶', text: 'a heron', weight: 1, seconds: 30, biomes: ['pond'] },
-    { name: 'ducks', icon: '🦆', text: 'some ducks', weight: 1, seconds: 36, biomes: ['pond', 'lake'] },
+    { name: 'ducks', icon: '🦆', text: 'some ducks', weight: 1, seconds: 36, biomes: ['pond'] },
     { name: 'gulls', icon: '🐦', text: 'some seagulls', weight: 1, seconds: 26, biomes: ['seashore'] },
   ],
   spooky: [{ name: 'ghost', icon: '👻', text: 'a friendly ghost', weight: 1.5, seconds: 22 }],

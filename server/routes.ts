@@ -18,7 +18,7 @@ import { addStory, historyBetween, listStories, record } from './history.ts';
 import { addDrawing, listDrawings, removeDrawing, updateDrawing } from './store.ts';
 import { BIOMES, type Biome } from '../shared/world/biomes.ts';
 import { placeById, placeName } from '../shared/world/places.ts';
-import { EGG_GAP, HATCH_TIME, drawingAdded, drawingRemoved, drawingUpdated, feed, runCommand, schedule, whereSpecies } from './world.ts';
+import { EGG_GAP, HATCH_TIME, arrange, drawingAdded, drawingRemoved, drawingUpdated, feed, runCommand, schedule, whereSpecies } from './world.ts';
 import { broadcast } from './ws.ts';
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -85,6 +85,7 @@ function parseDrawing(body: any) {
       : undefined,
     group: typeof body.group === 'boolean' ? body.group : undefined,
     home: typeof body.home === 'string' && placeById(body.home)?.live ? body.home : undefined,
+    size: body.size === 'small' || body.size === 'big' ? body.size : undefined,
   };
   return { meta, png: png.bytes, extra: { parts: partsPng?.bytes ?? null, glow: glowPng?.bytes ?? null } };
 }
@@ -155,7 +156,7 @@ api.post('/drawings', async (req, res) => {
   broadcast({ type: 'drawing:added', drawing });
   const place = drawingAdded(drawing);
   record('joined', [drawing.id], `🎨 ${drawing.name}, drawn by ${drawing.artist}, moved into ${placeName(place)}.`, place);
-  res.status(201).json(drawing);
+  res.status(201).json({ ...drawing, place });
 });
 
 api.put('/drawings/:id', async (req, res) => {
@@ -251,6 +252,29 @@ api.post('/schedule', (req, res) => {
   res.status(204).end();
 });
 
+/**
+ * Moves or resizes a plant or decoration: { place, id, x, z, scale } (x and z 0..1, scale its size at the
+ * back), or { place, id, reset: true } to put it back where it grew.
+ */
+api.post('/arrange', (req, res) => {
+  const { place, id, x, z, scale, reset } = req.body ?? {};
+  const drawing = typeof id === 'string' ? listDrawings().find((d) => d.id === id.split('~')[0]) : undefined;
+  const numbers = [x, z, scale].every((n) => typeof n === 'number' && Number.isFinite(n));
+  if (typeof place !== 'string' || !drawing || (!reset && !numbers)) {
+    res.status(400).json({ error: 'needs a place, a plant or decoration, and where (or reset)' });
+    return;
+  }
+  const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
+  // Between a pebble and the whole height of the place.
+  const big = Math.max(drawing.width, drawing.height);
+  const placement = reset ? null : { x: clamp(x, 0, 1), z: clamp(z, 0, 1), scale: clamp(scale, 20 / big, 900 / big) };
+  if (!arrange(place, id, placement)) {
+    res.status(404).json({ error: 'not a plant or decoration in that place' });
+    return;
+  }
+  res.status(204).end();
+});
+
 /** Sends every screen to a place: { place }. */
 api.post('/show', (req, res) => {
   const place = req.body?.place;
@@ -284,7 +308,7 @@ api.post('/stories', async (req, res) => {
     res.status(400).json({ error: 'a story needs its text and the stretch of history it covers' });
     return;
   }
-  const clean = typeof title === 'string' && title.trim() ? title.trim().slice(0, 120) : 'A story from the tank';
+  const clean = typeof title === 'string' && title.trim() ? title.trim().slice(0, 120) : 'A story from Doodlearium';
   res.status(201).json(await addStory({ title: clean, text: text.trim(), from, to }));
 });
 

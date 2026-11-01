@@ -11,6 +11,7 @@ import {
   type Drawing,
   type Motion,
   type PartMotion,
+  type SpeciesSize,
 } from '../../shared/types.ts';
 import { fetchDrawings, setupFeedButton, submitDrawing, updateDrawing } from '../shared/api.ts';
 import { BIOME_NAMES, WATER_BIOMES, defaultGroup, defaultHabitats, type Biome } from '../../shared/world/biomes.ts';
@@ -84,6 +85,7 @@ const sendButton = document.querySelector<HTMLButtonElement>('#send')!;
 const nocturnalInput = document.querySelector<HTMLInputElement>('#nocturnal')!;
 const groupInput = document.querySelector<HTMLInputElement>('#group')!;
 const homeSelect = document.querySelector<HTMLSelectElement>('#home')!;
+const speciesSizesEl = document.querySelector<HTMLSpanElement>('#species-size')!;
 const habitatsEl = document.querySelector<HTMLSpanElement>('#habitats')!;
 
 const state = {
@@ -296,7 +298,7 @@ function renderHint() {
     state.tool === 'fill'
       ? 'Tap inside a shape to fill it.'
       : state.tool === 'extras'
-        ? `${extra.hint}. Tap the drawing to add one, tap it again to remove it. Extras come alive in the tank!`
+        ? `${extra.hint}. Tap the drawing to add one, tap it again to remove it. Extras come alive in the world!`
         : state.tool === 'select'
           ? 'Tap a shape or paint over a part to select it. Drag it to move it, or use the buttons to resize, turn, flip, copy, delete or ✨ animate it.'
           : '';
@@ -349,7 +351,7 @@ function setMotion(motion: Motion) {
   const restyled = motion !== state.motion;
   state.motion = motion;
   press(document.querySelectorAll('.kinds [data-motion]'), (b) => b.dataset.motion === motion);
-  if (restyled) setWhere(defaultHabitats(motion), defaultGroup(motion));
+  if (restyled) setWhere(defaultHabitats(motion), defaultGroup(motion), '', speciesSize);
   suggestEl.hidden = true;
   renderGuide();
   changed();
@@ -359,12 +361,17 @@ function setMotion(motion: Motion) {
 
 /** The places it can live, in the order they were picked (the preview shows the first). */
 let habitats: Biome[] = [];
+/** Roughly how big its kind grows (undefined: medium). */
+let speciesSize: SpeciesSize | undefined;
 
-function setWhere(list: Biome[], group: boolean, home = '') {
+function setWhere(list: Biome[], group: boolean, home = '', size?: SpeciesSize) {
   habitats = WATER_BIOMES.filter((b) => list.includes(b)).sort((a, b) => list.indexOf(a) - list.indexOf(b));
   groupInput.checked = group;
+  speciesSize = size;
   renderWhere(home);
 }
+
+const SPECIES_SIZES: [SpeciesSize | undefined, string][] = [['small', 'Small'], [undefined, 'Medium'], ['big', 'Big']];
 
 function renderWhere(home = homeSelect.value) {
   habitatsEl.replaceChildren(
@@ -377,6 +384,20 @@ function renderWhere(home = homeSelect.value) {
         // Always somewhere to live.
         if (habitats.includes(biome) && habitats.length > 1) habitats = habitats.filter((h) => h !== biome);
         else if (!habitats.includes(biome)) habitats = [...habitats, biome];
+        renderWhere();
+        schedulePreview();
+      };
+      return b;
+    }),
+  );
+  speciesSizesEl.replaceChildren(
+    ...SPECIES_SIZES.map(([size, label]) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.setAttribute('aria-pressed', String(speciesSize === size));
+      b.onclick = () => {
+        speciesSize = size;
         renderWhere();
         schedulePreview();
       };
@@ -396,6 +417,7 @@ function wherePayload() {
     habitats: same ? undefined : habitats,
     group: groupInput.checked === defaultGroup(state.motion) ? undefined : groupInput.checked,
     home: homeSelect.value || undefined,
+    size: speciesSize,
   };
 }
 document.querySelectorAll<HTMLButtonElement>('.kinds [data-motion]').forEach((b) => {
@@ -1338,6 +1360,7 @@ async function refreshPreview() {
       nocturnal: nocturnalInput.checked,
       parts: exported.parts,
       glow: Boolean(glow),
+      size: speciesSize,
     },
     cutout?.body ?? Texture.from(image!),
     cutout,
@@ -1384,7 +1407,7 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
   try {
     if (editing) {
       const drawing = await updateDrawing(editing.id, payload);
-      showToast(`Saved! ${drawing.name} is updated in the tank.`);
+      showToast(`Saved! ${drawing.name} is updated everywhere it lives.`);
       setTimeout(() => location.assign('/gallery/'), 1200);
       return;
     }
@@ -1392,7 +1415,8 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
       localStorage.setItem('doodlearium.artist', artist);
     } catch {}
     const drawing = await submitDrawing(payload);
-    showToast(`Splash! ${drawing.name} is in the tank.${drawing.nocturnal ? ' It comes out at night 🌙' : ''}`);
+    const where = drawing.place ? placeById(drawing.place)?.name : undefined;
+    showToast(`Splash! ${drawing.name} moved into ${where ?? 'the world'}.${drawing.nocturnal ? ' It comes out at night 🌙' : ''}`);
     ops.length = 0;
     base = null;
     baseAttachments = [];
@@ -1472,7 +1496,7 @@ async function loadForEditing(id: string) {
   nameInput.value = drawing.name;
   artistInput.value = drawing.artist;
   nocturnalInput.checked = drawing.nocturnal === true;
-  setWhere(drawing.habitats?.length ? drawing.habitats : defaultHabitats(motionOf(drawing)), drawing.group ?? defaultGroup(motionOf(drawing)), drawing.home);
+  setWhere(drawing.habitats?.length ? drawing.habitats : defaultHabitats(motionOf(drawing)), drawing.group ?? defaultGroup(motionOf(drawing)), drawing.home, drawing.size);
   sendButton.textContent = 'Save changes 💾';
   const banner = document.querySelector<HTMLParagraphElement>('#editing')!;
   banner.hidden = false;

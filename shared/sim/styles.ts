@@ -1,4 +1,11 @@
-import type { Motion } from '../types.ts';
+import type { Drawing, Motion, SpeciesSize } from '../types.ts';
+
+const SIZE_FACTORS: Record<SpeciesSize, number> = { small: 0.65, big: 1.5 };
+
+/** How much bigger (or smaller) than usual a species grows: the family's small, medium or big. */
+export function sizeFactor(drawing: Pick<Drawing, 'size'>) {
+  return drawing.size ? SIZE_FACTORS[drawing.size] : 1;
+}
 
 /**
  * How one kind of swimmer travels. The shared swimmer brain (feeding, schooling, glass visits, shyness)

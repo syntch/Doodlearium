@@ -1,6 +1,7 @@
 import type { Drawing } from '../types.ts';
-import { newPose, type SimCreature } from './creature.ts';
+import { newPose, type Placement, type SimCreature } from './creature.ts';
 import { depthScale, seededRandom } from './math.ts';
+import { sizeFactor } from './styles.ts';
 import { sandY, type Hideout, type World } from './world.ts';
 
 /**
@@ -15,14 +16,25 @@ export class SimStill implements SimCreature {
     readonly drawing: Drawing,
     readonly kind: 'plant' | 'decor',
     world: World,
+    placement?: Placement,
   ) {
     const rand = seededRandom(id);
     const z = rand();
-    const nx = kind === 'plant' ? rand(0.04, 0.96) : rand(0.05, 0.95);
-    const size = kind === 'plant' ? rand(0.8, 1.25) : rand(0.85, 1.2);
+    // Plants grow under water (on the beach, that's past the shore); decorations can go anywhere.
+    const nx = kind === 'plant' ? rand(Math.max(0.04, world.waterLeft / world.width + 0.02), 0.96) : rand(0.05, 0.95);
+    const grow = sizeFactor(drawing);
+    const size = (kind === 'plant' ? rand(0.8, 1.25) : rand(0.85, 1.2)) * grow;
     const [tall, wide] = kind === 'plant' ? [0.32, 0.22] : [0.2, 0.25];
-    const scale = Math.min((world.height * tall * size * depthScale(z)) / drawing.height, (world.width * wide) / drawing.width);
-    Object.assign(this.pose, { x: nx * world.width, y: sandY(world, z, nx * world.width), sx: scale, sy: scale, z });
+    // Plants are measured by height; decorations by their overall size, so a flat clam and a tall
+    // castle come out about as big as each other.
+    const measure = kind === 'plant' ? drawing.height : Math.sqrt(drawing.width * drawing.height);
+    const scale = Math.min((world.height * tall * size * depthScale(z)) / measure, (world.width * wide * grow) / drawing.width);
+    this.place(world, placement ?? { x: nx, z, scale: scale / depthScale(z) });
+  }
+
+  private place(world: World, { x, z, scale }: Placement) {
+    const s = scale * depthScale(z);
+    Object.assign(this.pose, { x: x * world.width, y: sandY(world, z, x * world.width), sx: s, sy: s, z });
   }
 
   hideout(): Hideout {

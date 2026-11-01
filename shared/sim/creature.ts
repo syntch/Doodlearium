@@ -54,6 +54,17 @@ export interface Spec {
   grownFrom?: number;
   hatchAt?: number;
   nest?: number;
+  placement?: Placement;
+}
+
+/**
+ * Where the family put a plant or decoration by hand (instead of where it grew by itself): x across the
+ * place (0..1), z how near the front (0..1), and scale its size at the very back (nearer ones look bigger).
+ */
+export interface Placement {
+  x: number;
+  z: number;
+  scale: number;
 }
 
 /** What's worth keeping across a server restart, so creatures carry on where they were. */

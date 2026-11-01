@@ -255,10 +255,15 @@ export class Scene {
     }
   }
 
+  /** The top of the sand at x, with its gentle ripples. */
+  private sandTop(world: World, x: number) {
+    return world.floorAt(Math.min(world.width, Math.max(0, x))) + Math.sin(x * 0.006) * 10 + Math.sin(x * 0.019 + 1) * 4;
+  }
+
   /** Where the water meets the beach (or the left edge, if it doesn't). */
   private shoreX(world: World) {
     let x = 0;
-    while (x < world.width && world.floorAt(x) <= world.waterTop) x += 4;
+    while (x < world.width && this.sandTop(world, x) <= world.waterTop) x += 2;
     return x;
   }
 
@@ -276,14 +281,39 @@ export class Scene {
     g.poly(pts, false).stroke({ width: 3, color: 0xeafaff, alpha: 0.7 });
 
     if (world.biome === 'seashore') {
-      // Waves lap up the beach and slide back.
-      const lap = Math.sin(t * 0.9) * 0.5 + 0.5;
-      const sx = from - lap * 46;
-      const fy = world.floorAt(Math.max(0, sx));
-      g.ellipse(sx + 30, Math.min(fy, y0) + 2, 60 + lap * 20, 5).fill({ color: 0xffffff, alpha: 0.55 });
+      const shore = this.shoreX(world);
+      // Swells roll in from the sea, curling white as they near the beach.
       for (let i = 0; i < 4; i++) {
-        const x = from + 120 + i * 170 + Math.sin(t * 0.7 + i) * 30;
-        g.ellipse(x, y0 + 1, 24 + Math.sin(t * 1.3 + i * 2) * 8, 3).fill({ color: 0xffffff, alpha: 0.45 });
+        const k = (t * 0.07 + i / 4) % 1;
+        const x = shore + 40 + (1 - k) * 900;
+        const w = 40 + k * 70;
+        const h = 6 + k * 14;
+        const alpha = Math.min(1, Math.sin(k * Math.PI) * 1.6);
+        // The swell's hump of water, then the white curl along its front.
+        g.moveTo(x - w * 1.6, y0 + 3).quadraticCurveTo(x - w * 0.4, y0 - h, x, y0 - h * 0.8).quadraticCurveTo(x + w * 0.25, y0 - h * 0.5, x + w * 0.35, y0 + 3).closePath().fill({ color: 0x8fdde6, alpha: alpha * 0.8 });
+        g.moveTo(x - w * 0.6, y0 - h * 0.85).quadraticCurveTo(x - w * 0.05, y0 - h * 1.05, x + w * 0.3, y0 - h * 0.1).stroke({ width: 4 + k * 5, color: 0xffffff, alpha: alpha * 0.9, cap: 'round' });
+      }
+      // Each wave washes up the sand as a thin sheet of water with foam along its edge, then slides back.
+      const lap = Math.sin(t * 0.9) * 0.5 + 0.5;
+      const edge = shore - 30 - lap * 170;
+      const end = shore + 60;
+      const top: number[] = [];
+      const under: number[] = [];
+      for (let x = edge; x <= end; x += 5) {
+        const y = this.sandTop(world, x);
+        const deep = Math.min(1, (x - edge) / 80);
+        top.push(x, Math.min(y, y0) - 2 - deep * 9);
+        under.unshift(x, y + 4);
+      }
+      // A wet, darker band of sand left behind as the water slides back.
+      const wet: number[] = [];
+      for (let x = shore - 210; x <= shore; x += 10) wet.push(x, this.sandTop(world, x) - 1);
+      g.poly(wet, false).stroke({ width: 10, color: 0xb59a66, alpha: 0.45, cap: 'round' });
+      g.poly([...top, ...under]).fill({ color: 0x9fe6e6, alpha: 0.85 });
+      g.poly(top.slice(0, 30), false).stroke({ width: 7, color: 0xffffff, cap: 'round', join: 'round' });
+      for (let i = 0; i < 8; i++) {
+        const x = edge + 6 + i * 9 + Math.sin(t * 3 + i) * 3;
+        g.circle(x, this.sandTop(world, x) - 6 - (i % 2) * 4, 3 + (i % 3)).fill({ color: 0xffffff, alpha: 0.9 });
       }
     }
     for (const pad of this.pads) {
@@ -339,15 +369,6 @@ export class Scene {
         g.ellipse(x, y, r, r * 0.6).fill({ color: 0x3d4a5a, alpha: 0.75 });
         g.ellipse(x - r * 0.25, y - r * 0.25, r * 0.5, r * 0.25).fill({ color: 0x5d6b7b, alpha: 0.5 });
       }
-    } else if (world.biome === 'seashore') {
-      // Shells and pebbles dotted along the beach.
-      const shore = this.shoreX(world);
-      for (let i = 0; i < 10; i++) {
-        const x = rand(-40, shore + 260);
-        const y = world.floorAt(x) + rand(8, 26);
-        if (rand() < 0.5) g.ellipse(x, y, rand(5, 9), rand(3, 6)).fill(0xa69a88);
-        else g.arc(x, y, rand(6, 10), Math.PI, 0).fill(0xf7d9d0).stroke({ width: 1.5, color: 0xd9a89a });
-      }
     }
   }
 
@@ -360,9 +381,7 @@ export class Scene {
     const g = this.sand.clear();
     const floor = (x: number) => world.floorAt(Math.min(world.width, Math.max(0, x)));
     const points: number[] = [left, height];
-    for (let x = left; x <= right + 20; x += 20) {
-      points.push(x, floor(x) + Math.sin(x * 0.006) * 10 + Math.sin(x * 0.019 + 1) * 4);
-    }
+    for (let x = left; x <= right + 20; x += 20) points.push(x, this.sandTop(world, x));
     points.push(right + 20, height);
     g.poly(points).fill(sand[0]);
     g.poly(points.map((v, i) => (i % 2 === 1 && v !== height ? v + 14 : v))).fill(sand[1]);
@@ -375,9 +394,17 @@ export class Scene {
       // The beach above the water is dry and pale; where the waves reach, it's dark and wet.
       const shore = this.shoreX(world);
       const dry: number[] = [];
-      for (let x = left; x <= shore; x += 10) dry.push(x, floor(x) + Math.sin(x * 0.006) * 10 + Math.sin(x * 0.019 + 1) * 4);
+      for (let x = left; x <= shore; x += 10) dry.push(x, this.sandTop(world, x));
       g.poly([...dry, shore, world.waterTop + 30, left, world.waterTop + 30], true).fill({ color: 0xf6e3b4, alpha: 0.6 });
-      g.ellipse(shore - 10, world.waterTop + 6, 70, 10).fill({ color: 0xb3955a, alpha: 0.35 });
+      // Shells and pebbles dotted along the beach and the shallows.
+      const r = seededRandom('shells');
+      for (let i = 0; i < 12; i++) {
+        const x = r(20, shore + 300);
+        const y = this.sandTop(world, x) + r(6, 22);
+        const s = r(6, 10);
+        if (r() < 0.5) g.ellipse(x, y, s, s * 0.6).fill(0xa69a88);
+        else g.moveTo(x - s, y).arc(x, y, s, Math.PI, 0).closePath().fill(0xf7d9d0).stroke({ width: 1.5, color: 0xd9a89a });
+      }
     }
   }
 }

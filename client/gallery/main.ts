@@ -87,7 +87,7 @@ function card(d: Drawing) {
   const remove = document.createElement('button');
   remove.textContent = 'Remove';
   remove.onclick = async () => {
-    if (!confirm(`Remove "${d.name}" from the tank for good?`)) return;
+    if (!confirm(`Remove "${d.name}" from the world for good?`)) return;
     remove.disabled = true;
     try {
       await deleteDrawing(d.id);

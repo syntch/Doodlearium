@@ -1,4 +1,5 @@
 import { habitatOf, motionOf, type CreatureType, type Drawing } from '../types.ts';
+import type { Placement } from '../sim/creature.ts';
 import { habitatsOf, isGroup, type Biome } from './biomes.ts';
 import { LIVE_PLACES, placeById, regionsOf, type Place } from './places.ts';
 
@@ -16,6 +17,8 @@ export interface Individual {
   /** An egg laid by two of the same species: when it hatches, and where across the tank (0..1). */
   hatchAt?: number;
   nest?: number;
+  /** Put just so by the family (plants and decorations): it stays, right there. */
+  placement?: Placement;
 }
 
 /** How many of each kind a place holds. */
@@ -89,7 +92,7 @@ export function populate(drawings: Drawing[], individuals: Individual[], fresh =
       for (let k = have; k < Math.min(want, target); k++) {
         if (count(place.id, bucket) >= target) {
           const movable = list.filter(
-            (i) => i.place === place.id && !i.named && i.species !== d.id && !((i.hatchAt ?? 0) > now) && bucketOf(byId.get(i.species)!) === bucket,
+            (i) => i.place === place.id && !i.named && !i.placement && i.species !== d.id && !((i.hatchAt ?? 0) > now) && bucketOf(byId.get(i.species)!) === bucket,
           );
           const most = (s: string) => movable.filter((i) => i.species === s).length;
           const leaving = movable.sort((a, b) => most(b.species) - most(a.species))[0];
@@ -136,7 +139,7 @@ export function populate(drawings: Drawing[], individuals: Individual[], fresh =
 /** Now and then one of a place's members moves on (populate then brings someone else). Eggs stay put. */
 export function turnover(individuals: Individual[], place: string): Individual[] {
   const now = Date.now();
-  const movers = individuals.filter((i) => i.place === place && !i.named && !((i.hatchAt ?? 0) > now));
+  const movers = individuals.filter((i) => i.place === place && !i.named && !i.placement && !((i.hatchAt ?? 0) > now));
   const leaving = movers[Math.floor(Math.random() * movers.length)];
   return leaving ? individuals.filter((i) => i !== leaving) : individuals;
 }
