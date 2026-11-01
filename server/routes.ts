@@ -109,6 +109,7 @@ function parseParts(value: unknown): Part[] | null {
     if (speed === null || amount === null) return null;
     const part: Part = { motion: p.motion, hinge: [hinge[0], hinge[1], hinge[2], hinge[3]], speed, amount };
     if (p.flip === true) part.flip = true;
+    if (p.lift === true) part.lift = true;
     result.push(part);
   }
   return result;

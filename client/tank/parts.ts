@@ -128,8 +128,11 @@ interface Live {
   h2: { x: number; y: number };
   mid: { x: number; y: number };
   centre: { x: number; y: number };
-  /** Open & close: which way round it opens (1 or -1). */
+  /** Open & close: which way round it swings open (1 or -1). */
   opens: number;
+  /** Open & close, lifting: the way straight off the rest of the drawing, and how far that is across the part. */
+  away: { x: number; y: number };
+  depth: number;
 }
 
 /** Animates a drawing's pieces in place, riding the body's own bend like extras do. */
@@ -162,6 +165,7 @@ export class Parts {
         mid: { x: (h1.x + h2.x) / 2, y: (h1.y + h2.y) / 2 },
         centre,
         opens: opensAway(piece.part, { x: (h1.x + h2.x) / 2, y: (h1.y + h2.y) / 2 }, centre, piece.rest),
+        ...liftAway(h1, h2, centre, piece),
       };
     });
   }
@@ -211,6 +215,14 @@ export class Parts {
         const c = (l.phase / TAU) % 1;
         const ease = (t: number) => t * t * (3 - 2 * t);
         const open = c < 0.3 ? ease(c / 0.3) : c < 0.45 ? 1 : c < 0.6 ? 1 - ease((c - 0.45) / 0.15) : 0;
+        if (l.piece.part.lift) {
+          // Seen from the front, a shell opening on a hinge at the back lifts straight up, tipping back a
+          // little (so it looks a bit shorter), and uncovers the dark inside where it was.
+          const angle = Math.atan2(l.away.y, l.away.x);
+          const rise = open * l.depth * Math.min(0.9, 0.35 * amount);
+          m.rotate(-angle).scale(1 - open * 0.12, 1).rotate(angle).translate(l.away.x * rise, l.away.y * rise);
+          return aroundPoint(l.mid, m);
+        }
         return aroundPoint(l.mid, m.rotate(open * Math.min(1.1, 0.5 * amount) * l.opens));
       }
       case 'spin':
@@ -245,6 +257,17 @@ function opensAway(part: Part, hinge: { x: number; y: number }, centre: { x: num
   const away = -ry * (centre.x - middle.x) + rx * (centre.y - middle.y);
   const sign = away < 0 ? -1 : 1;
   return part.flip ? -sign : sign;
+}
+
+/** Straight off the hinge line, on the part's side, and the part's size that way. */
+function liftAway(h1: { x: number; y: number }, h2: { x: number; y: number }, centre: { x: number; y: number }, piece: Piece) {
+  const out = { x: centre.x - piece.rest.x, y: centre.y - piece.rest.y };
+  let away = { x: -(h2.y - h1.y), y: h2.x - h1.x };
+  if (Math.hypot(away.x, away.y) < 1) away = out;
+  const length = Math.hypot(away.x, away.y) || 1;
+  const sign = away.x * out.x + away.y * out.y < 0 ? -1 : 1;
+  away = { x: (away.x / length) * sign, y: (away.y / length) * sign };
+  return { away, depth: Math.abs(away.x) * piece.canvas.width + Math.abs(away.y) * piece.canvas.height };
 }
 
 /** Applies m around point p instead of around the origin. */

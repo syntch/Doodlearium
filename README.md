@@ -95,7 +95,7 @@ Any part of a drawing can move on its own, on top of the whole-body motion. With
 | --- | --- |
 | 🪽 Pop-out | side fins and flaps: lifts up out of the paper where it's attached, uncovering a cut-out shadow |
 | 🦋 Flap | tails, flippers: swings back and forth where it's attached |
-| 🦪 Open & close | clams, mouths, lids: opens away from the rest of the drawing, holds, snaps shut and rests. **🔃** on its chip opens it the other way |
+| 🦪 Open & close | clams, mouths, lids: opens away from the rest of the drawing, holds, snaps shut and rests. The button on its chip picks how: **↪️** swings open (a mouth seen from the side), **↩️** swings the other way, or **⏫** lifts straight up, uncovering the dark inside (a clam seen from the front) |
 | 🌀 Spin | propellers, wheels |
 | 💓 Pulse | hearts, lights |
 | 😉 Blink | eyes |

@@ -12,6 +12,7 @@ export interface EditorPart {
   speed?: number;
   amount?: number;
   flip?: boolean;
+  lift?: boolean;
 }
 
 /** Moves a hand-drawn hinge along with its part. */
@@ -25,7 +26,7 @@ const moveHinge = (hinge: EditorPart['hinge'], matrix: DOMMatrix): EditorPart['h
 export const PART_INFO: Record<PartMotion, { icon: string; label: string; hint: string }> = {
   popout: { icon: '🪽', label: 'Pop-out', hint: "Lifts up out of the paper where it's attached, like a cut-out fin" },
   flap: { icon: '🦋', label: 'Flap', hint: "Swings back and forth where it's attached (tails, flippers)" },
-  chomp: { icon: '🦪', label: 'Open & close', hint: "Opens and shuts where it's attached (clams, mouths, lids)" },
+  chomp: { icon: '🦪', label: 'Open & close', hint: "Opens and shuts where it's attached (clams, mouths, lids). Its chip has a button for which way it opens" },
   spin: { icon: '🌀', label: 'Spin', hint: 'Spins around its middle (propellers, wheels)' },
   pulse: { icon: '💓', label: 'Pulse', hint: 'Grows and shrinks (hearts, lights)' },
   blink: { icon: '😉', label: 'Blink', hint: 'Blinks every few seconds (eyes)' },
@@ -193,7 +194,7 @@ export function partsFromImage(
   const placed = newCanvas(paper.width, paper.height).getContext('2d', { willReadFrequently: true })!;
   placed.drawImage(partsImage, at.x, at.y);
   const marks = placed.getImageData(0, 0, paper.width, paper.height);
-  return saved.map(({ motion, speed, amount, flip }, index) => {
+  return saved.map(({ motion, speed, amount, flip, lift }, index) => {
     const mask = newCanvas(paper.width, paper.height);
     const c = mask.getContext('2d')!;
     const out = c.createImageData(paper.width, paper.height);
@@ -202,6 +203,6 @@ export function partsFromImage(
       if (marks.data[i + 3] >= 128 && Math.abs(marks.data[i] - value) <= 10) out.data[i + 3] = 255;
     }
     c.putImageData(out, 0, 0);
-    return { mask, motion, speed, amount, flip };
+    return { mask, motion, speed, amount, flip, lift };
   });
 }

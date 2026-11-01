@@ -65,7 +65,7 @@ type Op =
   /** A hand-drawn hinge; result is the part with it, made once so later ops can find it. */
   | { type: 'hinge'; target: EditorPart; hinge: [number, number, number, number]; result?: EditorPart }
   /** A part made faster, slower, bigger or smaller. */
-  | { type: 'tune'; target: EditorPart; speed: number; amount: number; flip?: boolean; result?: EditorPart }
+  | { type: 'tune'; target: EditorPart; speed: number; amount: number; flip?: boolean; lift?: boolean; result?: EditorPart }
   | TransformOp;
 
 const paper = document.querySelector<HTMLCanvasElement>('#paper')!;
@@ -947,7 +947,7 @@ function currentParts(): EditorPart[] {
       if (i >= 0) list[i] = op.result ??= { ...op.target, hinge: op.hinge };
     } else if (op.type === 'tune') {
       const i = list.indexOf(op.target);
-      if (i >= 0) list[i] = op.result ??= { ...op.target, speed: op.speed, amount: op.amount, flip: op.flip };
+      if (i >= 0) list[i] = op.result ??= { ...op.target, speed: op.speed, amount: op.amount, flip: op.flip, lift: op.lift };
     } else if (op.type === 'transform') carryParts(list, op);
   }
   if (selection.moved) carryParts(list, selection.pendingOp());
@@ -1054,7 +1054,7 @@ function renderParts() {
         button.textContent = steps[i][1];
         button.title = title;
         button.onclick = () => {
-          const tuned = { speed: part.speed ?? 1, amount: part.amount ?? 1, flip: part.flip, [key]: steps[(i + 1) % steps.length][0] };
+          const tuned = { speed: part.speed ?? 1, amount: part.amount ?? 1, flip: part.flip, lift: part.lift, [key]: steps[(i + 1) % steps.length][0] };
           ops.push({ type: 'tune', target: part, ...tuned });
           changed();
         };
@@ -1063,15 +1063,23 @@ function renderParts() {
       tune('speed', 'Speed (tap to change): normal, fast or slow', [[1, '▶'], [1.8, '⏩'], [0.5, '🐢']]);
       tune('amount', 'How far it moves (tap to change): normal, big or small', [[1, '◐'], [1.6, '⬤'], [0.5, '·']]);
       if (part.motion === 'chomp') {
-        const flip = document.createElement('button');
-        flip.textContent = '🔃';
-        flip.title = 'Open the other way';
-        flip.setAttribute('aria-pressed', String(Boolean(part.flip)));
-        flip.onclick = () => {
-          ops.push({ type: 'tune', target: part, speed: part.speed ?? 1, amount: part.amount ?? 1, flip: !part.flip });
+        // How it opens: swinging one way or the other (seen from the side), or lifting straight up (from the front).
+        const ways = [
+          { flip: false, lift: false, icon: '↪️' },
+          { flip: true, lift: false, icon: '↩️' },
+          { flip: false, lift: true, icon: '⏫' },
+        ];
+        const i = part.lift ? 2 : part.flip ? 1 : 0;
+        const way = document.createElement('button');
+        way.textContent = ways[i].icon;
+        way.title = 'How it opens (tap to change): swings one way, swings the other way, or lifts straight up (for a clam seen from the front)';
+        way.onclick = () => {
+          const next = ways[(i + 1) % ways.length];
+          ops.push({ type: 'tune', target: part, speed: part.speed ?? 1, amount: part.amount ?? 1, flip: next.flip, lift: next.lift });
           changed();
+          showToast(next.lift ? '⏫ Lifts straight up' : next.flip ? '↩️ Swings open the other way' : '↪️ Swings open');
         };
-        chip.append(flip);
+        chip.append(way);
       }
       if (isHinged(part.motion)) {
         const pin = document.createElement('button');

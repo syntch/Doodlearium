@@ -49,6 +49,8 @@ export interface Part {
   amount?: number;
   /** Open & close: opens the other way round from the way it would pick by itself. */
   flip?: boolean;
+  /** Open & close, seen from the front: lifts straight off the rest (a clam's top shell) instead of swinging. */
+  lift?: boolean;
 }
 
 export const isAttachmentColor = (c: unknown): c is string =>
