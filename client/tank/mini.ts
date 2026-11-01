@@ -1,14 +1,15 @@
 import { Application, Container, RenderLayer, Texture } from 'pixi.js';
+import type { Drawing } from '../../shared/types.ts';
+import { packFlake } from '../../shared/sim/protocol.ts';
+import { Tank } from '../../shared/sim/tank.ts';
+import { WORLD_H, WORLD_W } from '../../shared/sim/world.ts';
 import { Glow, type GlowTextures } from './glow.ts';
-import { motionOf, type Drawing } from '../../shared/types.ts';
-import { Swimmer } from './behaviors/swimmer.ts';
 import { createCreature } from './creatures.ts';
 import { Food } from './food.ts';
 import type { Cutout } from './parts.ts';
 import { Scene } from './scene.ts';
-import { newWorld, type Creature } from './world.ts';
+import type { Creature, World } from './world.ts';
 
-const FLOOR = 0.86;
 /** The camera shows part of the tank, close up, so the creature is big enough to watch. */
 const ZOOM = 2;
 
@@ -21,8 +22,8 @@ export interface Preview {
 }
 
 /**
- * A tiny tank running the real tank code with one creature, for the draw page.
- * The camera follows the creature around a tank the size of the panel.
+ * A tiny tank for the draw page with one creature. It runs the tank's own simulation right here in the
+ * browser (no server needed) and draws it with the tank's own code; the camera follows the creature.
  * Tapping it drops food, so feeding behaviour can be tried out too.
  */
 export async function createPreview(container: HTMLElement): Promise<Preview> {
@@ -30,74 +31,84 @@ export async function createPreview(container: HTMLElement): Promise<Preview> {
   await app.init({ resizeTo: container, antialias: true, background: 0x0a3456, autoDensity: true, resolution: devicePixelRatio });
   container.append(app.canvas);
 
+  const tank = new Tank();
+  // Always daytime in the preview, whatever the clock says, so the drawing is easy to see.
+  tank.hour = 12;
   const scene = new Scene();
   const food = new Food();
-  const world = newWorld(scene, food);
+  const world: World = { width: WORLD_W, height: WORLD_H, floorY: tank.world.floorY, time: 0, scene, current: 0 };
   const creatureLayer = new Container({ sortableChildren: true });
   const nightLayer = new Container({ sortableChildren: true });
   food.view.zIndex = 500;
   creatureLayer.addChild(food.view);
   const glowLayer = new RenderLayer();
-  app.stage.addChild(scene.back, creatureLayer, scene.front, nightLayer, glowLayer);
+  const camera = new Container();
+  camera.addChild(scene.back, creatureLayer, scene.front, nightLayer, glowLayer);
+  app.stage.addChild(camera);
   // A handle for poking at the preview from the browser console, like the tank's.
-  Object.assign(window, { doodlearium: { world, creature: () => creature } });
+  Object.assign(window, { doodlearium: { tank, world, creature: () => creature } });
 
   let creature: Creature | null = null;
+  let id = '';
   let texture: Texture | null = null;
   let cutout: Cutout | null = null;
   let glow: Glow | null = null;
 
+  /** The simulation's version of the creature. */
+  const sim = () => tank.creatures.get(id);
+
   /** Plants and decorations sit in the middle so they're easy to see. */
-  const place = () => {
-    if (!creature) return;
-    creature.layout(world);
-    const m = motionOf(creature.drawing);
-    if (m === 'plant' || m === 'decor') creature.view.x = world.width / 2;
+  const centre = () => {
+    const c = sim();
+    if (c && (c.kind === 'plant' || c.kind === 'decor')) c.pose.x = WORLD_W / 2;
   };
 
+  /** Tank units to the screen: the panel is filled at ZOOM times the size the tank would fit at. */
+  let scale = 1;
   const size = { width: 0, height: 0 };
   const relayoutIfResized = () => {
     const { width, height } = app.screen;
     if (width === size.width && height === size.height) return;
     Object.assign(size, { width, height });
-    world.width = width;
-    world.height = height;
-    world.floorY = height * FLOOR;
-    app.stage.scale.set(ZOOM);
+    scale = Math.min(width / WORLD_W, height / WORLD_H) * ZOOM;
+    camera.scale.set(scale);
     scene.layout(world);
-    place();
     follow(1);
   };
 
-  /** Eases the camera toward the creature's middle, without showing past the tank's edges. */
+  /** Eases the camera toward the creature, without showing past the tank's edges. */
   function follow(k: number) {
-    if (!creature) return;
-    // Bounds come back in screen pixels; turn their middle into tank coordinates.
-    const b = creature.view.getBounds();
-    const x = (b.x + b.width / 2 - app.stage.x) / ZOOM;
-    const y = (b.y + b.height / 2 - app.stage.y) / ZOOM;
-    const wantX = Math.min(0, Math.max(world.width * (1 - ZOOM), world.width / 2 - x * ZOOM));
-    const wantY = Math.min(0, Math.max(world.height * (1 - ZOOM), world.height / 2 - y * ZOOM));
-    app.stage.x += (wantX - app.stage.x) * k;
-    app.stage.y += (wantY - app.stage.y) * k;
+    const c = sim();
+    if (!c || !creature) return;
+    const { width, height } = size;
+    const wantX = Math.min(0, Math.max(width - WORLD_W * scale, width / 2 - c.pose.x * scale));
+    const wantY = Math.min(0, Math.max(height - WORLD_H * scale, height / 2 - c.pose.y * scale));
+    camera.x += (wantX - camera.x) * k;
+    camera.y += (wantY - camera.y) * k;
   }
   relayoutIfResized();
 
   app.canvas.addEventListener('pointerdown', (e) => {
-    const rect = app.canvas.getBoundingClientRect();
-    const screenX = ((e.clientX - rect.left) / rect.width) * world.width;
-    food.drop(world, (screenX - app.stage.x) / ZOOM / world.width);
+    const at = camera.toLocal({ x: e.clientX - app.canvas.getBoundingClientRect().left, y: e.clientY - app.canvas.getBoundingClientRect().top });
+    tank.food.drop(tank.world, Math.min(1, Math.max(0, at.x / WORLD_W)));
   });
 
   app.ticker.add((ticker) => {
     const dt = Math.min(ticker.deltaMS / 1000, 0.05);
     relayoutIfResized();
-    world.time += dt;
-    world.fish = creature instanceof Swimmer ? [creature] : [];
+    tank.step(dt);
+    for (const e of tank.world.effects) scene.play(e);
+    tank.world.effects.length = 0;
+    tank.world.notes.length = 0;
+    world.time = tank.world.time;
+    world.current = tank.world.current;
+    scene.darkness = tank.darkness;
+    scene.blacklight = tank.blacklight;
     scene.update(dt, world);
-    food.update(dt, world);
+    food.draw(tank.food.flakes.map(packFlake), world.time);
+    const c = sim();
     try {
-      creature?.update(dt, world);
+      if (c && creature) creature.update(dt, world, c.pose);
       glow?.update(0.4 + scene.darkness * 1.2 + scene.blacklight * 0.3, scene.blacklight * 1.1);
       follow(Math.min(1, dt * 3));
     } catch (err) {
@@ -119,20 +130,27 @@ export async function createPreview(container: HTMLElement): Promise<Preview> {
 
   return {
     show(drawing, newTexture, newCutout = null, glowTextures = null) {
-      // Carry on from where the previous version was, so redrawing doesn't make it jump around.
-      const was = creature instanceof Swimmer ? { x: creature.x, y: creature.y, facing: creature.facing } : null;
       clear();
       texture = newTexture;
       cutout = newCutout;
-      creature = createCreature(drawing, newTexture, world, false, newCutout?.pieces);
-      if (was && creature instanceof Swimmer) Object.assign(creature, was);
+      // Night creatures come out in the preview too, so they can be seen by day.
+      const simDrawing = { ...drawing, nocturnal: false, updatedAt: Date.now() };
+      // The same id carries on from where the previous version was, so redrawing doesn't make it jump around.
+      if (id === drawing.id && tank.creatures.has(id)) tank.replace(simDrawing);
+      else {
+        if (id) tank.remove(id);
+        tank.add(simDrawing, false);
+      }
+      id = drawing.id;
+      centre();
+      const kind = sim()!.kind;
+      creature = createCreature(drawing, kind, newTexture, newCutout?.pieces);
       (drawing.nocturnal ? nightLayer : creatureLayer).addChild(creature.view);
       if (glowTextures && creature.body) glow = new Glow(creature.body, glowTextures, glowLayer, creature.moving);
-      place();
       follow(1);
     },
     setBlacklight(on) {
-      scene.blacklightOn = on;
+      tank.blacklightOn = on;
     },
     destroy() {
       clear();

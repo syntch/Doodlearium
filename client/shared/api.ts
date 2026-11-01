@@ -1,4 +1,4 @@
-import type { Drawing, NewDrawing, NewEgg, ServerMessage, TankCommand, TankCommandValue } from '../../shared/types.ts';
+import type { Drawing, HistoryEntry, NewDrawing, NewEgg, ServerMessage, Story, TankCommand, TankCommandValue } from '../../shared/types.ts';
 
 export async function fetchDrawings(): Promise<Drawing[]> {
   const res = await fetch('/api/drawings');
@@ -46,14 +46,49 @@ export async function feedFish(x?: number): Promise<boolean> {
   return res.ok;
 }
 
-/** Sends a ⚙️ menu command to every open tank. */
-export async function sendTankCommand(command: TankCommand, value: TankCommandValue = null) {
+/** Does a ⚙️ menu command in the tank (every screen shows it); resolves to a line to show, if any. */
+export async function sendTankCommand(command: TankCommand, value: TankCommandValue = null): Promise<string> {
   const res = await fetch('/api/tank', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ command, value }),
   });
   if (!res.ok) throw new Error(`Command failed (${res.status})`);
+  return (await res.json()).say ?? '';
+}
+
+/** Does a ⚙️ menu command later: at is in ms since 1970. */
+export async function scheduleTankCommand(command: TankCommand, value: TankCommandValue, at: number) {
+  const res = await fetch('/api/schedule', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ command, value, at }),
+  });
+  if (!res.ok) throw new Error(`Scheduling failed (${res.status})`);
+}
+
+/** The tank's history, oldest first: from and to are ms since 1970, who a drawing id. */
+export async function fetchHistory(query: { from?: number; to?: number; who?: string } = {}): Promise<HistoryEntry[]> {
+  const params = new URLSearchParams(Object.entries(query).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]));
+  const res = await fetch(`/api/history?${params}`);
+  if (!res.ok) throw new Error(`Failed to load the history (${res.status})`);
+  return res.json();
+}
+
+export async function fetchStories(): Promise<Story[]> {
+  const res = await fetch('/api/stories');
+  if (!res.ok) throw new Error(`Failed to load stories (${res.status})`);
+  return res.json();
+}
+
+export async function saveStory(story: Pick<Story, 'title' | 'text' | 'from' | 'to'>): Promise<Story> {
+  const res = await fetch('/api/stories', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(story),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `Save failed (${res.status})`);
+  return res.json();
 }
 
 /** Turns a button into a Feed button with a little "Fed!" confirmation. */

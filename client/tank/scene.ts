@@ -1,5 +1,14 @@
 import { Container, Graphics, Sprite, Texture } from 'pixi.js';
+import type { Effect } from '../../shared/sim/world.ts';
 import { TAU, seededRandom, type World } from './world.ts';
+
+/** The part of the tank's units a screen shows: the tank itself plus extra water or sand around it. */
+export interface Visible {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
 
 interface Bubble {
   x: number;
@@ -49,12 +58,26 @@ export class Scene {
     this.front.addChild(this.bubbleGfx, this.night);
   }
 
-  layout(world: World) {
+  private visible: Visible = { left: 0, top: 0, right: 0, bottom: 0 };
+
+  /** visible is how far the screen sees past the tank's own edges (screens of another shape see more). */
+  layout(world: World, visible: Visible = { left: 0, top: 0, right: world.width, bottom: world.height }) {
+    this.visible = visible;
     if (this.background.texture !== Texture.EMPTY) this.background.texture.destroy(true);
-    this.background.texture = waterGradient(world.height);
-    this.background.width = world.width;
-    this.background.height = world.height;
+    // The water darkens with depth down to the sand, and stays that colour below.
+    const top = Math.min(0, visible.top);
+    this.background.texture = waterGradient(world.height - top, world.floorY - top);
+    this.background.position.set(visible.left, top);
+    this.background.width = visible.right - visible.left;
+    this.background.height = Math.max(world.height, visible.bottom) - top;
     this.drawSand(world);
+  }
+
+  /** Plays something the simulation asked for. */
+  play(e: Effect) {
+    if (e.kind === 'bubble') this.bubble(e.x, e.y, e.r);
+    else if (e.kind === 'heart') this.heart(e.x, e.y, e.size);
+    else this.burst(e.x, e.y, e.count);
   }
 
   update(dt: number, world: World) {
@@ -74,7 +97,7 @@ export class Scene {
     }
 
     const g = this.bubbleGfx.clear();
-    this.bubbles = this.bubbles.filter((b) => b.y > -20);
+    this.bubbles = this.bubbles.filter((b) => b.y > Math.min(0, this.visible.top) - 20);
     for (const b of this.bubbles) {
       b.y -= b.speed * dt;
       b.x += world.current * 1.3 * dt;
@@ -96,25 +119,16 @@ export class Scene {
       g.poly([x - s * 1.02, h.y, x + s * 1.02, h.y, x, h.y + s * 1.1]).fill({ color: 0xff5c8a, alpha });
     }
 
-    // Eases toward the hour's darkness, so switching the time from the ⚙️ menu fades rather than snaps.
-    const want = nightDarkness(this.hour);
-    this.darkness = this.started ? this.darkness + (want - this.darkness) * Math.min(1, dt * 0.7) : want;
-    if (Math.abs(want - this.darkness) < 0.002) this.darkness = want;
-    this.started = true;
-    this.blacklight += ((this.blacklightOn ? 1 : 0) - this.blacklight) * Math.min(1, dt * 1.2);
     // Under the blacklight the water goes a deep violet and almost everything dims, except blacklight paint.
     const b = this.blacklight;
     const color = mixColor(0x020d24, 0x14052e, b);
-    this.night.clear().rect(0, 0, world.width, world.height).fill({ color, alpha: Math.max(this.darkness, 0.78 * b) });
+    const v = this.visible;
+    this.night.clear().rect(v.left, Math.min(0, v.top), v.right - v.left, Math.max(world.height, v.bottom) - Math.min(0, v.top)).fill({ color, alpha: Math.max(this.darkness, 0.78 * b) });
   }
 
-  /** 0 in daylight, 0.5 at full night. */
+  /** 0 in daylight, 0.5 at full night (set from the simulation). */
   darkness = 0;
-  private started = false;
-  /** The hour to show, or null for the real time. Starts from `/tank/?hour=22`. */
-  hour: number | null = Number.isFinite(HOUR_OVERRIDE) ? HOUR_OVERRIDE % 24 : null;
-  /** The blacklight: on or off, and how far it has faded in (0..1). */
-  blacklightOn = new URLSearchParams(location.search).has('blacklight');
+  /** How far the blacklight has faded in (0..1). */
   blacklight = 0;
 
   /** Night creatures come out once it's getting properly dark. */
@@ -152,53 +166,45 @@ export class Scene {
   }
 
   private drawSand(world: World) {
-    const { width, height, floorY } = world;
+    const { floorY } = world;
+    const left = Math.floor(Math.min(0, this.visible.left) / 20) * 20;
+    const right = Math.max(world.width, this.visible.right);
+    const height = Math.max(world.height, this.visible.bottom);
     const rand = seededRandom('sand');
     const g = this.sand.clear();
-    const points: number[] = [0, height];
-    for (let x = 0; x <= width; x += 20) {
+    const points: number[] = [left, height];
+    for (let x = left; x <= right + 20; x += 20) {
       points.push(x, floorY + Math.sin(x * 0.006) * 10 + Math.sin(x * 0.019 + 1) * 4);
     }
-    points.push(width, height);
+    points.push(right + 20, height);
     g.poly(points).fill(0xcbb07a);
     g.poly(points.map((v, i) => (i % 2 === 1 && v !== height ? v + 14 : v))).fill(0xb89a63);
-    for (let i = 0; i < width / 6; i++) {
-      const x = rand(0, width);
+    for (let i = 0; i < (right - left) / 6; i++) {
+      const x = rand(left, right);
       const y = rand(floorY + 18, height);
       g.circle(x, y, rand(1, 3.5)).fill({ color: rand() > 0.5 ? 0x8f7448 : 0xe2cf9f, alpha: 0.7 });
     }
   }
 }
 
-function waterGradient(height: number) {
+/** Light at the top, deep blue by the sand (floor, in the same units as height). */
+function waterGradient(height: number, floor = height) {
   const canvas = document.createElement('canvas');
   canvas.width = 4;
   canvas.height = Math.max(64, Math.min(1024, Math.round(height)));
   const ctx = canvas.getContext('2d')!;
   const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  const end = Math.min(1, floor / height);
   grad.addColorStop(0, '#4fb8e0');
-  grad.addColorStop(0.45, '#1f78a8');
+  grad.addColorStop(0.45 * end, '#1f78a8');
+  grad.addColorStop(end, '#0a3456');
   grad.addColorStop(1, '#0a3456');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   return Texture.from(canvas);
 }
 
-/** `/tank/?hour=22` pretends it's that hour, to preview night (or day) any time. */
-const HOUR_OVERRIDE = Number.parseFloat(new URLSearchParams(location.search).get('hour') ?? '');
-
 const mixColor = (a: number, b: number, t: number) => {
   const ch = (shift: number) => Math.round(((a >> shift) & 255) + ((((b >> shift) & 255) - ((a >> shift) & 255)) * t));
   return (ch(16) << 16) | (ch(8) << 8) | ch(0);
 };
-
-/** 0 during the day, up to 0.5 at night, easing through dawn (5–8h) and dusk (18–21h). */
-function nightDarkness(override: number | null) {
-  const now = new Date();
-  const hour = override ?? now.getHours() + now.getMinutes() / 60;
-  const max = 0.5;
-  if (hour >= 8 && hour < 18) return 0;
-  if (hour >= 21 || hour < 5) return max;
-  if (hour < 8) return max * (1 - (hour - 5) / 3);
-  return (max * (hour - 18)) / 3;
-}

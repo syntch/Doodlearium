@@ -52,6 +52,19 @@
       .menu label { display: flex; gap: 8px; align-items: center; color: #cfe7f7; font-size: 14px; cursor: pointer; }
       .menu .status { min-height: 1.2em; margin: 10px 0 0; color: #ffd98a; font-size: 14px; }
       .menu .close { padding: 2px 10px; }
+      .menu .later { margin-top: 12px; padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.06); }
+      .menu .later input[type='time'] { font: inherit; border-radius: 6px; border: 0; padding: 2px 4px; }
+      .menu .note { margin: 4px 0 0; color: #9cc9e6; font-size: 13px; }
+      /* What's coming up: shows with the buttons, and stays up on its own once something is about to happen. */
+      .coming {
+        position: fixed; left: 12px; top: 54px; max-width: min(320px, calc(100vw - 24px)); padding: 8px 12px;
+        border-radius: 12px; background: rgba(6, 36, 59, 0.6); color: #dff3ff; font: 14px/1.45 'Trebuchet MS', sans-serif;
+        backdrop-filter: blur(4px); pointer-events: none;
+      }
+      .coming b { color: #fff; }
+      .coming .soon { color: #ffd98a; font-weight: bold; }
+      body.idle .coming.chrome.soon-up { opacity: 1; }
+      .menu:not([hidden]) ~ .coming { display: none; }
     </style>
   </head>
   <body>
@@ -60,6 +73,7 @@
       <a href="/">🐠 Doodlearium</a>
       <a href="/draw/">✏️ Draw</a>
       <a href="/gallery/">🖼️ Gallery</a>
+      <a href="/history/">📖 History</a>
       <button id="menu-toggle" title="Tank controls: time, holidays, documentary...">⚙️</button>
     </nav>
     <button id="sound" class="chrome" title="Sound on or off (S)">🔇</button>
@@ -67,7 +81,10 @@
 
     <div class="menu" id="menu" hidden>
       <h2>⚙️ Tank controls <button class="close" id="menu-close" title="Close">✕</button></h2>
-      <label title="Off: only this screen changes"><input type="checkbox" id="every-tank" checked /> 📺 Change every open tank (so a phone can control the TV)</label>
+      <p class="note">There's one tank: changes show on every screen (so a phone can control the TV).</p>
+      <label class="later" title="Instead of now, do the next thing you pick at this time">
+        <input type="checkbox" id="later" /> ⏰ Do it later, at <input type="time" id="later-time" value="19:30" />
+      </label>
 
       <h3>Time of day</h3>
       <div class="row" data-group="time">
@@ -111,6 +128,7 @@
       </div>
       <p class="status" id="menu-status" role="status"></p>
     </div>
+    <div class="coming chrome" id="coming" hidden></div>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

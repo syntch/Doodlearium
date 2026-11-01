@@ -1,3 +1,5 @@
+import type { Frame, RosterEntry, Upcoming } from './sim/protocol.ts';
+
 /** Where a drawing lives: open water, walking on the sand, growing from the sand, or sitting on it. */
 export const CREATURE_TYPES = ['swimmer', 'crawler', 'plant', 'decor'] as const;
 export type CreatureType = (typeof CREATURE_TYPES)[number];
@@ -103,7 +105,7 @@ export interface NewEgg extends NewDrawing {
   nest: number;
 }
 
-/** Things the tank's ⚙️ menu can do, on one screen or every open tank. */
+/** Things the tank's ⚙️ menu can do (to the one shared tank), now or at a set time. */
 export const TANK_COMMANDS = ['time', 'season', 'blacklight', 'film', 'visit', 'current', 'school', 'egg', 'puff'] as const;
 export type TankCommand = (typeof TANK_COMMANDS)[number];
 export type TankCommandValue = string | number | boolean | null;
@@ -112,9 +114,38 @@ export type ServerMessage =
   | { type: 'drawing:added'; drawing: Drawing }
   | { type: 'drawing:updated'; drawing: Drawing }
   | { type: 'drawing:removed'; id: string }
-  /** Feeding time: x is where across the tank (0..1) the food drops. */
+  /** Feeding time: x is where across the tank (0..1) the food drops (screens play the plops). */
   | { type: 'feed'; x: number }
-  | { type: 'tank'; command: TankCommand; value: TankCommandValue };
+  /** Who's in the tank, and how it looks right now (see shared/sim/protocol.ts). */
+  | { type: 'roster'; creatures: RosterEntry[] }
+  | { type: 'frame'; frame: Frame }
+  /** The server would like a screen to blend two parents into a baby and lay its egg (see babies.ts). */
+  | { type: 'egg:make'; parents: [string, string]; nest: number; now: boolean }
+  | { type: 'upcoming'; items: Upcoming[] }
+  | { type: 'history'; entry: HistoryEntry };
+
+/** Something that happened in the world, written down for the history page (and stories). */
+export interface HistoryEntry {
+  /** When (ms since 1970). */
+  at: number;
+  type: string;
+  /** Where in the world (just the lake, for now). */
+  place: string;
+  /** The drawings it was about. */
+  who: string[];
+  text: string;
+}
+
+/** A story written from the history, pasted back in to keep. */
+export interface Story {
+  id: string;
+  title: string;
+  text: string;
+  createdAt: number;
+  /** The stretch of history it's about (ms since 1970). */
+  from: number;
+  to: number;
+}
 
 /** Images are served with a long cache lifetime, so the version query makes edits show up. */
 export const imageUrl = (d: Pick<Drawing, 'id' | 'createdAt' | 'updatedAt'>) =>

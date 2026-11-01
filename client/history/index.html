@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Doodlearium · History</title>
+    <link rel="stylesheet" href="../shared/style.css" />
+    <style>
+      main { padding: 0 16px 40px; max-width: 900px; margin: 0 auto; }
+      h1 { margin: 4px 0 4px; }
+      .lead { color: var(--muted); margin: 0 0 16px; }
+      .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; margin-bottom: 18px; }
+      .filters label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 0.85rem; }
+      .filters input, .filters select {
+        background: var(--panel-2); border: 2px solid transparent; border-radius: 10px; padding: 7px 10px; color: var(--text);
+      }
+      .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+      .day { margin: 0 0 22px; }
+      .day h2 { font-size: 1.05rem; color: var(--accent); margin: 0 0 8px; position: sticky; top: 0; background: var(--bg); padding: 6px 0; z-index: 1; }
+      .event { display: flex; gap: 12px; align-items: center; background: var(--panel); border-radius: var(--radius); padding: 8px 12px; margin-bottom: 6px; }
+      .event time { color: var(--muted); font-size: 0.85rem; min-width: 64px; }
+      .event .text { flex: 1; overflow-wrap: anywhere; }
+      .thumbs { display: flex; gap: 4px; }
+      .thumbs img { width: 44px; height: 44px; object-fit: contain; background: #1f78a8; border-radius: 8px; padding: 2px; }
+      .empty { color: var(--muted); }
+      .panel { background: var(--panel); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 20px; }
+      .panel h2 { margin: 0 0 8px; font-size: 1.15rem; }
+      .panel p { color: var(--muted); margin: 0 0 10px; }
+      textarea, .panel input[type='text'] {
+        width: 100%; box-sizing: border-box; background: var(--panel-2); color: var(--text); border: 2px solid transparent;
+        border-radius: 10px; padding: 10px 12px; font: 0.95rem/1.45 'Trebuchet MS', sans-serif;
+      }
+      textarea:focus, .panel input[type='text']:focus { outline: none; border-color: var(--accent); }
+      .panel .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+      .status { color: var(--accent); min-height: 1.2em; }
+      .stories { display: grid; gap: 10px; margin-bottom: 26px; }
+      .story { background: var(--panel); border-radius: var(--radius); padding: 12px 16px; }
+      .story summary { cursor: pointer; font-weight: bold; font-size: 1.1rem; }
+      .story summary small { color: var(--muted); font-weight: normal; font-size: 0.85rem; margin-left: 6px; }
+      /* Big, friendly type for reading together. */
+      .story .text { white-space: pre-wrap; font-size: 1.25rem; line-height: 1.7; max-width: 40em; margin: 12px 0 4px; }
+    </style>
+  </head>
+  <body>
+    <nav class="nav">
+      <a class="brand" href="/">🐠 Doodlearium</a>
+      <a href="/tank/">Tank</a>
+      <a href="/draw/">Draw</a>
+      <a href="/gallery/">Gallery</a>
+    </nav>
+    <main>
+      <h1>📖 The tank's history</h1>
+      <p class="lead">Everything that's happened in the tank. Pick some days (or one creature) and make a story out of it.</p>
+
+      <section id="stories-section" hidden>
+        <h2>📚 Stories</h2>
+        <div class="stories" id="stories"></div>
+      </section>
+
+      <div class="filters">
+        <label>From <input type="date" id="from" /></label>
+        <label>To <input type="date" id="to" /></label>
+        <label>Who <select id="who"><option value="">Everyone</option></select></label>
+        <div class="actions">
+          <button class="primary" id="make-prompt">📖 Make a story prompt</button>
+          <button id="add-story">✍️ Add a story</button>
+        </div>
+      </div>
+
+      <section class="panel" id="prompt-panel" hidden>
+        <h2>📖 Story prompt</h2>
+        <p>Copy this and paste it to Claude. Change anything you like first (who it's for, how long...). Then bring the story back with ✍️ Add a story.</p>
+        <textarea id="prompt" rows="14"></textarea>
+        <div class="row">
+          <button class="primary" id="copy-prompt">📋 Copy</button>
+          <button id="close-prompt">Close</button>
+          <span class="status" id="prompt-status" role="status"></span>
+        </div>
+      </section>
+
+      <section class="panel" id="story-panel" hidden>
+        <h2>✍️ Add a story</h2>
+        <p>Paste the finished story here. It's kept with the days picked above.</p>
+        <input type="text" id="story-title" placeholder="Title (or leave it, and the first line is used)" maxlength="120" />
+        <textarea id="story-text" rows="12" placeholder="Once upon a time, in a tank not far away…" style="margin-top: 8px"></textarea>
+        <div class="row">
+          <button class="primary" id="save-story">💾 Save the story</button>
+          <button id="close-story">Close</button>
+          <span class="status" id="story-status" role="status"></span>
+        </div>
+      </section>
+
+      <div id="timeline"></div>
+      <p class="empty" id="empty" hidden>Nothing has happened on these days yet. Give it time, or feed the fish!</p>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

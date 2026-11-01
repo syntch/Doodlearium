@@ -1,26 +1,6 @@
 import { Container, Graphics } from 'pixi.js';
+import { seasonOf, type Season } from '../../shared/sim/math.ts';
 import { TAU, sandY, seededRandom, type World } from './world.ts';
-
-/** `/tank/?date=2026-12-20` pretends it's that day, to preview the seasons any time. */
-const DATE_OVERRIDE = new URLSearchParams(location.search).get('date');
-
-export function today() {
-  const d = DATE_OVERRIDE ? new Date(`${DATE_OVERRIDE}T12:00:00`) : new Date();
-  return Number.isNaN(d.getTime()) ? new Date() : d;
-}
-
-/** Which seasonal touches are on: month 1–12 and day of the month. */
-export function seasonOf(date = today()) {
-  const month = date.getMonth() + 1;
-  const day = date.getDate();
-  return {
-    snow: month === 12 || month <= 2,
-    halloween: (month === 10 && day >= 15) || (month === 11 && day === 1),
-    lights: month === 12 || (month === 1 && day <= 6),
-    valentine: month === 2 && day >= 7 && day <= 14,
-  };
-}
-export type Season = ReturnType<typeof seasonOf>;
 
 interface Flake {
   x: number;
@@ -55,8 +35,9 @@ export class Seasons {
     this.glow.addChild(this.spooky, this.snowGfx, this.faces, this.lightsGfx);
   }
 
-  /** Swaps to another season's decorations (from the ⚙️ menu). */
+  /** Swaps to another season's decorations (the simulation says which). */
   set(season: Season, world: World) {
+    if (JSON.stringify(season) === JSON.stringify(this.season)) return;
     this.season = season;
     for (const g of [this.faces, this.snowGfx, this.lightsGfx, this.spooky]) g.clear();
     this.flakes = [];
@@ -100,7 +81,8 @@ export class Seasons {
         g.poly([x - r * 0.45, y + r * 0.15, x - r * 0.2, y + r * 0.3, x, y + r * 0.18, x + r * 0.2, y + r * 0.3, x + r * 0.45, y + r * 0.15, x, y + r * 0.5]).fill({ color, alpha });
         g.circle(x, y, r * 1.6).fill({ color: 0xff8a1a, alpha: 0.06 * flicker * (0.4 + night) });
       }
-      this.spooky.clear().rect(0, 0, world.width, world.height).fill({ color: 0x5a1f7a, alpha: 0.12 * night });
+      // Well past the tank's edges, for screens that see more water and sand around it.
+      this.spooky.clear().rect(-world.width, -world.height, world.width * 3, world.height * 3).fill({ color: 0x5a1f7a, alpha: 0.12 * night });
     }
 
     if (season.snow) {

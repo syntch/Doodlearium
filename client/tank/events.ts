@@ -1,19 +1,22 @@
 import { Container, Graphics } from 'pixi.js';
-import { TAU, type World } from './world.ts';
+import type { Visit } from '../../shared/sim/protocol.ts';
+import { ALL_VISITORS } from '../../shared/sim/visitors.ts';
+import { TAU, seededRandom, type World } from './world.ts';
 
 /**
- * Rare happenings in the tank: a whale passing far behind the glass, a diver swimming by...
+ * Rare visitors in the tank: a whale passing far behind the glass, a diver swimming by... The server
+ * decides who comes and when (shared/sim/visitors.ts has the packs); every screen draws the visit from the
+ * same seed and start time, so it's in the same place on all of them.
  *
- * Events come in packs, so themed sets can be swapped in and out (say, a space pack when someone's into
- * space). Adding one is a function that builds a RunningEvent; add it to a pack in EVENT_PACKS, and pick
- * packs with `/tank/?events=ocean,spooky`. Try one straight away with `/tank/?event=whale`, or press V on
- * the tank for a random one.
+ * Adding one: a TankEvent here and its entry in VISITOR_PACKS. Try one from the ⚙️ menu, or press V.
  */
 export interface RunningEvent {
-  /** Returns false once the event is over. */
-  update(dt: number, world: World): boolean;
+  /** t is seconds since the visit began; returns false once it's over. */
+  update(dt: number, world: World, t: number): boolean;
   destroy(): void;
 }
+
+type Rand = (min?: number, max?: number) => number;
 
 export interface EventLayers {
   /** Far away: behind every creature, in front of the water. */
@@ -24,19 +27,17 @@ export interface EventLayers {
 
 export interface TankEvent {
   name: string;
-  /** How often it's picked compared with others in play (1 = normal). */
-  weight: number;
-  start(world: World, layers: EventLayers): RunningEvent;
+  /** rand is seeded by the visit, so every screen makes the same choices. */
+  start(world: World, layers: EventLayers, rand: Rand, seconds: number): RunningEvent;
 }
 
 /** Moves a drawing across the tank from one side to the other over `seconds`, with a gentle bob. */
-function crossing(node: Container, world: World, seconds: number, y: number, bob: number) {
-  const dir = Math.random() < 0.5 ? 1 : -1;
+function crossing(node: Container, world: World, seconds: number, y: number, bob: number, rand: Rand) {
+  const dir = rand() < 0.5 ? 1 : -1;
   const margin = node.width * 0.6 + 40;
-  let t = 0;
   node.scale.x *= dir;
-  return (dt: number) => {
-    t += dt / seconds;
+  return (elapsed: number) => {
+    const t = elapsed / seconds;
     const x = dir > 0 ? -margin + (world.width + margin * 2) * t : world.width + margin - (world.width + margin * 2) * t;
     node.position.set(x, y + Math.sin(t * TAU * 2) * bob);
     return t < 1;
@@ -45,8 +46,7 @@ function crossing(node: Container, world: World, seconds: number, y: number, bob
 
 const whale: TankEvent = {
   name: 'whale',
-  weight: 1,
-  start(world, layers) {
+  start(world, layers, rand, seconds) {
     // A huge, dim silhouette far beyond the back wall.
     const node = new Container();
     const s = world.width * 0.5;
@@ -60,13 +60,11 @@ const whale: TankEvent = {
     node.addChild(tail, body);
     node.alpha = 0.32;
     layers.back.addChild(node);
-    const move = crossing(node, world, 45, world.height * 0.32, world.height * 0.02);
-    let time = 0;
+    const move = crossing(node, world, seconds, world.height * 0.32, world.height * 0.02, rand);
     return {
-      update(dt) {
-        time += dt;
-        tail.scale.y = Math.cos(time * 0.9);
-        return move(dt);
+      update(_dt, _world, t) {
+        tail.scale.y = Math.cos(t * 0.9);
+        return move(t);
       },
       destroy: () => node.destroy({ children: true }),
     };
@@ -75,8 +73,7 @@ const whale: TankEvent = {
 
 const diver: TankEvent = {
   name: 'diver',
-  weight: 1,
-  start(world, layers) {
+  start(world, layers, rand, seconds) {
     const node = new Container();
     const s = world.height * 0.2;
     const color = 0x0d3550;
@@ -97,14 +94,12 @@ const diver: TankEvent = {
     node.addChild(...legs, body);
     node.alpha = 0.5;
     layers.back.addChild(node);
-    const move = crossing(node, world, 30, world.height * (0.3 + Math.random() * 0.25), world.height * 0.03);
-    let time = 0;
+    const move = crossing(node, world, seconds, world.height * rand(0.3, 0.55), world.height * 0.03, rand);
     let bubbleIn = 1;
     return {
-      update(dt) {
-        time += dt;
-        legs[0].rotation = Math.sin(time * 4) * 0.25;
-        legs[1].rotation = -Math.sin(time * 4) * 0.25;
+      update(dt, _world, t) {
+        legs[0].rotation = Math.sin(t * 4) * 0.25;
+        legs[1].rotation = -Math.sin(t * 4) * 0.25;
         bubbleIn -= dt;
         if (bubbleIn <= 0) {
           bubbleIn = 2.5 + Math.random();
@@ -112,7 +107,7 @@ const diver: TankEvent = {
           const at = world.scene.back.toLocal(p);
           for (let i = 0; i < 5; i++) world.scene.bubble(at.x + (Math.random() - 0.5) * 8, at.y - i * 6, 2 + Math.random() * 3);
         }
-        return move(dt);
+        return move(t);
       },
       destroy: () => node.destroy({ children: true }),
     };
@@ -121,8 +116,7 @@ const diver: TankEvent = {
 
 const ghost: TankEvent = {
   name: 'ghost',
-  weight: 1.5,
-  start(world, layers) {
+  start(world, layers, rand, life) {
     // A friendly little ghost rises from the sand, drifts about, and fades away.
     const node = new Container();
     const s = world.height * 0.09;
@@ -148,12 +142,9 @@ const ghost: TankEvent = {
     };
     node.addChild(g);
     layers.front.addChild(node);
-    const x0 = world.width * (0.2 + Math.random() * 0.6);
-    let time = 0;
-    const life = 22;
+    const x0 = world.width * rand(0.2, 0.8);
     return {
-      update(dt) {
-        time += dt;
+      update(_dt, _world, time) {
         draw(time);
         const t = time / life;
         node.position.set(x0 + Math.sin(time * 0.5) * world.width * 0.12, world.floorY - t * world.height * 0.6 + Math.sin(time * 1.7) * s * 0.2);
@@ -165,46 +156,31 @@ const ghost: TankEvent = {
   },
 };
 
-export const EVENT_PACKS: Record<string, TankEvent[]> = {
-  ocean: [whale, diver],
-  spooky: [ghost],
-};
+const EVENTS: Record<string, TankEvent> = { whale, diver, ghost };
 
-/** Runs the packs in play, one event at a time, every several minutes. */
+/** Shows the visit the simulation says is happening (if any), from where it's got to. */
 export class Events {
   private running: RunningEvent | null = null;
-  private nextAt: number;
+  private seed = -1;
+  private startedAt = 0;
 
-  constructor(
-    private layers: EventLayers,
-    /** Which packs can come along; changes with the season. */
-    public packs: string[],
-    firstIn = 360 + Math.random() * 360,
-  ) {
-    this.nextAt = firstIn;
-  }
+  constructor(private layers: EventLayers) {}
 
-  private get pool() {
-    return this.packs.flatMap((p) => EVENT_PACKS[p] ?? []);
-  }
-
-  /** Starts an event now: a named one, or a random one from the packs in play. */
-  trigger(world: World, name?: string) {
-    const all = name ? Object.values(EVENT_PACKS).flat().filter((e) => e.name === name) : this.pool;
-    const total = all.reduce((s, e) => s + e.weight, 0);
-    let roll = Math.random() * total;
-    const event = all.find((e) => (roll -= e.weight) <= 0) ?? all[0];
-    if (!event) return;
-    this.running?.destroy();
-    this.running = event.start(world, this.layers);
-  }
-
-  update(dt: number, world: World) {
-    if (this.running && !this.running.update(dt, world)) {
+  update(dt: number, world: World, visit: Visit | null) {
+    if ((visit?.seed ?? -1) !== this.seed) {
+      this.running?.destroy();
+      this.running = null;
+      this.seed = visit?.seed ?? -1;
+      const event = visit && EVENTS[visit.name];
+      const info = visit && ALL_VISITORS.find((v) => v.name === visit.name);
+      if (event && info) {
+        this.startedAt = visit.startedAt;
+        this.running = event.start(world, this.layers, seededRandom(String(visit.seed)), info.seconds);
+      }
+    }
+    if (this.running && !this.running.update(dt, world, Math.max(0, world.time - this.startedAt))) {
       this.running.destroy();
       this.running = null;
-      this.nextAt = world.time + 360 + Math.random() * 480;
     }
-    if (!this.running && world.time > this.nextAt) this.trigger(world);
   }
 }

@@ -68,7 +68,8 @@ const PARTS: Record<AttachmentKind, (a: Attachment, size: number) => Part> = {
         timer -= dt;
         if (timer > 0) return;
         timer = (0.25 + Math.random() * 0.7) / Math.sqrt(a.scale);
-        const p = node.getGlobalPosition();
+        // Into tank units: the tank is scaled to fit the screen (and zoomed by the documentary camera).
+        const p = world.scene.front.toLocal(node.getGlobalPosition());
         world.scene.bubble(p.x + (Math.random() - 0.5) * 6, p.y, (1.5 + Math.random() * 3.5) * Math.sqrt(a.scale));
       },
     };

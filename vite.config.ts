@@ -23,6 +23,7 @@ export default defineConfig({
         tank: resolve(client, 'tank/index.html'),
         draw: resolve(client, 'draw/index.html'),
         gallery: resolve(client, 'gallery/index.html'),
+        history: resolve(client, 'history/index.html'),
       },
     },
   },

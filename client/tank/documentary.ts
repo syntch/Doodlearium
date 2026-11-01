@@ -1,10 +1,9 @@
 import { Container, Graphics, Sprite, Text, Texture } from 'pixi.js';
-import { motionOf } from '../../shared/types.ts';
-import { Swimmer } from './behaviors/swimmer.ts';
+import { motionOf, type Drawing } from '../../shared/types.ts';
+import type { Personality } from '../../shared/sim/creature.ts';
 import { clamp, type Creature, type World } from './world.ts';
 
 const ZOOM = 1.9;
-const FILM_SECONDS = 28;
 
 const ABOUT: Record<string, string> = {
   curious: 'Curious: loves coming up to the glass',
@@ -15,14 +14,20 @@ const ABOUT: Record<string, string> = {
 };
 
 /** A line about what the creature is like, if there's something to say. */
-export function aboutOf(c: Creature) {
-  const kind = c instanceof Swimmer ? c.personality : motionOf(c.drawing) === 'crawler' ? 'crawler' : '';
-  return ABOUT[kind] ?? '';
+export function aboutOf(drawing: Drawing, personality?: Personality) {
+  return ABOUT[motionOf(drawing) === 'crawler' ? 'crawler' : (personality ?? '')] ?? '';
+}
+
+/** A screen's size in pixels. */
+export interface Screen {
+  width: number;
+  height: number;
 }
 
 /**
  * Every few minutes the camera drifts in and follows one creature for a while, like a nature
- * documentary, with a name card in the corner. Everything in the tank lives inside `camera`.
+ * documentary, with a name card in the corner. The server picks who (and when), so every screen films the
+ * same star. Everything in the tank lives inside `camera`, in tank units.
  */
 export class Documentary {
   /** Screen-space name card. */
@@ -33,16 +38,10 @@ export class Documentary {
   private title = new Text({ text: '', style: { fontFamily: 'Trebuchet MS, sans-serif', fontWeight: 'bold', fill: 0xffffff } });
   private lines = new Text({ text: '', style: { fontFamily: 'Trebuchet MS, sans-serif', fill: 0xdff3ff } });
   private subject: Creature | null = null;
-  private until = 0;
-  private nextAt: number;
   private zoom = 1;
   private focus = { x: 0, y: 0 };
 
-  constructor(
-    private camera: Container,
-    firstIn = 120 + Math.random() * 120,
-  ) {
-    this.nextAt = firstIn;
+  constructor(private camera: Container) {
     this.card.addChild(this.cardBack, this.title, this.lines);
     this.card.alpha = 0;
     this.spotlight.alpha = 0;
@@ -53,29 +52,19 @@ export class Documentary {
     return this.subject !== null;
   }
 
-  /** Starts filming now (or the given creature). */
-  start(world: World, candidates: Creature[], describe: (c: Creature) => string[]) {
-    const pick = candidates[Math.floor(Math.random() * candidates.length)];
-    if (!pick) return;
-    this.subject?.star?.(false);
-    this.subject = pick;
-    pick.star?.(true);
-    this.until = world.time + FILM_SECONDS;
-    if (this.zoom < 1.05) this.focus = { x: pick.view.x, y: pick.view.y };
-    const d = pick.drawing;
-    this.title.text = `🎬 ${d.name}`;
-    this.lines.text = [`drawn by ${d.artist}`, ...describe(pick), aboutOf(pick)].filter(Boolean).join('\n');
-  }
-
-  update(dt: number, world: World, candidates: () => Creature[], describe: (c: Creature) => string[]) {
-    if (this.subject && (this.subject.view.destroyed || world.time > this.until)) {
-      if (!this.subject.view.destroyed) this.subject.star?.(false);
-      this.subject = null;
-      this.nextAt = world.time + 300 + Math.random() * 300;
-    }
-    if (!this.subject && world.time > this.nextAt) {
-      this.start(world, candidates(), describe);
-      if (!this.subject) this.nextAt = world.time + 60;
+  /**
+   * subject is who's being filmed (null: nobody); lines are what the name card says about them.
+   * screen is the screen's size, for the card.
+   */
+  update(dt: number, world: World, screen: Screen, subject: Creature | null, lines: (c: Creature) => string[]) {
+    if (subject?.view.destroyed) subject = null;
+    if (subject !== this.subject) {
+      this.subject = subject;
+      if (subject) {
+        if (this.zoom < 1.05) this.focus = { x: subject.view.x, y: subject.view.y };
+        this.title.text = `🎬 ${subject.drawing.name}`;
+        this.lines.text = [`drawn by ${subject.drawing.artist}`, ...lines(subject)].filter(Boolean).join('\n');
+      }
     }
 
     // Ease the zoom in and out slowly, and follow smoothly.
@@ -97,7 +86,7 @@ export class Documentary {
     // The card fades in once the camera has mostly arrived.
     const shown = this.subject ? clamp((z - 1) / (ZOOM - 1) * 1.6 - 0.6, 0, 1) : Math.min(this.card.alpha, clamp((z - 1) / (ZOOM - 1), 0, 1));
     this.card.alpha = shown;
-    if (shown > 0) this.layoutCard(world);
+    if (shown > 0) this.layoutCard(screen);
     this.spotlight.alpha = shown * 0.85;
     if (this.subject && shown > 0) {
       const b = this.subject.view.getBounds();
@@ -108,8 +97,8 @@ export class Documentary {
     }
   }
 
-  private layoutCard(world: World) {
-    const size = Math.max(18, world.height * 0.034);
+  private layoutCard(screen: Screen) {
+    const size = Math.max(18, screen.height * 0.034);
     this.title.style.fontSize = size * 1.3;
     this.lines.style.fontSize = size * 0.8;
     const pad = size * 0.7;
@@ -118,7 +107,7 @@ export class Documentary {
     const w = Math.max(this.title.width, this.lines.width) + pad * 2;
     const h = this.lines.y + this.lines.height + pad * 0.8;
     this.cardBack.clear().roundRect(0, 0, w, h, size * 0.5).fill({ color: 0x06243b, alpha: 0.72 });
-    this.card.position.set(world.width * 0.04, world.height - h - world.height * 0.05);
+    this.card.position.set(screen.width * 0.04, screen.height - h - screen.height * 0.05);
   }
 }
 

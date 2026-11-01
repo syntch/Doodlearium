@@ -12,65 +12,24 @@ export interface BodyState {
 }
 
 /**
- * How one kind of swimmer looks and moves. The shared swimmer brain (feeding, schooling, glass visits,
- * shyness) drives every style; these settings shape the body and the way it travels.
+ * How one kind of swimmer's body bends as it swims. How it moves around (speed, tilting, turning...) is
+ * the simulation's business: see SWIM_STYLES in shared/sim/styles.ts.
  */
 export interface BodyStyle {
   /** Mesh grid: more columns for bending along the length, more rows for bending across it. */
   columns: number;
   rows: number;
-  /** Longest side as a share of the tank height, before random size and depth. */
-  size: number;
-  /** Multiplier on the drawing's height when measuring its longest side (fish are drawn short and tall). */
-  heightWeight: number;
-  cruise: number;
-  /** How much of the speed goes into vertical travel. */
-  vertical: number;
-  /** How much the body tilts up and down with its direction (0 = never). */
-  tilt: number;
-  /** Whether it turns around to face where it's going. */
-  flips: boolean;
-  /** Whether it sometimes darts off quickly. */
-  darts: boolean;
-  /** Whether it joins schools with others of the same style. */
-  schools: boolean;
-  /** Puffer fish: now and then (and when a hunter comes) blows up into a spiky ball. */
+  /** Puffer fish: blows up into a spiky ball now and then. */
   puffs?: boolean;
-  /**
-   * Submarines and boats: they patrol rather than wander, never shy away, and don't race for food. Instead
-   * they tidy up flakes that have sunk to the sand, and puff exhaust bubbles out of the back.
-   */
-  machine?: boolean;
-  /** 'pulse' moves in jellyfish-style bursts instead of steady swimming. */
-  move: 'cruise' | 'pulse';
-  /** Bob amplitude as a share of tank height. */
-  bob: number;
-  /** Radians of animation phase per second. */
-  beat(effort: number): number;
-  /** Extra push on top of steering, e.g. a flapper's power stroke. 1 = none. */
-  thrust(phase: number): number;
   /** Offset in texture pixels for the point at (u, v): u 0 tail .. 1 head, v 0 top .. 1 bottom. */
   deform(u: number, v: number, s: BodyState): { dx: number; dy: number };
 }
 
 const none = { dx: 0, dy: 0 };
-const fixed = () => 1;
 
 const fish: BodyStyle = {
   columns: 16,
   rows: 2,
-  size: 0.24,
-  heightWeight: 1.4,
-  cruise: 1,
-  vertical: 0.75,
-  tilt: 0.7,
-  flips: true,
-  darts: true,
-  schools: true,
-  move: 'cruise',
-  bob: 0.004,
-  beat: (effort) => 4 + effort * 4,
-  thrust: fixed,
   // A wave travelling toward the tail, biggest at the tail.
   deform(u, _v, s) {
     const amp = s.texH * 0.08 * (0.6 + s.effort * 0.4);
@@ -84,30 +43,12 @@ const puffer: BodyStyle = {
   // Enough grid to round the body out into a ball.
   columns: 12,
   rows: 10,
-  size: 0.2,
-  heightWeight: 1.2,
-  cruise: 0.7,
-  darts: false,
-  schools: false,
   puffs: true,
-  beat: (effort) => 3 + effort * 3,
 };
 
 const eel: BodyStyle = {
   columns: 28,
   rows: 2,
-  size: 0.45,
-  heightWeight: 1,
-  cruise: 0.7,
-  vertical: 0.4,
-  tilt: 0.35,
-  flips: true,
-  darts: false,
-  schools: false,
-  move: 'cruise',
-  bob: 0.003,
-  beat: (effort) => 2.6 + effort * 1.6,
-  thrust: fixed,
   // An S-wave of about one and a half wavelengths travelling from head to tail, a little calmer at the head.
   deform(u, _v, s) {
     const amp = Math.min(s.texW * 0.05, s.texH * 0.9);
@@ -118,18 +59,6 @@ const eel: BodyStyle = {
 const jelly: BodyStyle = {
   columns: 7,
   rows: 14,
-  size: 0.28,
-  heightWeight: 1,
-  cruise: 0.8,
-  vertical: 1,
-  tilt: 0,
-  flips: false,
-  darts: false,
-  schools: false,
-  move: 'pulse',
-  bob: 0,
-  beat: () => 2.2,
-  thrust: fixed,
   deform(u, v, s) {
     // Squeezes hard on each contraction and relaxes a little wider than rest in between.
     const wave = Math.sin(s.phase);
@@ -154,18 +83,6 @@ const jelly: BodyStyle = {
 const seahorse: BodyStyle = {
   columns: 4,
   rows: 12,
-  size: 0.24,
-  heightWeight: 1,
-  cruise: 0.45,
-  vertical: 1,
-  tilt: 0,
-  flips: true,
-  darts: false,
-  schools: false,
-  move: 'cruise',
-  bob: 0.02,
-  beat: () => 2.4,
-  thrust: fixed,
   // Upright: the tail end curls back and forth, the body leans and rocks, and the snout nods.
   deform(_u, v, s) {
     const curl = s.texW * 0.16 * v * v * Math.sin(s.phase * 0.5);
@@ -182,19 +99,6 @@ const seahorse: BodyStyle = {
 const flapper: BodyStyle = {
   columns: 10,
   rows: 8,
-  size: 0.24,
-  heightWeight: 1.2,
-  cruise: 0.55,
-  vertical: 0.5,
-  tilt: 0.8,
-  flips: true,
-  darts: false,
-  schools: false,
-  move: 'cruise',
-  bob: 0.012,
-  beat: (effort) => 1.1 + effort * 0.5,
-  // A slow surge and coast, never jerky.
-  thrust: (phase) => 0.85 + 0.3 * Math.sin(phase),
   // The top and bottom edges ripple from front to back; the middle barely moves.
   deform(u, v, s) {
     const fromMiddle = (v - 0.5) * 2;
@@ -206,19 +110,6 @@ const flapper: BodyStyle = {
 const vessel: BodyStyle = {
   columns: 2,
   rows: 2,
-  size: 0.26,
-  heightWeight: 1,
-  cruise: 0.75,
-  vertical: 0.45,
-  tilt: 0.6,
-  flips: true,
-  darts: false,
-  schools: false,
-  machine: true,
-  move: 'cruise',
-  bob: 0.006,
-  beat: () => 0,
-  thrust: fixed,
   // Rigid: submarines don't wiggle. (Their extras, like propellers, still animate.)
   deform: () => none,
 };

@@ -1,23 +1,32 @@
 import { Application, Assets, Container, RenderLayer, Text, type Texture } from 'pixi.js';
 import { imageUrl, motionOf, type Drawing, type Motion, type TankCommand, type TankCommandValue } from '../../shared/types.ts';
-import { connectLive, feedFish, fetchDrawings, layEgg, sendTankCommand } from '../shared/api.ts';
+import { newPose, type Kind, type Personality, type Pose } from '../../shared/sim/creature.ts';
+import { unpackPose, type RosterEntry, type Settings, type Upcoming } from '../../shared/sim/protocol.ts';
+import { FLOOR_Y, WORLD_H, WORLD_W } from '../../shared/sim/world.ts';
+import { connectLive, feedFish, fetchDrawings, layEgg, scheduleTankCommand, sendTankCommand } from '../shared/api.ts';
 import { Glow, loadGlow, type GlowTextures } from './glow.ts';
 import { makeEgg } from './babies.ts';
-import { Egg } from './behaviors/egg.ts';
 import { Documentary, aboutOf } from './documentary.ts';
 import { Events } from './events.ts';
-import { Seasons, seasonOf, type Season } from './seasons.ts';
+import { Seasons } from './seasons.ts';
 import { Sounds } from './sounds.ts';
-import { Decor } from './behaviors/decor.ts';
-import { Plant } from './behaviors/plant.ts';
-import { Swimmer } from './behaviors/swimmer.ts';
-import { CAPS, bucketOf, createCreature } from './creatures.ts';
+import { createCreature } from './creatures.ts';
 import { Food } from './food.ts';
 import { loadCutout, type Cutout } from './parts.ts';
 import { Scene } from './scene.ts';
-import { newWorld, type Creature, type Hideout } from './world.ts';
+import { Timeline } from './timeline.ts';
+import type { Creature, World } from './world.ts';
+
+/**
+ * The tank, drawn from the server's world: the server decides where everyone is and what happens
+ * (shared/sim, server/world.ts), so every screen shows the same tank. This page draws it, about a fifth of
+ * a second behind, with all the wiggling, bending, glowing and bubbling done here.
+ */
 
 interface Entry {
+  drawing: Drawing;
+  kind: Kind;
+  personality?: Personality;
   creature: Creature;
   texture: Texture;
   /** Drawings with animated parts are split into their own textures, freed with the entry. */
@@ -25,6 +34,9 @@ interface Entry {
   /** Glowing paint, and (for an egg) the textures waiting for the baby. */
   glow?: Glow;
   glowTextures?: GlowTextures | null;
+  /** Where it is right now (plants and decorations: where they always are). */
+  pose: Pose;
+  still: boolean;
   fade: number;
   removing: boolean;
 }
@@ -36,7 +48,8 @@ interface Label {
 }
 
 const FADE_SECONDS = 1.5;
-const FLOOR = 0.86;
+/** Night creatures come out once it's getting properly dark (the same rule as shared/sim/tank.ts). */
+const NIGHT = 0.25;
 
 const app = new Application();
 await app.init({ resizeTo: window, antialias: true, background: 0x0a3456, autoDensity: true, resolution: devicePixelRatio });
@@ -44,7 +57,8 @@ document.body.append(app.canvas);
 
 const scene = new Scene();
 const food = new Food();
-const world = newWorld(scene, food);
+const world: World = { width: WORLD_W, height: WORLD_H, floorY: FLOOR_Y, time: 0, scene, current: 0 };
+const timeline = new Timeline();
 const creatureLayer = new Container({ sortableChildren: true });
 /** Night creatures sit above the night tint, so they stay bright while the rest of the tank dims. */
 const nightLayer = new Container({ sortableChildren: true });
@@ -58,30 +72,26 @@ const emptyMessage = new Text({
   alpha: 0.75,
 });
 const seasons = new Seasons();
-const params = new URLSearchParams(location.search);
 /** Far-off visitors swim between the water and the creatures; close ones in front. */
 const eventBack = new Container();
 const eventFront = new Container();
 scene.back.addChild(seasons.back, eventBack);
-/** Everything in the tank, so documentary mode can zoom in on it; labels and the name card stay on top. */
+/** Everything in the tank, in tank units, so documentary mode can zoom in on it. */
 const camera = new Container();
+/** Scales the tank to fit the screen; labels and the name card stay on top at screen size. */
+const fit = new Container();
+fit.addChild(camera);
 /** Glowing paint is drawn above the night tint (while staying with its creature), so it shines in the dark. */
 const glowLayer = new RenderLayer();
 camera.addChild(scene.back, creatureLayer, eventFront, scene.front, nightLayer, glowLayer, seasons.glow);
-const documentary = new Documentary(camera, params.has('doc') ? 5 : undefined);
-// Packs of rare events: the ocean ones always, plus seasonal ones. ?events=a,b picks them by hand.
-const packsFor = (season: Season) => params.get('events')?.split(',') ?? ['ocean', ...(season.halloween ? ['spooky'] : [])];
-const events = new Events(
-  { back: eventBack, front: eventFront },
-  packsFor(seasons.season),
-  params.has('event') ? 3 : undefined,
-);
+const documentary = new Documentary(camera);
+const events = new Events({ back: eventBack, front: eventFront });
 const sounds = new Sounds();
 scene.onBloop = () => sounds.bubble();
-app.stage.addChild(camera, documentary.spotlight, labelLayer, documentary.card, emptyMessage);
+app.stage.addChild(fit, documentary.spotlight, labelLayer, documentary.card, emptyMessage);
 // A handle for poking at the tank from the browser console.
 Object.assign(window, {
-  doodlearium: { app, world, entries: () => entries, layEgg: (pair?: Swimmer[]) => tryForEgg(true, pair, true), film: () => film(), visit: (name?: string) => events.trigger(world, name) },
+  doodlearium: { app, world, timeline, entries: () => entries, pose: (id: string) => entries.get(id)?.pose },
 });
 
 const entries = new Map<string, Entry>();
@@ -91,23 +101,70 @@ const loading = new Set<string>();
 const labels: Label[] = [];
 /** Every drawing the server has, by id, for parents' names. */
 const known = new Map<string, Drawing>();
+/** Who the server says is in the tank. */
+let roster: RosterEntry[] = [];
 let nextRandomLabel = 12;
 
+const screenSize = { width: 0, height: 0 };
 function relayoutIfResized() {
   const { width, height } = app.screen;
-  if (width === world.width && height === world.height) return;
-  world.width = width;
-  world.height = height;
-  world.floorY = height * FLOOR;
-  scene.layout(world);
+  if (width === screenSize.width && height === screenSize.height) return;
+  Object.assign(screenSize, { width, height });
+  // The whole tank fits on every screen; a screen of another shape sees more water above or sand below.
+  // A tall phone would make it tiny, so there it's a bit bigger and the far ends are cut off.
+  const s = Math.min(width / WORLD_W, height / WORLD_H) * (width < height ? Math.min(1.6, height / WORLD_H / (width / WORLD_W)) : 1);
+  fit.scale.set(s);
+  fit.position.set((width - WORLD_W * s) / 2, (height - WORLD_H * s) / 2);
+  scene.layout(world, { left: -fit.x / s, top: -fit.y / s, right: (width - fit.x) / s, bottom: (height - fit.y) / s });
   seasons.layout(world);
-  for (const { creature } of entries.values()) creature.layout(world);
   emptyMessage.position.set(width / 2, height * 0.42);
+  // The coming-up card goes under the buttons, however many rows they wrap onto.
+  coming.style.top = `${document.querySelector('nav')!.getBoundingClientRect().bottom + 8}px`;
 }
+const coming = document.querySelector<HTMLDivElement>('#coming')!;
 relayoutIfResized();
 
-async function addDrawing(drawing: Drawing, dropIn: boolean) {
-  known.set(drawing.id, drawing);
+const parentNames = (d: Drawing) => (d.parents ?? []).map((id) => known.get(id)?.name ?? '?').join(' & ');
+
+/** Brings the screen in line with who the server says is in the tank. */
+function applyRoster() {
+  const ids = new Set(roster.map((r) => r.id));
+  for (const [id, entry] of entries) if (!ids.has(id)) entry.removing = true;
+  let missing = false;
+  for (const r of roster) {
+    const drawing = known.get(r.id);
+    if (!drawing) {
+      missing = true;
+      continue;
+    }
+    const entry = entries.get(r.id);
+    if (!entry) void addEntry(drawing, r);
+    else if (entry.removing) continue;
+    else if (entry.drawing.updatedAt !== drawing.updatedAt) void replaceEntry(drawing, r);
+    else if (entry.kind === 'egg' && r.kind !== 'egg') hatch(entry, r);
+    else {
+      entry.personality = r.personality;
+      if (r.still) unpackPose(r.still, entry.pose);
+    }
+  }
+  if (missing) void refreshDrawings();
+}
+
+let refreshing: Promise<void> | null = null;
+/** Fetches the drawings again (one the server mentioned isn't known here yet). */
+function refreshDrawings() {
+  refreshing ??= fetchDrawings()
+    .then((drawings) => {
+      for (const d of drawings) known.set(d.id, d);
+      for (const r of roster) if (!known.has(r.id)) console.warn(`The tank has ${r.id}, but it isn't in the drawings`);
+      applyRoster();
+    })
+    .catch((err) => console.warn('Could not load drawings', err))
+    .finally(() => setTimeout(() => (refreshing = null), 2000));
+  return refreshing;
+}
+
+async function addEntry(drawing: Drawing, r: RosterEntry) {
   if (entries.has(drawing.id) || loading.has(drawing.id)) return;
   loading.add(drawing.id);
   let texture: Texture;
@@ -126,23 +183,31 @@ async function addDrawing(drawing: Drawing, dropIn: boolean) {
     loading.delete(drawing.id);
   }
   const glowTextures = drawing.glow ? await loadGlow(drawing).catch(() => null) : null;
+  // It may have hatched (or gone) while loading.
+  const now = roster.find((x) => x.id === drawing.id);
+  if (!now || entries.has(drawing.id)) {
+    if (cutout) cutout.destroy();
+    else void Assets.unload(imageUrl(drawing));
+    return;
+  }
 
-  const egg = (drawing.hatchAt ?? 0) > Date.now();
-  const creature = egg ? new Egg(drawing, texture, world, dropIn) : createCreature(drawing, texture, world, dropIn, cutout?.pieces);
-  const entry: Entry = { creature, texture, cutout, glowTextures, fade: 0, removing: false };
-  if (!egg) attachGlow(entry);
+  const creature = createCreature(drawing, now.kind, texture, cutout?.pieces);
+  const pose = newPose();
+  if (now.still) unpackPose(now.still, pose);
+  const entry: Entry = {
+    drawing, kind: now.kind, personality: now.personality, creature, texture, cutout, glowTextures, pose,
+    still: Boolean(now.still), fade: 0, removing: false,
+  };
+  if (now.kind !== 'egg') attachGlow(entry);
   creature.view.alpha = 0;
   entries.set(drawing.id, entry);
   (drawing.nocturnal ? nightLayer : creatureLayer).addChild(creature.view);
-  enforceCap(drawing);
 
-  if (egg) {
-    entry.fade = dropIn ? 1 : 0;
-    if (dropIn) showLabel(entry, 10, '', `🥚 An egg from ${parentNames(drawing)}!`);
-  } else if (dropIn) {
+  if (r.fresh && now.kind === 'egg') {
     entry.fade = 1;
-    const { x } = creature.labelAnchor();
-    scene.burst(x, 0);
+    showLabel(entry, 10, '', `🥚 An egg from ${parentNames(drawing)}!`);
+  } else if (r.fresh) {
+    entry.fade = 1;
     // A night creature added in daytime says hello, then goes back to sleep until dark.
     showLabel(entry, 8, isAwake(entry) ? '' : '🌙 comes out at night');
   }
@@ -153,84 +218,33 @@ function attachGlow(entry: Entry) {
   if (entry.glowTextures && body) entry.glow = new Glow(body, entry.glowTextures, glowLayer, entry.creature.moving);
 }
 
-const isAwake = (entry: Entry) => entry.creature instanceof Egg || !entry.creature.drawing.nocturnal || scene.isNight;
+const isAwake = (entry: Entry) => entry.kind === 'egg' || !entry.drawing.nocturnal || scene.darkness >= NIGHT;
 
-const parentNames = (d: Drawing) => (d.parents ?? []).map((id) => known.get(id)?.name ?? '?').join(' & ');
-
-/** The egg cracks and the baby swims out right where it was. */
-function hatch(entry: Entry) {
-  const egg = entry.creature as Egg;
-  const at = egg.position;
-  const baby = createCreature(egg.drawing, entry.texture, world, false, entry.cutout?.pieces);
-  if (baby instanceof Swimmer) baby.placeAt(at);
-  (egg.drawing.nocturnal ? nightLayer : creatureLayer).addChild(baby.view);
+/** The egg cracks and the baby swims out (the server has put it where the egg was). */
+function hatch(entry: Entry, r: RosterEntry) {
+  const egg = entry.creature;
+  const baby = createCreature(entry.drawing, r.kind, entry.texture, entry.cutout?.pieces);
+  (entry.drawing.nocturnal ? nightLayer : creatureLayer).addChild(baby.view);
   baby.view.alpha = entry.fade;
   egg.view.destroy({ children: true });
   entry.creature = baby;
+  entry.kind = r.kind;
+  entry.personality = r.personality;
   attachGlow(entry);
-  scene.burst(at.x, at.y, 16);
   sounds.chime();
   for (const l of labels.filter((l) => l.entry === entry)) l.remaining = 0;
   updateLabels(0);
-  showLabel(entry, 12, `🐣 just hatched! Baby of ${parentNames(egg.drawing)}`);
+  showLabel(entry, 12, `🐣 just hatched! Baby of ${parentNames(entry.drawing)}`);
 }
 
-let nextEggTry = 0;
-/**
- * Two fish that just schooled together sometimes lay an egg. The server keeps eggs rare, whichever tank asks.
- * force (from the console) skips the dice and the waiting, but not the server's limit.
- */
-function tryForEgg(force = false, pair?: Swimmer[], now = false): Promise<string> {
-  if (!force && (document.hidden || world.time < nextEggTry || Math.random() < 0.5)) return Promise.resolve('');
-  const parents = (pair ?? [...world.fish].sort(() => Math.random() - 0.5)).filter(
-    (f) => !f.drawing.parents && motionOf(f.drawing) === 'fish',
-  );
-  if (parents.length < 2) return Promise.resolve('🥚 It takes two 🐟 Fish (not babies) in the tank to lay an egg.');
-  const [mum, dad] = parents;
-  nextEggTry = world.time + 600;
-  const nest = (mum.x + dad.x) / 2 / world.width;
-  return makeEgg(mum.drawing, dad.drawing, nest)
-    .then((egg) => layEgg(egg, now))
-    .then((ok) => (ok ? `🥚 ${mum.drawing.name} and ${dad.drawing.name} laid an egg!` : '🥚 Not time for another egg yet.'))
-    .catch((err) => {
-      console.warn('Could not lay an egg', err);
-      return "🥚 Couldn't lay an egg.";
-    });
-}
-
-let nextSchoolAt = 40 + Math.random() * 40;
-/** Every couple of minutes a few fish team up and follow a leader for a while. */
-function updateSchool() {
-  const school = world.school;
-  if (school) {
-    if (world.time > school.until || !world.fish.includes(school.leader)) {
-      if (world.time > school.until && school.members[0]) void tryForEgg(false, [school.leader, school.members[0]]);
-      world.school = null;
-    }
-    else school.members = school.members.filter((m) => world.fish.includes(m));
-    return;
-  }
-  if (world.time < nextSchoolAt || world.sleepiness > 0.4) return;
-  nextSchoolAt = world.time + 70 + Math.random() * 80;
-  const candidates = world.fish.filter((f) => f.style.schools && f.personality !== 'shy').sort(() => Math.random() - 0.5);
-  if (candidates.length < 3) return;
-  const [leader, ...rest] = candidates;
-  world.school = { leader, members: rest.slice(0, 2 + Math.floor(Math.random() * 4)), until: world.time + 25 };
-}
-
-function removeDrawing(id: string) {
-  const entry = entries.get(id);
-  if (entry) entry.removing = true;
-}
-
-async function replaceDrawing(drawing: Drawing) {
+async function replaceEntry(drawing: Drawing, r: RosterEntry) {
   const old = entries.get(drawing.id);
   if (old) {
     entries.delete(drawing.id);
     old.removing = true;
     retiring.push(old);
   }
-  await addDrawing(drawing, false);
+  await addEntry(drawing, r);
   const updated = entries.get(drawing.id);
   if (updated) showLabel(updated, 6);
 }
@@ -238,15 +252,15 @@ async function replaceDrawing(drawing: Drawing) {
 /** One misbehaving drawing must never freeze the whole tank: it is taken out instead. */
 function safeUpdate(entry: Entry, dt: number) {
   try {
-    entry.creature.update(dt, world);
+    entry.creature.update(dt, world, entry.pose);
   } catch (err) {
-    console.error(`Removing ${entry.creature.drawing.name} after an animation error`, err);
+    console.error(`Hiding ${entry.drawing.name} after an animation error`, err);
     entry.removing = true;
     entry.fade = 0;
   }
 }
 
-function destroyEntry({ creature, cutout, glow, glowTextures }: Entry) {
+function destroyEntry({ creature, cutout, glow, glowTextures, drawing }: Entry) {
   if (glow) glow.destroy();
   else {
     for (const t of glowTextures ? [glowTextures, ...glowTextures.pieces] : []) {
@@ -256,41 +270,17 @@ function destroyEntry({ creature, cutout, glow, glowTextures }: Entry) {
   }
   creature.view.destroy({ children: true });
   if (cutout) cutout.destroy();
-  else void Assets.unload(imageUrl(creature.drawing));
-}
-
-/** Keeps only the newest N of the drawing's type in the tank. */
-function enforceCap(drawing: Drawing) {
-  const sameType = [...entries.values()]
-    .filter((e) => !e.removing && bucketOf(e.creature.drawing) === bucketOf(drawing))
-    .sort((a, b) => b.creature.drawing.createdAt - a.creature.drawing.createdAt);
-  for (const old of sameType.slice(CAPS[bucketOf(drawing)])) old.removing = true;
-}
-
-/** Brings the tank in line with the server: on first connect and after every reconnect. */
-async function sync() {
-  const drawings = await fetchDrawings();
-  for (const d of drawings) known.set(d.id, d);
-  const ids = new Set(drawings.map((d) => d.id));
-  for (const id of entries.keys()) if (!ids.has(id)) removeDrawing(id);
-  const newestFirst = [...drawings].sort((a, b) => b.createdAt - a.createdAt);
-  const counts = { swimmer: 0, crawler: 0, plant: 0, decor: 0, baby: 0 };
-  for (const d of newestFirst) {
-    if (counts[bucketOf(d)]++ >= CAPS[bucketOf(d)]) continue;
-    const shown = entries.get(d.id)?.creature.drawing;
-    if (shown && shown.updatedAt !== d.updatedAt) void replaceDrawing(d);
-    else void addDrawing(d, false);
-  }
+  else void Assets.unload(imageUrl(drawing));
 }
 
 function showLabel(entry: Entry, seconds: number, note = '', title?: string) {
   if (labels.some((l) => l.entry === entry)) return;
-  const { name, artist } = entry.creature.drawing;
+  const { name, artist } = entry.drawing;
   const text = new Text({
     text: title ?? `${name}\nby ${artist}${note ? `\n${note}` : ''}`,
     style: {
       fontFamily: 'Trebuchet MS, sans-serif',
-      fontSize: Math.max(16, world.height * 0.022),
+      fontSize: Math.max(16, screenSize.height * 0.022),
       fontWeight: 'bold',
       fill: 0xffffff,
       align: 'center',
@@ -308,14 +298,14 @@ function updateLabels(dt: number) {
     const label = labels[i];
     label.remaining -= dt;
     const creature = label.entry.creature;
-    if (label.remaining <= 0 || creature.view.destroyed || entries.get(creature.drawing.id) !== label.entry) {
+    if (label.remaining <= 0 || creature.view.destroyed || entries.get(label.entry.drawing.id) !== label.entry) {
       label.text.destroy();
       labels.splice(i, 1);
       continue;
     }
     const { x, y } = camera.toGlobal(creature.labelAnchor());
     const half = label.text.width / 2 + 4;
-    label.text.position.set(Math.min(Math.max(x, half), world.width - half), Math.max(label.text.height + 4, y));
+    label.text.position.set(Math.min(Math.max(x, half), screenSize.width - half), Math.max(label.text.height + 4, y));
     label.text.alpha = Math.min(1, label.remaining, creature.view.alpha + 0.5);
   }
 
@@ -327,14 +317,7 @@ function updateLabels(dt: number) {
   }
 }
 
-/** Who the documentary can film: anything out and about that moves. */
-const filmable = () =>
-  [...entries.values()]
-    .filter((e) => !e.removing && e.fade > 0.9 && !(e.creature instanceof Egg) && ['swimmer', 'crawler'].includes(e.creature.drawing.type))
-    .map((e) => e.creature);
-
-const describe = (c: Creature) => {
-  const d = c.drawing;
+const describe = (d: Drawing) => {
   const lines = [];
   if (d.parents) lines.push(`baby of ${parentNames(d)}`);
   const days = Math.floor((Date.now() - d.createdAt) / 86_400_000);
@@ -343,57 +326,39 @@ const describe = (c: Creature) => {
   return lines;
 };
 
-function film() {
-  for (const l of labels) l.remaining = Math.min(l.remaining, 0.5);
-  documentary.start(world, filmable(), describe);
-}
+const cardLines = (c: Creature) => {
+  const entry = entries.get(c.drawing.id);
+  return [...describe(c.drawing), aboutOf(c.drawing, entry?.personality)];
+};
 
-let currentIn = 150 + Math.random() * 150;
-let currentFor = 0;
-let currentDir = 1;
-function startCurrent() {
-  currentFor = 25;
-  currentDir = Math.random() < 0.5 ? -1 : 1;
-  currentIn = 200 + Math.random() * 250;
-}
-
-/** Every few minutes a gentle current sweeps through for a little while. */
-function updateCurrent(dt: number) {
-  currentIn -= dt;
-  if (currentIn <= 0 && currentFor <= 0) startCurrent();
-  currentFor = Math.max(0, currentFor - dt);
-  // Swells up and dies away smoothly.
-  world.current = currentDir * world.height * 0.03 * Math.sin((currentFor / 25) * Math.PI) ** 2;
-}
+/** What the ⚙️ menu shows as on, last time it was updated. */
+let settingsShown = '';
 
 app.ticker.add((ticker) => {
   const dt = Math.min(ticker.deltaMS / 1000, 0.1);
-  world.time += dt;
   relayoutIfResized();
+  timeline.advance(dt, (e) => scene.play(e));
+  world.time = timeline.time;
+  const frame = timeline.latest;
+  if (frame) {
+    scene.darkness = frame.darkness;
+    scene.blacklight = frame.blacklight;
+    world.current = frame.current;
+    seasons.set(frame.season, world);
+    showSettings(frame.settings);
+  }
   scene.update(dt, world);
   seasons.update(dt, world, scene.darkness);
-  updateCurrent(dt);
-  events.update(dt, world);
+  events.update(dt, world, frame?.visit ?? null);
+  food.draw(timeline.flakes(), world.time);
 
-  world.sleepiness = Math.min(1, scene.darkness / 0.5);
   // Glow paint is brightest in the dark; blacklight paint only shines under the blacklight.
   const glowLevel = 0.4 + scene.darkness * 1.2 + scene.blacklight * 0.3;
   const uvLevel = scene.blacklight * 1.1;
-  world.fish = [];
-  const hideouts: Hideout[] = [];
-  for (const entry of entries.values()) {
-    if (entry.removing || entry.fade <= 0.5) continue;
-    const c = entry.creature;
-    if (c instanceof Swimmer) world.fish.push(c);
-    else if (c instanceof Plant || c instanceof Decor) hideouts.push(c.hideout());
-  }
-  world.hideouts = hideouts;
-  updateSchool();
-  food.update(dt, world);
-
   for (const [id, entry] of entries) {
     const { creature } = entry;
-    const wanted = !entry.removing && isAwake(entry);
+    const placed = entry.still || timeline.pose(id, entry.pose) !== null;
+    const wanted = !entry.removing && placed && isAwake(entry);
     entry.fade = Math.max(0, Math.min(1, entry.fade + (wanted ? dt : -dt) / FADE_SECONDS));
     creature.view.alpha = entry.fade;
     if (entry.removing && entry.fade === 0) {
@@ -401,8 +366,7 @@ app.ticker.add((ticker) => {
       entries.delete(id);
       continue;
     }
-    if (!wanted && entry.fade === 0) continue; // asleep until night
-    if (creature instanceof Egg && creature.ready) hatch(entry);
+    if (!placed || (!wanted && entry.fade === 0)) continue; // asleep until night
     safeUpdate(entry, dt);
     entry.glow?.update(glowLevel, uvLevel);
   }
@@ -410,6 +374,7 @@ app.ticker.add((ticker) => {
     const entry = retiring[i];
     entry.fade = Math.max(0, entry.fade - dt / FADE_SECONDS);
     entry.creature.view.alpha = entry.fade;
+    if (!entry.still) timeline.pose(entry.drawing.id, entry.pose);
     safeUpdate(entry, dt);
     entry.glow?.update(glowLevel, uvLevel);
     if (entry.fade === 0) {
@@ -418,26 +383,59 @@ app.ticker.add((ticker) => {
     }
   }
 
-  documentary.update(dt, world, filmable, describe);
+  const starring = frame?.doc ? entries.get(frame.doc.id) : undefined;
+  documentary.update(dt, world, screenSize, starring && !starring.removing ? starring.creature : null, cardLines);
+  if (documentary.filming) for (const l of labels) l.remaining = Math.min(l.remaining, 0.5);
   updateLabels(dt);
-  emptyMessage.visible = entries.size === 0 && loading.size === 0;
+  showComingUp();
+  emptyMessage.visible = roster.length === 0;
 });
 
 connectLive(
   (msg) => {
-    if (msg.type === 'drawing:added') void addDrawing(msg.drawing, true);
-    else if (msg.type === 'drawing:updated') void replaceDrawing(msg.drawing);
-    else if (msg.type === 'feed') {
-      food.drop(world, msg.x);
-      [0, 0.25, 0.5].forEach((delay) => setTimeout(() => sounds.plop(), delay * 1000 + Math.random() * 150));
+    switch (msg.type) {
+      case 'frame':
+        timeline.push(msg.frame);
+        break;
+      case 'roster':
+        roster = msg.creatures;
+        applyRoster();
+        break;
+      case 'upcoming':
+        upcoming = msg.items;
+        break;
+      case 'drawing:added':
+      case 'drawing:updated':
+        known.set(msg.drawing.id, msg.drawing);
+        applyRoster();
+        break;
+      case 'drawing:removed':
+        known.delete(msg.id);
+        break;
+      case 'feed':
+        [0, 0.25, 0.5].forEach((delay) => setTimeout(() => sounds.plop(), delay * 1000 + Math.random() * 150));
+        break;
+      case 'egg:make':
+        void makeEggFor(msg.parents, msg.nest, msg.now);
+        break;
     }
-    else if (msg.type === 'tank') runCommand(msg.command, msg.value);
-    else removeDrawing(msg.id);
   },
-  () => void sync().catch((err) => console.warn('Sync failed', err)),
+  () => void refreshDrawings(),
 );
 
-// Clicking the tank drops food right there, in every open tank. On a touch screen, the first tap only
+/** The server asked this screen to blend two parents into a baby (that takes a browser) and lay its egg. */
+async function makeEggFor([mumId, dadId]: [string, string], nest: number, now: boolean) {
+  const mum = known.get(mumId);
+  const dad = known.get(dadId);
+  if (!mum || !dad) return;
+  try {
+    await layEgg(await makeEgg(mum, dad, nest), now);
+  } catch (err) {
+    console.warn('Could not lay an egg', err);
+  }
+}
+
+// Clicking the tank drops food right there (on every screen). On a touch screen, the first tap only
 // brings the buttons back.
 let tapWoke = false;
 app.canvas.addEventListener('click', (e) => {
@@ -452,26 +450,21 @@ app.canvas.addEventListener('click', (e) => {
 
 // Keys for trying things out: D films a documentary, V brings a visitor, S toggles sound, B the blacklight.
 addEventListener('keydown', (e) => {
-  if (e.key === 'd') film();
-  else if (e.key === 'v') events.trigger(world);
+  if (e.target instanceof HTMLInputElement) return;
+  if (e.key === 'd') void command('film');
+  else if (e.key === 'v') void command('visit');
   else if (e.key === 's') toggleSound();
-  else if (e.key === 'b') void command('blacklight', !scene.blacklightOn);
+  else if (e.key === 'b') void command('blacklight', !(timeline.latest?.settings.blacklight ?? false));
   else if (e.key === 'Escape') showMenu(false);
 });
 
-// --- the ⚙️ menu: time, holidays, the blacklight and happenings, on this screen or every tank -------------
+// --- the ⚙️ menu: time, holidays, the blacklight and happenings, now or later -----------------------------
 
 const menu = document.querySelector<HTMLDivElement>('#menu')!;
 const menuStatus = document.querySelector<HTMLParagraphElement>('#menu-status')!;
-const everyTank = document.querySelector<HTMLInputElement>('#every-tank')!;
-try {
-  everyTank.checked = localStorage.getItem('doodlearium.everyTank') !== 'off';
-} catch {}
-everyTank.onchange = () => {
-  try {
-    localStorage.setItem('doodlearium.everyTank', everyTank.checked ? 'on' : 'off');
-  } catch {}
-};
+const later = document.querySelector<HTMLInputElement>('#later')!;
+const laterTime = document.querySelector<HTMLInputElement>('#later-time')!;
+laterTime.oninput = () => (later.checked = true);
 
 function showMenu(open: boolean) {
   menu.hidden = !open;
@@ -480,15 +473,6 @@ function showMenu(open: boolean) {
 document.querySelector<HTMLButtonElement>('#menu-toggle')!.onclick = () => showMenu(Boolean(menu.hidden));
 document.querySelector<HTMLButtonElement>('#menu-close')!.onclick = () => showMenu(false);
 
-const NO_SEASON: Season = { snow: false, halloween: false, lights: false, valentine: false };
-const SEASONS: Record<string, Season> = {
-  none: NO_SEASON,
-  halloween: { ...NO_SEASON, halloween: true },
-  christmas: { ...NO_SEASON, snow: true, lights: true },
-  snow: { ...NO_SEASON, snow: true },
-  valentine: { ...NO_SEASON, valentine: true },
-};
-
 let statusTimer = 0;
 function say(text: string) {
   menuStatus.textContent = text;
@@ -496,61 +480,32 @@ function say(text: string) {
   statusTimer = window.setTimeout(() => (menuStatus.textContent = ''), 6000);
 }
 
-/** Does a menu command here; commands from other screens arrive through the live feed. */
-function runCommand(cmd: TankCommand, value: TankCommandValue) {
-  switch (cmd) {
-    case 'time':
-      scene.hour = typeof value === 'number' ? value % 24 : null;
-      break;
-    case 'season': {
-      const season = (typeof value === 'string' && SEASONS[value]) || seasonOf();
-      seasons.set(season, world);
-      events.packs = packsFor(season);
-      break;
-    }
-    case 'blacklight':
-      scene.blacklightOn = value === true;
-      break;
-    case 'film':
-      film();
-      break;
-    case 'visit':
-      events.trigger(world, typeof value === 'string' ? value : undefined);
-      break;
-    case 'current':
-      startCurrent();
-      break;
-    case 'school':
-      world.school = null;
-      nextSchoolAt = 0;
-      break;
-    case 'puff':
-      for (const f of world.fish) f.puffUp();
-      break;
-    case 'egg':
-      // Laid by whichever tank was asked; every tank then sees it arrive.
-      void tryForEgg(true, undefined, true).then((text) => text && say(text));
-      break;
-  }
-  // Keep this screen's menu showing what's on.
-  const group = menu.querySelector(`[data-group="${cmd}"]`);
-  if (group) {
-    const shown = value === null ? 'auto' : value === true ? 'on' : value === false ? 'off' : String(value);
-    for (const b of group.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.value === shown));
-  }
+/** The next time the clock shows hh:mm (today, or tomorrow if that's passed). */
+function nextTime(hhmm: string) {
+  const [h, m] = hhmm.split(':').map(Number);
+  const at = new Date();
+  at.setHours(h, m, 0, 0);
+  if (at.getTime() < Date.now()) at.setDate(at.getDate() + 1);
+  return at;
 }
 
-/** A menu button: sent to every tank (this one included) or just done here. */
+const clock = (d: Date) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+/** A menu button: done in the tank now (every screen sees it), or at the time picked. */
 async function command(cmd: TankCommand, value: TankCommandValue = null) {
-  if (everyTank.checked && cmd !== 'egg') {
-    try {
-      await sendTankCommand(cmd, value);
-      return;
-    } catch {
-      say("Couldn't reach the other tanks, so just this one.");
+  try {
+    if (later.checked && laterTime.value) {
+      const at = nextTime(laterTime.value);
+      await scheduleTankCommand(cmd, value, at.getTime());
+      later.checked = false;
+      say(`⏰ Planned for ${clock(at)}.`);
+    } else {
+      const text = await sendTankCommand(cmd, value);
+      if (text) say(text);
     }
+  } catch {
+    say("Couldn't reach the tank's server.");
   }
-  runCommand(cmd, value);
 }
 
 const parseValue = (v: string | undefined): TankCommandValue =>
@@ -560,15 +515,68 @@ menu.querySelectorAll<HTMLButtonElement>('[data-cmd]').forEach((b) => {
   b.onclick = () => {
     const cmd = b.dataset.cmd!;
     if (cmd === 'feed') {
+      if (later.checked) {
+        say("🍤 Feeding can't be planned ahead (yet): it's now or never!");
+        return;
+      }
       void feedFish().then((ok) => say(ok ? '🍤 Dinner time!' : '🍤 The fish are still eating.')).catch(() => {});
       return;
     }
-    if (cmd === 'egg') say('🥚 Looking for two fish…');
     void command(cmd as TankCommand, parseValue(b.dataset.value));
   };
 });
-// Show what the address asked for.
-if (scene.blacklightOn) runCommand('blacklight', true);
+
+/** Keeps the menu showing what's on in the tank. */
+function showSettings(settings: Settings) {
+  const key = JSON.stringify(settings);
+  if (key === settingsShown) return;
+  settingsShown = key;
+  const shown: Record<string, string> = {
+    time: settings.hour === null ? 'auto' : String(settings.hour),
+    season: settings.season ?? 'auto',
+    blacklight: settings.blacklight ? 'on' : 'off',
+  };
+  for (const [group, value] of Object.entries(shown)) {
+    for (const b of menu.querySelectorAll(`[data-group="${group}"] button`)) {
+      b.setAttribute('aria-pressed', String((b as HTMLElement).dataset.value === value));
+    }
+  }
+}
+
+// --- coming up: the next few happenings, so the family can tune in -----------------------------------------
+
+let upcoming: Upcoming[] = [];
+let comingShown = '';
+const SOON = 2 * 60_000;
+
+function when(at: number) {
+  const left = at - Date.now();
+  if (left < 60_000) return 'any moment now';
+  if (left < 60 * 60_000) return `in ${Math.round(left / 60_000)} min`;
+  const d = new Date(at);
+  const today = new Date().toDateString() === d.toDateString();
+  return `${today ? '' : `${d.toLocaleDateString([], { weekday: 'short' })} `}at ${clock(d)}`;
+}
+
+function showComingUp() {
+  const items = upcoming.filter((u) => u.at > Date.now() - 60_000).sort((a, b) => a.at - b.at).slice(0, 3);
+  const lines = items.map((u) => ({ text: `${u.icon} ${u.text}`, when: when(u.at), soon: u.at - Date.now() < SOON }));
+  const key = JSON.stringify(lines);
+  if (key === comingShown) return;
+  comingShown = key;
+  coming.hidden = !lines.length;
+  const title = Object.assign(document.createElement('b'), { textContent: 'Coming up' });
+  coming.replaceChildren(
+    title,
+    ...lines.map((l) => {
+      const div = document.createElement('div');
+      div.append(`${l.text} `, Object.assign(document.createElement('span'), { textContent: l.when, className: l.soon ? 'soon' : '' }));
+      return div;
+    }),
+  );
+  // Something about to happen stays on screen even when the buttons hide.
+  coming.classList.toggle('soon-up', lines.some((l) => l.soon));
+}
 
 // --- who's who: hover over (or tap) a creature to see its details ----------------------------------------
 
@@ -649,14 +657,13 @@ function showInfo(x: number, y: number) {
   const entry = creatureAt(x, y);
   info.hidden = !entry;
   if (!entry) return;
-  const c = entry.creature;
-  const d = c.drawing;
-  const lines =
-    c instanceof Egg
-      ? [`an egg from ${parentNames(d)}`, `hatching in about ${Math.max(1, Math.ceil(((d.hatchAt ?? 0) - Date.now()) / 60_000))} min`]
-      : [STYLE_NAMES[motionOf(d)], ...describe(c), aboutOf(c), d.glow ? '✨ has glowing paint' : ''];
+  const d = entry.drawing;
+  const egg = entry.kind === 'egg';
+  const lines = egg
+    ? [`an egg from ${parentNames(d)}`, `hatching in about ${Math.max(1, Math.ceil(((d.hatchAt ?? 0) - Date.now()) / 60_000))} min`]
+    : [STYLE_NAMES[motionOf(d)], ...describe(d), aboutOf(d, entry.personality), d.glow ? '✨ has glowing paint' : ''];
   const b = document.createElement('b');
-  b.textContent = c instanceof Egg ? '🥚 Egg' : d.name;
+  b.textContent = egg ? '🥚 Egg' : d.name;
   const by = document.createElement('div');
   by.textContent = `by ${d.artist}`;
   info.replaceChildren(b, by, ...lines.filter(Boolean).map((t) => Object.assign(document.createElement('div'), { textContent: t })));
@@ -720,3 +727,4 @@ void keepAwake();
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') void keepAwake();
 });
+

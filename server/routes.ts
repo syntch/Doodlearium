@@ -14,7 +14,9 @@ import {
   type Motion,
   type Part,
 } from '../shared/types.ts';
+import { addStory, historyBetween, listStories, record } from './history.ts';
 import { addDrawing, listDrawings, removeDrawing, updateDrawing } from './store.ts';
+import { EGG_GAP, HATCH_TIME, drawingAdded, drawingRemoved, drawingUpdated, feed, runCommand, schedule } from './world.ts';
 import { broadcast } from './ws.ts';
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -143,6 +145,8 @@ api.post('/drawings', async (req, res) => {
   }
   const drawing = await addDrawing(parsed.meta, parsed.png, parsed.extra);
   broadcast({ type: 'drawing:added', drawing });
+  drawingAdded(drawing);
+  record('joined', [drawing.id], `🎨 ${drawing.name}, drawn by ${drawing.artist}, joined the tank.`);
   res.status(201).json(drawing);
 });
 
@@ -158,13 +162,11 @@ api.put('/drawings/:id', async (req, res) => {
     return;
   }
   broadcast({ type: 'drawing:updated', drawing });
+  drawingUpdated();
   res.json(drawing);
 });
 
-/** Eggs are a treat: at most one every few hours, however many tanks are open. */
-const EGG_GAP = Number(process.env.EGG_GAP_MINUTES ?? 360) * 60_000;
-const HATCH_TIME = Number(process.env.HATCH_SECONDS ?? 180) * 1000;
-
+/** Eggs are a treat: at most one every few hours (see world.ts). The ⚙️ menu can lay one any time. */
 api.post('/eggs', async (req, res) => {
   const parsed = parseDrawing(req.body);
   if ('error' in parsed) {
@@ -190,6 +192,9 @@ api.post('/eggs', async (req, res) => {
   // Babies take after their parents' moving parts and glowing paint too.
   const drawing = await addDrawing(meta, parsed.png, parsed.extra);
   broadcast({ type: 'drawing:added', drawing });
+  drawingAdded(drawing);
+  const names = drawing.parents!.map((id) => all.find((d) => d.id === id)?.name ?? 'someone');
+  record('egg', [drawing.id, ...drawing.parents!], `🥚 ${names[0]} and ${names[1]} laid an egg on the sand.`);
   res.status(201).json(drawing);
 });
 
@@ -203,20 +208,58 @@ api.post('/feed', (req, res) => {
   }
   lastFeed = now;
   const x = typeof req.body?.x === 'number' && req.body.x >= 0 && req.body.x <= 1 ? req.body.x : 0.15 + Math.random() * 0.7;
-  broadcast({ type: 'feed', x });
+  feed(x);
   res.status(204).end();
 });
 
-/** The tank's ⚙️ menu: passes a command on to every open tank. */
-api.post('/tank', (req, res) => {
-  const { command, value = null } = req.body ?? {};
+/** A ⚙️ menu command for the tank: { command, value }, and (to schedule it) at, in ms since 1970. */
+function parseCommand(body: any) {
+  const { command, value = null } = body ?? {};
   const okValue = value === null || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value)) || (typeof value === 'string' && value.length <= 20);
-  if (!TANK_COMMANDS.includes(command) || !okValue) {
+  return TANK_COMMANDS.includes(command) && okValue ? { command, value } : null;
+}
+
+/** Does a ⚙️ menu command now; answers with a line to show, if there is one. */
+api.post('/tank', (req, res) => {
+  const parsed = parseCommand(req.body);
+  if (!parsed) {
     res.status(400).json({ error: `command must be one of ${TANK_COMMANDS.join(', ')}` });
     return;
   }
-  broadcast({ type: 'tank', command, value });
+  res.json({ say: runCommand(parsed.command, parsed.value) });
+});
+
+/** Does a ⚙️ menu command later (up to a week ahead). */
+api.post('/schedule', (req, res) => {
+  const parsed = parseCommand(req.body);
+  const at = req.body?.at;
+  if (!parsed || typeof at !== 'number' || at < Date.now() - 60_000 || at > Date.now() + 7 * 86_400_000) {
+    res.status(400).json({ error: 'needs a command and a time within the next week' });
+    return;
+  }
+  schedule(parsed.command, parsed.value, at);
   res.status(204).end();
+});
+
+/** The tank's history: ?from=&to= (ms since 1970) and ?who= (a drawing id) narrow it down. */
+api.get('/history', (req, res) => {
+  const num = (v: unknown) => (typeof v === 'string' && v && Number.isFinite(Number(v)) ? Number(v) : undefined);
+  res.json(historyBetween(num(req.query.from), num(req.query.to), typeof req.query.who === 'string' ? req.query.who : undefined));
+});
+
+api.get('/stories', async (_req, res) => {
+  res.json(await listStories());
+});
+
+/** Keeps a story written from the history. */
+api.post('/stories', async (req, res) => {
+  const { title, text, from, to } = req.body ?? {};
+  if (typeof text !== 'string' || !text.trim() || text.length > 50_000 || typeof from !== 'number' || typeof to !== 'number') {
+    res.status(400).json({ error: 'a story needs its text and the stretch of history it covers' });
+    return;
+  }
+  const clean = typeof title === 'string' && title.trim() ? title.trim().slice(0, 120) : 'A story from the tank';
+  res.status(201).json(await addStory({ title: clean, text: text.trim(), from, to }));
 });
 
 api.delete('/drawings/:id', async (req, res) => {
@@ -225,5 +268,6 @@ api.delete('/drawings/:id', async (req, res) => {
     return;
   }
   broadcast({ type: 'drawing:removed', id: req.params.id });
+  drawingRemoved();
   res.status(204).end();
 });

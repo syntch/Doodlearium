@@ -3,14 +3,18 @@ import { createServer } from 'node:http';
 import { networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import express from 'express';
+import { loadHistory } from './history.ts';
 import { api } from './routes.ts';
 import { DRAWINGS_DIR, loadStore } from './store.ts';
+import { startWorld, welcome } from './world.ts';
 import { attachWebSocket } from './ws.ts';
 
 const PORT = Number(process.env.PORT ?? 3000);
 const DIST_DIR = join(import.meta.dirname, '..', 'dist');
 
 await loadStore();
+await loadHistory();
+await startWorld();
 
 const app = express();
 app.use('/api', api);
@@ -18,7 +22,7 @@ app.use('/drawings', express.static(DRAWINGS_DIR, { maxAge: '1y', immutable: tru
 if (existsSync(DIST_DIR)) app.use(express.static(DIST_DIR));
 
 const server = createServer(app);
-attachWebSocket(server);
+attachWebSocket(server, welcome);
 
 server.listen(PORT, '0.0.0.0', () => {
   const lan = Object.values(networkInterfaces())

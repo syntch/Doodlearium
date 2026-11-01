@@ -1,11 +1,6 @@
 import { MAX_ATTACHMENTS, MAX_PARTS, glowUrl, imageUrl, partsUrl, type Attachment, type Drawing, type NewEgg, type Part } from '../../shared/types.ts';
 
-/** Babies hatch a bit over half size and grow up over their first week. */
-export function babyScale(drawing: Drawing, now = Date.now()) {
-  if (!drawing.parents) return 1;
-  const days = (now - (drawing.hatchAt ?? drawing.createdAt)) / 86_400_000;
-  return 0.6 + 0.35 * Math.min(1, Math.max(0, days) / 7);
-}
+export { babyScale } from '../../shared/sim/math.ts';
 
 const loadImage = async (src: string) => {
   const image = new Image();
