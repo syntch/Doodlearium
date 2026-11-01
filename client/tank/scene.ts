@@ -382,6 +382,14 @@ export class Scene {
   }
 }
 
+/** A picture of a biome's sky and water, height tall (for the map's portholes). */
+export function biomeBackdrop(biome: Biome, height: number, waterTop: number, floor: number) {
+  return backdrop(LOOKS[biome] ?? LOOKS.lake!, height, waterTop, floor);
+}
+
+/** The colour of a biome's sand. */
+export const sandColor = (biome: Biome) => (LOOKS[biome] ?? LOOKS.lake!).sand[0];
+
 /** The sky (above the water, if any), then the water: light at the surface, deep by the bottom. */
 function backdrop(look: Look, height: number, waterTop: number, floor: number) {
   const canvas = document.createElement('canvas');

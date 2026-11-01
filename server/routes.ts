@@ -251,6 +251,17 @@ api.post('/schedule', (req, res) => {
   res.status(204).end();
 });
 
+/** Sends every screen to a place: { place }. */
+api.post('/show', (req, res) => {
+  const place = req.body?.place;
+  if (typeof place !== 'string' || !placeById(place)?.live) {
+    res.status(400).json({ error: 'needs a place that is open' });
+    return;
+  }
+  broadcast({ type: 'show', place });
+  res.status(204).end();
+});
+
 /** Where every species lives, by drawing id. */
 api.get('/population', (_req, res) => {
   res.json(whereSpecies());

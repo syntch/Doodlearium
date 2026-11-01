@@ -144,6 +144,8 @@ export type ServerMessage =
   | { type: 'frame'; frame: Frame }
   /** Every place at a glance, about once a second. */
   | { type: 'map'; places: MapSummary; species: Record<string, number> }
+  /** Every screen should go to this place (someone picked 📺 in the ⚙️ menu). */
+  | { type: 'show'; place: string }
   /** The server would like a screen to blend two parents into a baby and lay its egg (see babies.ts). */
   | { type: 'egg:make'; parents: [string, string]; nest: number; place: string; now: boolean }
   | { type: 'upcoming'; items: Upcoming[] }

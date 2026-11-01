@@ -65,6 +65,10 @@
       .coming .soon { color: #ffd98a; font-weight: bold; }
       body.idle .coming.chrome.soon-up { opacity: 1; }
       .menu:not([hidden]) ~ .coming { display: none; }
+      #map-button[hidden] { display: none; }
+      .coming .go { pointer-events: auto; cursor: pointer; border-radius: 6px; }
+      .coming .go:hover { background: rgba(255, 255, 255, 0.12); }
+      body.idle .coming:not(.soon-up) .go { pointer-events: none; }
     </style>
   </head>
   <body>
@@ -74,7 +78,8 @@
       <a href="/draw/">✏️ Draw</a>
       <a href="/gallery/">🖼️ Gallery</a>
       <a href="/history/">📖 History</a>
-      <button id="menu-toggle" title="Tank controls: time, holidays, documentary...">⚙️</button>
+      <button id="map-button" title="The map of the world (M)">🗺️ Map</button>
+      <button id="menu-toggle" title="Controls: time, holidays, documentary...">⚙️</button>
     </nav>
     <button id="sound" class="chrome" title="Sound on or off (S)">🔇</button>
     <div class="info" id="info" hidden></div>
@@ -119,6 +124,7 @@
         <button data-cmd="current">🌊 Current</button>
         <button data-cmd="puff">🐡 Puff the puffers</button>
         <button data-cmd="egg">🥚 Lay an egg</button>
+        <button data-cmd="show" title="Every screen (the TV too) goes to the place this one is showing">📺 Show this place on every screen</button>
       </div>
       <h3>Visitors</h3>
       <div class="row">

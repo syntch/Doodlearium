@@ -64,6 +64,16 @@ export async function sendTankCommand(command: TankCommand, value: TankCommandVa
   return (await res.json()).say ?? '';
 }
 
+/** Sends every screen to a place. */
+export async function showEverywhere(place: string) {
+  const res = await fetch('/api/show', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ place }),
+  });
+  if (!res.ok) throw new Error(`Show failed (${res.status})`);
+}
+
 /** Does a ⚙️ menu command later: at is in ms since 1970. */
 export async function scheduleTankCommand(command: TankCommand, value: TankCommandValue, at: number, place?: string) {
   const res = await fetch('/api/schedule', {
