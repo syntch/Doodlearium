@@ -1,5 +1,7 @@
 import type { Container } from 'pixi.js';
 import type { Drawing } from '../../shared/types.ts';
+import { shapeOf, type Biome, type Shape } from '../../shared/world/biomes.ts';
+import { WORLD_H, WORLD_W } from '../../shared/sim/world.ts';
 import type { Pose } from '../../shared/sim/creature.ts';
 import { lerp } from '../../shared/sim/math.ts';
 import type { Parts } from './parts.ts';
@@ -13,16 +15,23 @@ export { sandY } from '../../shared/sim/world.ts';
  * shared/sim/world.ts), the shared clock, and the scene that plays bubbles and hearts. Where everything is
  * comes from the server (or, for the draw page's preview, a little simulation of its own).
  */
-export interface World {
+export interface World extends Shape {
   width: number;
   height: number;
-  /** Top edge of the sand. */
+  /** Top edge of the sand at its deepest. */
   floorY: number;
+  biome: Biome;
   /** Seconds since the world began. */
   time: number;
   scene: Scene;
   /** The sideways current, which leans the plants. */
   current: number;
+}
+
+/** The lie of the land for a biome: where the water starts and where the bottom is. */
+export function shapeFor(biome: Biome) {
+  const shape = shapeOf(biome, WORLD_W, WORLD_H);
+  return { biome, ...shape, floorY: shape.floorAt(WORLD_W) };
 }
 
 /** A drawing on screen: it draws itself at the pose the simulation gives it. */

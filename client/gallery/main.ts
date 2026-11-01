@@ -1,5 +1,7 @@
-import { imageUrl, type CreatureType, type Drawing } from '../../shared/types.ts';
-import { connectLive, deleteDrawing, fetchDrawings, setupFeedButton } from '../shared/api.ts';
+import { imageUrl, type CreatureType, type Drawing, type SpeciesWhere } from '../../shared/types.ts';
+import { BIOME_NAMES } from '../../shared/world/biomes.ts';
+import { placeById } from '../../shared/world/places.ts';
+import { connectLive, deleteDrawing, fetchDrawings, fetchPopulation, setupFeedButton } from '../shared/api.ts';
 
 setupFeedButton(document.querySelector<HTMLButtonElement>('#feed')!);
 
@@ -17,6 +19,7 @@ const empty = document.querySelector<HTMLParagraphElement>('#empty')!;
 const filtersEl = document.querySelector<HTMLDivElement>('#filters')!;
 
 let drawings: Drawing[] = [];
+let population: Record<string, SpeciesWhere> = {};
 let filter: CreatureType | 'baby' | null = null;
 
 const filterButtons = FILTERS.map(({ label, type }) => {
@@ -65,6 +68,21 @@ function card(d: Drawing) {
     baby.textContent = `${(d.hatchAt ?? 0) > Date.now() ? '🥚 Hatching soon!' : '🐣'} Baby of ${names.join(' & ')}`;
     lines.push(baby);
   }
+  const where = population[d.id];
+  if (where) {
+    // Where it lives: the original's place first (🏠), then wherever else there are more of it.
+    const places = Object.entries(where.places).sort(([a, x], [b, y]) => Number(b === where.home) - Number(a === where.home) || y - x);
+    const line = document.createElement('div');
+    line.className = 'meta where';
+    line.textContent = places
+      .map(([id, n]) => {
+        const p = placeById(id);
+        const icon = p ? BIOME_NAMES[p.biome].split(' ')[0] : '';
+        return `${icon} ${p?.name ?? id}${n > 1 ? ` ×${n}` : ''}${id === where.home ? ' 🏠' : ''}`;
+      })
+      .join(' · ');
+    lines.push(line);
+  }
 
   const remove = document.createElement('button');
   remove.textContent = 'Remove';
@@ -94,8 +112,18 @@ function card(d: Drawing) {
 }
 
 async function refresh() {
-  drawings = await fetchDrawings();
+  [drawings, population] = await Promise.all([fetchDrawings(), fetchPopulation().catch(() => population)]);
   render();
+}
+
+/** Who lives where changes as drawings come and go (and slowly by itself): look again shortly after. */
+let populationTimer = 0;
+function refreshPopulationSoon() {
+  clearTimeout(populationTimer);
+  populationTimer = window.setTimeout(async () => {
+    population = await fetchPopulation().catch(() => population);
+    render();
+  }, 800);
 }
 
 void refresh();
@@ -109,6 +137,7 @@ connectLive(
       return;
     }
     render();
+    refreshPopulationSoon();
   },
   () => void refresh(),
 );

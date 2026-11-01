@@ -1,28 +1,65 @@
 import type { Server } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
-import type { ServerMessage } from '../shared/types.ts';
+import type { ClientMessage, ServerMessage } from '../shared/types.ts';
 
-let wss: WebSocketServer | null = null;
-
-/** onConnect sends a newly connected screen what it needs to catch up. */
-export function attachWebSocket(server: Server, onConnect: (send: (message: ServerMessage) => void) => void) {
-  wss = new WebSocketServer({ server, path: '/ws' });
-  wss.on('connection', (socket) => onConnect((message) => socket.send(JSON.stringify(message))));
+/** A connected screen, and the place it's showing (null: the map, or not said yet). */
+export interface Screen {
+  send(message: ServerMessage): void;
+  place: string | null;
 }
 
-const open = () => [...(wss?.clients ?? [])].filter((c) => c.readyState === WebSocket.OPEN);
+const screens = new Map<WebSocket, Screen>();
+
+/** onConnect sends a newly connected screen what it needs; onWatch, when it moves to another place. */
+export function attachWebSocket(
+  server: Server,
+  handlers: { onConnect(screen: Screen): void; onWatch(screen: Screen): void },
+) {
+  const wss = new WebSocketServer({ server, path: '/ws' });
+  wss.on('connection', (socket) => {
+    const screen: Screen = { send: (message) => socket.send(JSON.stringify(message)), place: null };
+    screens.set(socket, screen);
+    socket.on('close', () => screens.delete(socket));
+    socket.on('message', (data) => {
+      let message: ClientMessage;
+      try {
+        message = JSON.parse(String(data));
+      } catch {
+        return;
+      }
+      if (message?.type === 'watch' && (message.place === null || typeof message.place === 'string')) {
+        screen.place = message.place;
+        handlers.onWatch(screen);
+      }
+    });
+    handlers.onConnect(screen);
+  });
+}
+
+const open = () => [...screens].filter(([socket]) => socket.readyState === WebSocket.OPEN).map(([, screen]) => screen);
 
 export const clientCount = () => open().length;
 
+/** Screens showing a place right now. */
+export const watchers = (place: string) => open().filter((s) => s.place === place);
+
 export function broadcast(message: ServerMessage) {
   const data = JSON.stringify(message);
-  for (const client of open()) client.send(data);
+  for (const [socket] of screens) if (socket.readyState === WebSocket.OPEN) socket.send(data);
+}
+
+/** Sends to the screens showing one place. */
+export function broadcastTo(place: string, message: ServerMessage) {
+  const list = watchers(place);
+  if (!list.length) return;
+  const data = JSON.stringify(message);
+  for (const [socket, screen] of screens) if (screen.place === place && socket.readyState === WebSocket.OPEN) socket.send(data);
 }
 
 /** Sends to just one screen (the one connected longest), for jobs only one of them should do. */
 export function sendToOne(message: ServerMessage) {
-  const client = open()[0];
-  if (!client) return false;
-  client.send(JSON.stringify(message));
+  const screen = open()[0];
+  if (!screen) return false;
+  screen.send(message);
   return true;
 }

@@ -56,13 +56,20 @@ export class Documentary {
    * subject is who's being filmed (null: nobody); lines are what the name card says about them.
    * screen is the screen's size, for the card.
    */
-  update(dt: number, world: World, screen: Screen, subject: Creature | null, lines: (c: Creature) => string[]) {
+  update(
+    dt: number,
+    world: World,
+    screen: Screen,
+    subject: Creature | null,
+    lines: (c: Creature) => string[],
+    nameOf = (c: Creature) => c.drawing.name,
+  ) {
     if (subject?.view.destroyed) subject = null;
     if (subject !== this.subject) {
       this.subject = subject;
       if (subject) {
         if (this.zoom < 1.05) this.focus = { x: subject.view.x, y: subject.view.y };
-        this.title.text = `🎬 ${subject.drawing.name}`;
+        this.title.text = `🎬 ${nameOf(subject)}`;
         this.lines.text = [`drawn by ${subject.drawing.artist}`, ...lines(subject)].filter(Boolean).join('\n');
       }
     }

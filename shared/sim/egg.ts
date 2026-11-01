@@ -1,7 +1,7 @@
 import type { Drawing } from '../types.ts';
 import { newPose, type SimCreature } from './creature.ts';
 import { depthScale } from './math.ts';
-import { burst, sandY, type World } from './world.ts';
+import { burst, sandY, waterY, type World } from './world.ts';
 
 export const EGG_Z = 0.15;
 
@@ -13,28 +13,34 @@ export class SimEgg implements SimCreature {
   private r: number;
 
   constructor(
+    readonly id: string,
     readonly drawing: Drawing,
     world: World,
     /** Laid just now: it sinks down from midwater instead of already lying on the sand. */
     sinking: boolean,
+    readonly hatchAt: number,
+    nest: number,
   ) {
     this.r = world.height * 0.03 * depthScale(EGG_Z);
+    // Laid in the water, never up on a dry beach.
+    const x = Math.max(nest * world.width, world.waterLeft + this.r * 4);
     Object.assign(this.pose, {
-      x: (drawing.nest ?? 0.5) * world.width,
-      y: sinking ? world.height * 0.45 : this.rest(world),
+      x,
+      y: sinking ? waterY(world, 0.52) : 0,
       sx: this.r,
       sy: this.r,
       z: EGG_Z,
     });
+    if (!sinking) this.pose.y = this.rest(world);
   }
 
   private rest(world: World) {
-    return sandY(world, EGG_Z) - this.r * 1.3;
+    return sandY(world, EGG_Z, this.pose.x) - this.r * 1.3;
   }
 
   /** True once it's time to hatch. */
   get ready() {
-    return Date.now() >= (this.drawing.hatchAt ?? 0);
+    return Date.now() >= this.hatchAt;
   }
 
   update(dt: number, world: World) {
@@ -46,7 +52,7 @@ export class SimEgg implements SimCreature {
       if (p.y === rest) burst(world, p.x, rest + this.r, 5);
     }
     // How close to hatching it is (0..1 over the last minute), so the screens can wobble it.
-    const left = ((this.drawing.hatchAt ?? 0) - Date.now()) / 1000;
+    const left = (this.hatchAt - Date.now()) / 1000;
     p.effort = left < 60 ? 1 - Math.max(0, left) / 60 : 0;
   }
 }

@@ -77,6 +77,10 @@
 .sizes span { display: block; border-radius: 50%; background: var(--text); }
 .submit input[type='text'] { width: 200px; }
 .fill { color: var(--muted); font-size: 0.9rem; }
+.where { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; justify-content: center; flex-basis: 100%; }
+.habitats { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.habitats button { padding: 4px 10px; font-size: 0.85rem; }
+.where select { font: inherit; }
 .toast { min-height: 1.4em; margin: 0; color: var(--accent); font-weight: bold; text-align: center; }
 .toast.error { color: var(--danger); }
 .photo-panel {

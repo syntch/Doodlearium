@@ -52,7 +52,7 @@ export class Seasons {
       const z = rand(0.3, 0.8);
       const r = world.height * rand(0.035, 0.05) * (1 - z * 0.4);
       const x = nx * world.width;
-      const y = sandY(world, z) - r * 0.8;
+      const y = sandY(world, z, x) - r * 0.8;
       for (const dx of [-0.45, 0.45, 0]) {
         this.pumpkins.ellipse(x + dx * r, y, r * (dx ? 0.62 : 0.7), r * 0.8).fill(dx ? 0xd96a14 : 0xf08a24).stroke({ width: 1.5, color: 0x9a4508 });
       }
@@ -72,7 +72,7 @@ export class Seasons {
         const z = rand(0.3, 0.8);
         const r = world.height * rand(0.035, 0.05) * (1 - z * 0.4);
         const x = nx * world.width;
-        const y = sandY(world, z) - r * 0.8;
+        const y = sandY(world, z, x) - r * 0.8;
         const flicker = 0.55 + 0.25 * Math.sin(world.time * 9 + nx * 40) + 0.2 * Math.sin(world.time * 23 + nx * 7);
         const color = 0xffc23a;
         const alpha = (0.35 + 0.65 * night) * flicker;

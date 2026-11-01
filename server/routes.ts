@@ -16,7 +16,9 @@ import {
 } from '../shared/types.ts';
 import { addStory, historyBetween, listStories, record } from './history.ts';
 import { addDrawing, listDrawings, removeDrawing, updateDrawing } from './store.ts';
-import { EGG_GAP, HATCH_TIME, drawingAdded, drawingRemoved, drawingUpdated, feed, runCommand, schedule } from './world.ts';
+import { BIOMES, type Biome } from '../shared/world/biomes.ts';
+import { placeById, placeName } from '../shared/world/places.ts';
+import { EGG_GAP, HATCH_TIME, drawingAdded, drawingRemoved, drawingUpdated, feed, runCommand, schedule, whereSpecies } from './world.ts';
 import { broadcast } from './ws.ts';
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -77,6 +79,12 @@ function parseDrawing(body: any) {
     nocturnal: body.nocturnal === true,
     parts,
     glow: glowPng !== null,
+    // Where the species lives, and whether it comes in groups (unset: the usual for its style).
+    habitats: Array.isArray(body.habitats) && body.habitats.length
+      ? [...new Set<Biome>(body.habitats.filter((b: unknown) => BIOMES.includes(b as Biome)))]
+      : undefined,
+    group: typeof body.group === 'boolean' ? body.group : undefined,
+    home: typeof body.home === 'string' && placeById(body.home)?.live ? body.home : undefined,
   };
   return { meta, png: png.bytes, extra: { parts: partsPng?.bytes ?? null, glow: glowPng?.bytes ?? null } };
 }
@@ -145,8 +153,8 @@ api.post('/drawings', async (req, res) => {
   }
   const drawing = await addDrawing(parsed.meta, parsed.png, parsed.extra);
   broadcast({ type: 'drawing:added', drawing });
-  drawingAdded(drawing);
-  record('joined', [drawing.id], `🎨 ${drawing.name}, drawn by ${drawing.artist}, joined the tank.`);
+  const place = drawingAdded(drawing);
+  record('joined', [drawing.id], `🎨 ${drawing.name}, drawn by ${drawing.artist}, moved into ${placeName(place)}.`, place);
   res.status(201).json(drawing);
 });
 
@@ -162,7 +170,7 @@ api.put('/drawings/:id', async (req, res) => {
     return;
   }
   broadcast({ type: 'drawing:updated', drawing });
-  drawingUpdated();
+  drawingUpdated(drawing);
   res.json(drawing);
 });
 
@@ -188,13 +196,15 @@ api.post('/eggs', async (req, res) => {
     return;
   }
   const nest = typeof req.body.nest === 'number' ? Math.min(0.95, Math.max(0.05, req.body.nest)) : 0.5;
-  const meta = { ...parsed.meta, parents: [parents[0], parents[1]] as [string, string], hatchAt: now + HATCH_TIME, nest };
+  // Laid where its parents are: that's its home.
+  const home = typeof req.body.place === 'string' && placeById(req.body.place)?.live ? req.body.place : parsed.meta.home;
+  const meta = { ...parsed.meta, home, parents: [parents[0], parents[1]] as [string, string], hatchAt: now + HATCH_TIME, nest };
   // Babies take after their parents' moving parts and glowing paint too.
   const drawing = await addDrawing(meta, parsed.png, parsed.extra);
   broadcast({ type: 'drawing:added', drawing });
-  drawingAdded(drawing);
+  const place = drawingAdded(drawing);
   const names = drawing.parents!.map((id) => all.find((d) => d.id === id)?.name ?? 'someone');
-  record('egg', [drawing.id, ...drawing.parents!], `🥚 ${names[0]} and ${names[1]} laid an egg on the sand.`);
+  record('egg', [drawing.id, ...drawing.parents!], `🥚 ${names[0]} and ${names[1]} laid an egg at ${placeName(place)}.`, place);
   res.status(201).json(drawing);
 });
 
@@ -208,15 +218,15 @@ api.post('/feed', (req, res) => {
   }
   lastFeed = now;
   const x = typeof req.body?.x === 'number' && req.body.x >= 0 && req.body.x <= 1 ? req.body.x : 0.15 + Math.random() * 0.7;
-  feed(x);
+  feed(x, typeof req.body?.place === 'string' ? req.body.place : undefined);
   res.status(204).end();
 });
 
 /** A ⚙️ menu command for the tank: { command, value }, and (to schedule it) at, in ms since 1970. */
 function parseCommand(body: any) {
-  const { command, value = null } = body ?? {};
+  const { command, value = null, place } = body ?? {};
   const okValue = value === null || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value)) || (typeof value === 'string' && value.length <= 20);
-  return TANK_COMMANDS.includes(command) && okValue ? { command, value } : null;
+  return TANK_COMMANDS.includes(command) && okValue ? { command, value, place: typeof place === 'string' ? place : undefined } : null;
 }
 
 /** Does a ⚙️ menu command now; answers with a line to show, if there is one. */
@@ -226,7 +236,7 @@ api.post('/tank', (req, res) => {
     res.status(400).json({ error: `command must be one of ${TANK_COMMANDS.join(', ')}` });
     return;
   }
-  res.json({ say: runCommand(parsed.command, parsed.value) });
+  res.json({ say: runCommand(parsed.command, parsed.value, parsed.place) });
 });
 
 /** Does a ⚙️ menu command later (up to a week ahead). */
@@ -237,8 +247,13 @@ api.post('/schedule', (req, res) => {
     res.status(400).json({ error: 'needs a command and a time within the next week' });
     return;
   }
-  schedule(parsed.command, parsed.value, at);
+  schedule(parsed.command, parsed.value, at, parsed.place);
   res.status(204).end();
+});
+
+/** Where every species lives, by drawing id. */
+api.get('/population', (_req, res) => {
+  res.json(whereSpecies());
 });
 
 /** The tank's history: ?from=&to= (ms since 1970) and ?who= (a drawing id) narrow it down. */

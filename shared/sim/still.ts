@@ -11,17 +11,18 @@ export class SimStill implements SimCreature {
   readonly pose = newPose();
 
   constructor(
+    readonly id: string,
     readonly drawing: Drawing,
     readonly kind: 'plant' | 'decor',
     world: World,
   ) {
-    const rand = seededRandom(drawing.id);
+    const rand = seededRandom(id);
     const z = rand();
     const nx = kind === 'plant' ? rand(0.04, 0.96) : rand(0.05, 0.95);
     const size = kind === 'plant' ? rand(0.8, 1.25) : rand(0.85, 1.2);
     const [tall, wide] = kind === 'plant' ? [0.32, 0.22] : [0.2, 0.25];
     const scale = Math.min((world.height * tall * size * depthScale(z)) / drawing.height, (world.width * wide) / drawing.width);
-    Object.assign(this.pose, { x: nx * world.width, y: sandY(world, z), sx: scale, sy: scale, z });
+    Object.assign(this.pose, { x: nx * world.width, y: sandY(world, z, nx * world.width), sx: scale, sy: scale, z });
   }
 
   hideout(): Hideout {

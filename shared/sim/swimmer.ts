@@ -1,9 +1,9 @@
 import { motionOf, type Drawing } from '../types.ts';
 import { newPose, type Personality, type Saved, type SimCreature } from './creature.ts';
 import type { Flake } from './food.ts';
-import { TAU, babyScale, clamp, depthScale, seededRandom } from './math.ts';
+import { TAU, clamp, depthScale, growScale, seededRandom } from './math.ts';
 import { SWIM_STYLES, type SwimStyle } from './styles.ts';
-import { bubble, heart, type World } from './world.ts';
+import { bubble, heart, waterY, type World } from './world.ts';
 
 /** How close to the glass a curious fish comes (negative depth is in front of everything). */
 const GLASS_Z = -0.7;
@@ -81,17 +81,19 @@ export class SimSwimmer implements SimCreature {
   private trailIn = 0;
 
   constructor(
+    readonly id: string,
     readonly drawing: Drawing,
     world: World,
     dropIn: boolean,
     saved?: Saved,
+    grownFrom?: number,
   ) {
-    const rand = seededRandom(drawing.id);
+    const rand = seededRandom(id);
     const roll = rand();
     let personality: Personality = roll < 0.3 ? 'curious' : roll < 0.5 ? 'shy' : 'easygoing';
     this.zHome = personality === 'shy' ? rand(0.65, 1) : rand();
     this.z = this.zGoal = this.zHome;
-    this.size = rand(0.75, 1.3) * babyScale(drawing);
+    this.size = rand(0.75, 1.3) * growScale(grownFrom);
     this.cruise = rand(0.7, 1.3);
     this.prowlIn = rand(10, 40);
     this.phase = rand(0, TAU);
@@ -120,7 +122,7 @@ export class SimSwimmer implements SimCreature {
     } else if (dropIn) {
       // Plunge in from above the water line, then settle into wandering.
       this.x = bounds.left + Math.random() * (bounds.right - bounds.left);
-      this.y = -this.texH * this.scale;
+      this.y = world.waterTop - this.texH * this.scale;
       this.vy = world.height * 0.45;
       this.dropTime = 1.6;
       this.facing = this.style.flips && Math.random() < 0.5 ? -1 : 1;
@@ -194,6 +196,7 @@ export class SimSwimmer implements SimCreature {
     this.dartCooldown -= dt;
     this.decide(dt, world);
     if (this.trick) this.doTrick(dt, world);
+    this.inWater(world, this.target);
 
     // Glide toward the depth we want: forward to the glass, back home, or alongside the school.
     if (Math.abs(this.zGoal - this.z) > 0.001) this.z += clamp(this.zGoal - this.z, -dt * 0.5, dt * 0.5);
@@ -236,6 +239,7 @@ export class SimSwimmer implements SimCreature {
       const b = this.bounds(world);
       this.y = clamp(this.y, b.top, b.bottom + this.halfLength * 0.3);
     }
+    if (this.dropTime <= 0) this.inWater(world, this);
 
     // Turn around by squashing through zero width, which reads as the creature rotating to face the other way.
     if (style.flips && this.puff < 0.3 && Math.abs(this.vx) > baseSpeed * 0.15) {
@@ -311,7 +315,7 @@ export class SimSwimmer implements SimCreature {
     if (this.trick?.kind !== 'dash') {
       const t = world.time * 0.22 + this.phase;
       this.target.x = clamp(world.width * (0.5 + 0.18 * Math.sin(t)), b.left, b.right);
-      this.target.y = clamp(world.height * (0.42 + 0.09 * Math.sin(t * 2)), b.top, b.bottom);
+      this.target.y = clamp(waterY(world, 0.49) + world.height * 0.09 * Math.sin(t * 2), b.top, b.bottom);
       this.legSpeed = 0.9;
     }
     this.trickIn -= dt;
@@ -431,8 +435,8 @@ export class SimSwimmer implements SimCreature {
     if (world.time > this.stalk.until || !world.fish.includes(prey) || prey.hide || prey.puffed) {
       world.notes.push({
         kind: 'chase',
-        hunter: this.drawing.id,
-        prey: prey.drawing.id,
+        hunter: this.id,
+        prey: prey.id,
         seconds: world.time - this.stalk.since,
         hid: prey.hide !== null,
       });
@@ -462,7 +466,7 @@ export class SimSwimmer implements SimCreature {
       if (!hunter) return false;
       // Puffers don't hide: they blow up into a spiky ball instead.
       if (this.style.puffs) {
-        if (!this.puffing) world.notes.push({ kind: 'scare', who: this.drawing.id, hunter: hunter.drawing.id });
+        if (!this.puffing) world.notes.push({ kind: 'scare', who: this.id, hunter: hunter.id });
         this.puffUp();
         return false;
       }
@@ -510,7 +514,7 @@ export class SimSwimmer implements SimCreature {
     if (world.time < this.fullUntil) return false;
     // Re-pick the nearest flake when ours is gone (eaten by someone else, or fading on the sand).
     if (!this.meal || this.meal.eaten || this.meal.landedFor > 5) {
-      this.meal = world.food.nearest(this.x, this.y, this.style.machine ? world.height * 0.72 : -Infinity);
+      this.meal = world.food.nearest(this.x, this.y, this.style.machine ? waterY(world, 0.84) : -Infinity);
     }
     if (!this.meal) return false;
     this.visit = null;
@@ -541,14 +545,14 @@ export class SimSwimmer implements SimCreature {
       if (Math.abs(this.meal.x - this.x) > this.halfLength * 0.7 || reach < -this.halfHeight * 2 || reach > Math.max(40, this.halfHeight * 1.2)) return;
       this.meal.eaten = true;
       this.meal = null;
-      world.notes.push({ kind: 'ate', who: this.drawing.id });
+      world.notes.push({ kind: 'ate', who: this.id });
       bubble(world, this.x, this.y + this.halfHeight * 0.4, 3);
       return;
     }
     if (Math.hypot(this.meal.x - this.headX(), this.meal.y - this.y) > Math.max(16, this.halfLength * 0.45)) return;
     this.meal.eaten = true;
     this.meal = null;
-    world.notes.push({ kind: 'ate', who: this.drawing.id });
+    world.notes.push({ kind: 'ate', who: this.id });
     bubble(world, this.headX(), this.y - 4, 2);
     this.plump = Math.min(0.12, this.plump + 0.012);
     if (++this.flakesEaten >= FLAKES_UNTIL_FULL) {
@@ -559,11 +563,10 @@ export class SimSwimmer implements SimCreature {
   }
 
   private followSchool(world: World) {
-    const school = world.school;
-    if (!school) return false;
     // The leader just wanders as usual; the others keep up with it.
+    const school = world.schools.find((s) => s.members.includes(this));
+    if (!school) return false;
     const place = school.members.indexOf(this);
-    if (place === -1) return false;
     const leader = school.leader;
     const dir = Math.sign(leader.facing) || 1;
     const row = Math.floor(place / 2) + 1;
@@ -587,7 +590,7 @@ export class SimSwimmer implements SimCreature {
       // Swim toward the middle of the tank while coming forward.
       this.zGoal = GLASS_Z;
       this.target.x = world.width * (0.35 + (this.phase % 1) * 0.3);
-      this.target.y = world.height * 0.45;
+      this.target.y = waterY(world, 0.52);
       this.legSpeed = 0.8;
       if (Math.hypot(this.target.x - this.x, this.target.y - this.y) < 40 && Math.abs(this.z - GLASS_Z) < 0.1) {
         visit.hovering = true;
@@ -680,18 +683,28 @@ export class SimSwimmer implements SimCreature {
     // Shy ones keep low, near the plants.
     this.target.x = b.left + Math.random() * (b.right - b.left);
     const y = this.y + (Math.random() - 0.5) * world.height * 0.35 * (this.style.vertical >= 1 ? 1.8 : 1);
-    this.target.y = clamp(this.personality === 'shy' ? Math.max(y, world.height * 0.5) : y, b.top, b.bottom);
+    this.target.y = clamp(this.personality === 'shy' ? Math.max(y, waterY(world, 0.58)) : y, b.top, b.bottom);
     this.retargetIn = 6 + Math.random() * 8;
   }
 
   private bounds(world: World) {
     const halfW = (this.texW * this.scale) / 2;
     const halfH = (this.texH * this.scale) / 2;
+    const top = world.waterTop + world.height * 0.06 + halfH;
     return {
-      left: halfW + 10,
-      right: Math.max(halfW + 11, world.width - halfW - 10),
-      top: world.height * 0.06 + halfH,
-      bottom: Math.max(world.height * 0.06 + halfH + 1, world.floorY - halfH * 0.6),
+      left: world.waterLeft + halfW + 10,
+      right: Math.max(world.waterLeft + halfW + 11, world.width - halfW - 10),
+      top,
+      bottom: Math.max(top + 1, world.floorY - halfH * 0.6),
     };
+  }
+
+  /** Keeps a point in the water where the bottom slopes up (the seashore): above the sand, below the waves. */
+  private inWater(world: World, p: { x: number; y: number }) {
+    const halfW = (this.texW * this.scale) / 2;
+    const halfH = (this.texH * this.scale) / 2;
+    p.x = Math.max(p.x, world.waterLeft + halfW + 10);
+    p.y = Math.min(p.y, world.floorAt(p.x) - halfH * 0.6);
+    p.y = Math.max(p.y, world.waterTop + halfH * 0.4);
   }
 }

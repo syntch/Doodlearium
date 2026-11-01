@@ -32,12 +32,13 @@ export class SimCrawler implements SimCreature {
   private hopIn = 0;
 
   constructor(
+    readonly id: string,
     readonly drawing: Drawing,
     world: World,
     dropIn: boolean,
     saved?: Saved,
   ) {
-    const rand = seededRandom(drawing.id);
+    const rand = seededRandom(id);
     this.z = rand(0.2, 0.9);
     this.size = rand(0.85, 1.15);
     this.pace = rand(0.8, 1.2);
@@ -80,7 +81,7 @@ export class SimCrawler implements SimCreature {
   }
 
   update(dt: number, world: World) {
-    const ground = sandY(world, this.z);
+    const ground = sandY(world, this.z, this.x);
     if (this.starring && this.air === 0) {
       this.hopIn -= dt;
       if (this.hopIn <= 0) {
@@ -112,7 +113,7 @@ export class SimCrawler implements SimCreature {
       if (this.meal && Math.abs(dx) < Math.max(10, this.halfWidth * 0.4)) {
         this.meal.eaten = true;
         this.meal = null;
-        world.notes.push({ kind: 'ate', who: this.drawing.id });
+        world.notes.push({ kind: 'ate', who: this.id });
         this.resting = 0.6;
       }
 

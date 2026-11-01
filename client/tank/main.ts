@@ -2,7 +2,8 @@ import { Application, Assets, Container, RenderLayer, Text, type Texture } from 
 import { imageUrl, motionOf, type Drawing, type Motion, type TankCommand, type TankCommandValue } from '../../shared/types.ts';
 import { newPose, type Kind, type Personality, type Pose } from '../../shared/sim/creature.ts';
 import { unpackPose, type RosterEntry, type Settings, type Upcoming } from '../../shared/sim/protocol.ts';
-import { FLOOR_Y, WORLD_H, WORLD_W } from '../../shared/sim/world.ts';
+import { WORLD_H, WORLD_W } from '../../shared/sim/world.ts';
+import { LIVE_PLACES, placeById } from '../../shared/world/places.ts';
 import { connectLive, feedFish, fetchDrawings, layEgg, scheduleTankCommand, sendTankCommand } from '../shared/api.ts';
 import { Glow, loadGlow, type GlowTextures } from './glow.ts';
 import { makeEgg } from './babies.ts';
@@ -15,21 +16,41 @@ import { Food } from './food.ts';
 import { loadCutout, type Cutout } from './parts.ts';
 import { Scene } from './scene.ts';
 import { Timeline } from './timeline.ts';
-import type { Creature, World } from './world.ts';
+import { shapeFor, type Creature, type World } from './world.ts';
 
 /**
- * The tank, drawn from the server's world: the server decides where everyone is and what happens
- * (shared/sim, server/world.ts), so every screen shows the same tank. This page draws it, about a fifth of
- * a second behind, with all the wiggling, bending, glowing and bubbling done here.
+ * A place in the world (the Lake, the Pond...), drawn from the server's world: the server decides where
+ * everyone is and what happens (shared/sim, server/world.ts), so every screen showing a place shows the same
+ * thing. This page draws it, about a fifth of a second behind, with all the wiggling, bending, glowing and
+ * bubbling done here.
  */
 
-interface Entry {
+/** A species' pictures, loaded once and shared by every one of it on screen. */
+interface Look {
+  key: string;
   drawing: Drawing;
+  refs: number;
+  ready: Promise<Loaded | null>;
+}
+
+interface Loaded {
+  texture: Texture;
+  /** Drawings with animated parts are split into their own textures. */
+  cutout?: Cutout;
+  glowTextures: GlowTextures | null;
+}
+
+interface Entry {
+  /** This creature (a species' original has the drawing's id; the others, "a Clowny", have their own). */
+  id: string;
+  named: boolean;
+  drawing: Drawing;
+  look: Look;
   kind: Kind;
   personality?: Personality;
+  hatchAt?: number;
   creature: Creature;
   texture: Texture;
-  /** Drawings with animated parts are split into their own textures, freed with the entry. */
   cutout?: Cutout;
   /** Glowing paint, and (for an egg) the textures waiting for the baby. */
   glow?: Glow;
@@ -57,7 +78,18 @@ document.body.append(app.canvas);
 
 const scene = new Scene();
 const food = new Food();
-const world: World = { width: WORLD_W, height: WORLD_H, floorY: FLOOR_Y, time: 0, scene, current: 0 };
+const PLACE_KEY = 'doodlearium:place';
+/** The place on screen: ?place= (for a bookmark), else the one watched last, else the Lake. */
+let place = (() => {
+  const asked = new URLSearchParams(location.search).get('place');
+  if (asked && placeById(asked)?.live) return asked;
+  try {
+    const last = localStorage.getItem(PLACE_KEY);
+    if (last && placeById(last)?.live) return last;
+  } catch {}
+  return 'lake';
+})();
+const world: World = { width: WORLD_W, height: WORLD_H, ...shapeFor(placeById(place)!.biome), time: 0, scene, current: 0 };
 const timeline = new Timeline();
 const creatureLayer = new Container({ sortableChildren: true });
 /** Night creatures sit above the night tint, so they stay bright while the rest of the tank dims. */
@@ -91,18 +123,21 @@ scene.onBloop = () => sounds.bubble();
 app.stage.addChild(fit, documentary.spotlight, labelLayer, documentary.card, emptyMessage);
 // A handle for poking at the tank from the browser console.
 Object.assign(window, {
-  doodlearium: { app, world, timeline, entries: () => entries, pose: (id: string) => entries.get(id)?.pose },
+  doodlearium: { app, world, timeline, entries: () => entries, looks: () => looks, pose: (id: string) => entries.get(id)?.pose, goTo: (id: string) => goTo(id) },
 });
 
 const entries = new Map<string, Entry>();
+const looks = new Map<string, Look>();
 /** Old versions of edited drawings, fading out while the new version fades in. */
 const retiring: Entry[] = [];
 const loading = new Set<string>();
 const labels: Label[] = [];
 /** Every drawing the server has, by id, for parents' names. */
 const known = new Map<string, Drawing>();
-/** Who the server says is in the tank. */
+/** Who the server says is in this place. */
 let roster: RosterEntry[] = [];
+/** How many of each species there are in the whole world. */
+let speciesCounts: Record<string, number> = {};
 let nextRandomLabel = 12;
 
 const screenSize = { width: 0, height: 0 };
@@ -125,6 +160,53 @@ const coming = document.querySelector<HTMLDivElement>('#coming')!;
 relayoutIfResized();
 
 const parentNames = (d: Drawing) => (d.parents ?? []).map((id) => known.get(id)?.name ?? '?').join(' & ');
+/** "Clowny" for the original, "a Clowny" for the rest. */
+const nameOf = (e: Entry) => (e.named ? e.drawing.name : `a ${e.drawing.name}`);
+/** "Clownies"-ish: good enough for "two Clownys". */
+const plural = (name: string) => (/(s|sh|ch|x)$/i.test(name) ? `${name}es` : `${name}s`);
+
+/** Starts loading a species' pictures (or shares the ones already loaded). Give it back with releaseLook. */
+function useLook(drawing: Drawing): Look {
+  const key = `${drawing.id}@${drawing.updatedAt ?? drawing.createdAt}`;
+  let look = looks.get(key);
+  if (!look) {
+    const ready = (async (): Promise<Loaded | null> => {
+      try {
+        let texture: Texture;
+        let cutout: Cutout | undefined;
+        if (drawing.parts?.length) {
+          cutout = await loadCutout(drawing, imageUrl(drawing));
+          texture = cutout.body;
+        } else {
+          texture = await Assets.load<Texture>(imageUrl(drawing));
+        }
+        const glowTextures = drawing.glow ? await loadGlow(drawing).catch(() => null) : null;
+        return { texture, cutout, glowTextures };
+      } catch (err) {
+        console.warn(`Could not load ${drawing.id}`, err);
+        return null;
+      }
+    })();
+    look = { key, drawing, refs: 0, ready };
+    looks.set(key, look);
+  }
+  look.refs++;
+  return look;
+}
+
+function releaseLook(look: Look) {
+  if (--look.refs > 0) return;
+  looks.delete(look.key);
+  void look.ready.then((loaded) => {
+    if (!loaded) return;
+    for (const t of loaded.glowTextures ? [loaded.glowTextures, ...loaded.glowTextures.pieces] : []) {
+      t.glow?.destroy(true);
+      t.uv?.destroy(true);
+    }
+    if (loaded.cutout) loaded.cutout.destroy();
+    else void Assets.unload(imageUrl(look.drawing));
+  });
+}
 
 /** Brings the screen in line with who the server says is in the tank. */
 function applyRoster() {
@@ -132,7 +214,7 @@ function applyRoster() {
   for (const [id, entry] of entries) if (!ids.has(id)) entry.removing = true;
   let missing = false;
   for (const r of roster) {
-    const drawing = known.get(r.id);
+    const drawing = known.get(r.species);
     if (!drawing) {
       missing = true;
       continue;
@@ -156,7 +238,7 @@ function refreshDrawings() {
   refreshing ??= fetchDrawings()
     .then((drawings) => {
       for (const d of drawings) known.set(d.id, d);
-      for (const r of roster) if (!known.has(r.id)) console.warn(`The tank has ${r.id}, but it isn't in the drawings`);
+      for (const r of roster) if (!known.has(r.species)) console.warn(`${place} has ${r.id}, but ${r.species} isn't in the drawings`);
       applyRoster();
     })
     .catch((err) => console.warn('Could not load drawings', err))
@@ -165,47 +247,36 @@ function refreshDrawings() {
 }
 
 async function addEntry(drawing: Drawing, r: RosterEntry) {
-  if (entries.has(drawing.id) || loading.has(drawing.id)) return;
-  loading.add(drawing.id);
-  let texture: Texture;
-  let cutout: Cutout | undefined;
-  try {
-    if (drawing.parts?.length) {
-      cutout = await loadCutout(drawing, imageUrl(drawing));
-      texture = cutout.body;
-    } else {
-      texture = await Assets.load<Texture>(imageUrl(drawing));
-    }
-  } catch (err) {
-    console.warn(`Could not load ${drawing.id}`, err);
-    return;
-  } finally {
-    loading.delete(drawing.id);
-  }
-  const glowTextures = drawing.glow ? await loadGlow(drawing).catch(() => null) : null;
-  // It may have hatched (or gone) while loading.
-  const now = roster.find((x) => x.id === drawing.id);
-  if (!now || entries.has(drawing.id)) {
-    if (cutout) cutout.destroy();
-    else void Assets.unload(imageUrl(drawing));
+  const { id } = r;
+  if (entries.has(id) || loading.has(id)) return;
+  loading.add(id);
+  const shownPlace = place;
+  const look = useLook(drawing);
+  const loaded = await look.ready;
+  loading.delete(id);
+  // It may have hatched (or gone, or the screen moved on) while loading.
+  const now = roster.find((x) => x.id === id);
+  if (!loaded || !now || entries.has(id) || place !== shownPlace) {
+    releaseLook(look);
     return;
   }
+  const { texture, cutout, glowTextures } = loaded;
 
   const creature = createCreature(drawing, now.kind, texture, cutout?.pieces);
   const pose = newPose();
   if (now.still) unpackPose(now.still, pose);
   const entry: Entry = {
-    drawing, kind: now.kind, personality: now.personality, creature, texture, cutout, glowTextures, pose,
-    still: Boolean(now.still), fade: 0, removing: false,
+    id, named: Boolean(now.named), drawing, look, kind: now.kind, personality: now.personality, hatchAt: now.hatchAt,
+    creature, texture, cutout, glowTextures, pose, still: Boolean(now.still), fade: 0, removing: false,
   };
   if (now.kind !== 'egg') attachGlow(entry);
   creature.view.alpha = 0;
-  entries.set(drawing.id, entry);
+  entries.set(id, entry);
   (drawing.nocturnal ? nightLayer : creatureLayer).addChild(creature.view);
 
   if (r.fresh && now.kind === 'egg') {
     entry.fade = 1;
-    showLabel(entry, 10, '', `🥚 An egg from ${parentNames(drawing)}!`);
+    showLabel(entry, 10, '', `🥚 An egg from ${entry.named ? parentNames(drawing) : `two ${plural(drawing.name)}`}!`);
   } else if (r.fresh) {
     entry.fade = 1;
     // A night creature added in daytime says hello, then goes back to sleep until dark.
@@ -234,19 +305,19 @@ function hatch(entry: Entry, r: RosterEntry) {
   sounds.chime();
   for (const l of labels.filter((l) => l.entry === entry)) l.remaining = 0;
   updateLabels(0);
-  showLabel(entry, 12, `🐣 just hatched! Baby of ${parentNames(entry.drawing)}`);
+  showLabel(entry, 12, entry.named ? `🐣 just hatched! Baby of ${parentNames(entry.drawing)}` : '🐣 just hatched!', entry.named ? undefined : `🐣 A baby ${entry.drawing.name} just hatched!`);
 }
 
 async function replaceEntry(drawing: Drawing, r: RosterEntry) {
-  const old = entries.get(drawing.id);
+  const old = entries.get(r.id);
   if (old) {
-    entries.delete(drawing.id);
+    entries.delete(r.id);
     old.removing = true;
     retiring.push(old);
   }
   await addEntry(drawing, r);
-  const updated = entries.get(drawing.id);
-  if (updated) showLabel(updated, 6);
+  const updated = entries.get(r.id);
+  if (updated?.named) showLabel(updated, 6);
 }
 
 /** One misbehaving drawing must never freeze the whole tank: it is taken out instead. */
@@ -260,24 +331,16 @@ function safeUpdate(entry: Entry, dt: number) {
   }
 }
 
-function destroyEntry({ creature, cutout, glow, glowTextures, drawing }: Entry) {
-  if (glow) glow.destroy();
-  else {
-    for (const t of glowTextures ? [glowTextures, ...glowTextures.pieces] : []) {
-      t.glow?.destroy(true);
-      t.uv?.destroy(true);
-    }
-  }
+function destroyEntry({ creature, glow, look }: Entry) {
+  glow?.destroy(true);
   creature.view.destroy({ children: true });
-  if (cutout) cutout.destroy();
-  else void Assets.unload(imageUrl(drawing));
+  releaseLook(look);
 }
 
 function showLabel(entry: Entry, seconds: number, note = '', title?: string) {
   if (labels.some((l) => l.entry === entry)) return;
-  const { name, artist } = entry.drawing;
   const text = new Text({
-    text: title ?? `${name}\nby ${artist}${note ? `\n${note}` : ''}`,
+    text: title ?? `${nameOf(entry)}\nby ${entry.drawing.artist}${note ? `\n${note}` : ''}`,
     style: {
       fontFamily: 'Trebuchet MS, sans-serif',
       fontSize: Math.max(16, screenSize.height * 0.022),
@@ -298,7 +361,7 @@ function updateLabels(dt: number) {
     const label = labels[i];
     label.remaining -= dt;
     const creature = label.entry.creature;
-    if (label.remaining <= 0 || creature.view.destroyed || entries.get(label.entry.drawing.id) !== label.entry) {
+    if (label.remaining <= 0 || creature.view.destroyed || entries.get(label.entry.id) !== label.entry) {
       label.text.destroy();
       labels.splice(i, 1);
       continue;
@@ -312,23 +375,34 @@ function updateLabels(dt: number) {
   nextRandomLabel -= dt;
   if (nextRandomLabel <= 0 && !documentary.filming) {
     nextRandomLabel = 15 + Math.random() * 15;
-    const visible = [...entries.values()].filter((e) => !e.removing && e.fade > 0.9);
+    // The originals are introduced more often than the crowd.
+    const visible = [...entries.values()].filter((e) => !e.removing && e.fade > 0.9 && (e.named || Math.random() < 0.3));
     if (visible.length) showLabel(visible[Math.floor(Math.random() * visible.length)], 5);
   }
 }
 
-const describe = (d: Drawing) => {
+const describe = (e: Entry) => {
+  const d = e.drawing;
   const lines = [];
   if (d.parents) lines.push(`baby of ${parentNames(d)}`);
-  const days = Math.floor((Date.now() - d.createdAt) / 86_400_000);
-  lines.push(days < 1 ? 'new to the tank today' : `in the tank for ${days} day${days === 1 ? '' : 's'}`);
+  const count = speciesCounts[d.id] ?? 0;
+  if (!e.named && count > 1) lines.push(`one of ${count} ${plural(d.name)} in the world`);
+  else {
+    const days = Math.floor((Date.now() - d.createdAt) / 86_400_000);
+    lines.push(days < 1 ? 'new to the world today' : `in the world for ${days} day${days === 1 ? '' : 's'}`);
+  }
   if (d.nocturnal) lines.push('a night creature 🌙');
   return lines;
 };
 
+const entryOf = (c: Creature) => [...entries.values()].find((e) => e.creature === c);
 const cardLines = (c: Creature) => {
-  const entry = entries.get(c.drawing.id);
-  return [...describe(c.drawing), aboutOf(c.drawing, entry?.personality)];
+  const entry = entryOf(c);
+  return entry ? [...describe(entry), aboutOf(c.drawing, entry.personality)] : [];
+};
+const cardName = (c: Creature) => {
+  const entry = entryOf(c);
+  return entry ? nameOf(entry) : c.drawing.name;
 };
 
 /** What the ⚙️ menu shows as on, last time it was updated. */
@@ -374,7 +448,7 @@ app.ticker.add((ticker) => {
     const entry = retiring[i];
     entry.fade = Math.max(0, entry.fade - dt / FADE_SECONDS);
     entry.creature.view.alpha = entry.fade;
-    if (!entry.still) timeline.pose(entry.drawing.id, entry.pose);
+    if (!entry.still) timeline.pose(entry.id, entry.pose);
     safeUpdate(entry, dt);
     entry.glow?.update(glowLevel, uvLevel);
     if (entry.fade === 0) {
@@ -384,25 +458,29 @@ app.ticker.add((ticker) => {
   }
 
   const starring = frame?.doc ? entries.get(frame.doc.id) : undefined;
-  documentary.update(dt, world, screenSize, starring && !starring.removing ? starring.creature : null, cardLines);
+  documentary.update(dt, world, screenSize, starring && !starring.removing ? starring.creature : null, cardLines, cardName);
   if (documentary.filming) for (const l of labels) l.remaining = Math.min(l.remaining, 0.5);
   updateLabels(dt);
   showComingUp();
   emptyMessage.visible = roster.length === 0;
 });
 
-connectLive(
+const send = connectLive(
   (msg) => {
     switch (msg.type) {
       case 'frame':
-        timeline.push(msg.frame);
+        if (msg.frame.place === place) timeline.push(msg.frame);
         break;
       case 'roster':
+        if (msg.place !== place) break;
         roster = msg.creatures;
         applyRoster();
         break;
       case 'upcoming':
         upcoming = msg.items;
+        break;
+      case 'map':
+        speciesCounts = msg.species;
         break;
       case 'drawing:added':
       case 'drawing:updated':
@@ -416,20 +494,54 @@ connectLive(
         [0, 0.25, 0.5].forEach((delay) => setTimeout(() => sounds.plop(), delay * 1000 + Math.random() * 150));
         break;
       case 'egg:make':
-        void makeEggFor(msg.parents, msg.nest, msg.now);
+        void makeEggFor(msg.parents, msg.nest, msg.place, msg.now);
         break;
     }
   },
-  () => void refreshDrawings(),
+  () => {
+    send({ type: 'watch', place });
+    void refreshDrawings();
+  },
 );
 
+/** Moves this screen to another place: everyone here fades away and the new place's creatures load. */
+function goTo(id: string) {
+  const p = placeById(id);
+  if (!p?.live || id === place) return;
+  place = id;
+  try {
+    localStorage.setItem(PLACE_KEY, id);
+  } catch {}
+  placePicker.value = id;
+  for (const entry of [...entries.values(), ...retiring]) destroyEntry(entry);
+  entries.clear();
+  retiring.length = 0;
+  for (const l of labels) l.text.destroy();
+  labels.length = 0;
+  roster = [];
+  timeline.clear();
+  Object.assign(world, shapeFor(p.biome));
+  screenSize.width = 0;
+  relayoutIfResized();
+  send({ type: 'watch', place });
+}
+
+/** For now, a plain list of places to pick from (the map comes later). */
+const placePicker = document.createElement('select');
+placePicker.id = 'place';
+placePicker.title = 'Which place to watch';
+for (const p of LIVE_PLACES) placePicker.append(new Option(p.name, p.id));
+placePicker.value = place;
+placePicker.onchange = () => goTo(placePicker.value);
+document.querySelector('nav')!.append(placePicker);
+
 /** The server asked this screen to blend two parents into a baby (that takes a browser) and lay its egg. */
-async function makeEggFor([mumId, dadId]: [string, string], nest: number, now: boolean) {
+async function makeEggFor([mumId, dadId]: [string, string], nest: number, where: string, now: boolean) {
   const mum = known.get(mumId);
   const dad = known.get(dadId);
   if (!mum || !dad) return;
   try {
-    await layEgg(await makeEgg(mum, dad, nest), now);
+    await layEgg({ ...(await makeEgg(mum, dad, nest)), place: where }, now);
   } catch (err) {
     console.warn('Could not lay an egg', err);
   }
@@ -445,7 +557,7 @@ app.canvas.addEventListener('click', (e) => {
   }
   if (tapWoke) return;
   const at = camera.toLocal({ x: e.clientX, y: e.clientY });
-  void feedFish(Math.min(1, Math.max(0, at.x / world.width))).catch(() => {});
+  void feedFish(Math.min(1, Math.max(0, at.x / world.width)), place).catch(() => {});
 });
 
 // Keys for trying things out: D films a documentary, V brings a visitor, S toggles sound, B the blacklight.
@@ -496,11 +608,11 @@ async function command(cmd: TankCommand, value: TankCommandValue = null) {
   try {
     if (later.checked && laterTime.value) {
       const at = nextTime(laterTime.value);
-      await scheduleTankCommand(cmd, value, at.getTime());
+      await scheduleTankCommand(cmd, value, at.getTime(), place);
       later.checked = false;
       say(`⏰ Planned for ${clock(at)}.`);
     } else {
-      const text = await sendTankCommand(cmd, value);
+      const text = await sendTankCommand(cmd, value, place);
       if (text) say(text);
     }
   } catch {
@@ -519,7 +631,7 @@ menu.querySelectorAll<HTMLButtonElement>('[data-cmd]').forEach((b) => {
         say("🍤 Feeding can't be planned ahead (yet): it's now or never!");
         return;
       }
-      void feedFish().then((ok) => say(ok ? '🍤 Dinner time!' : '🍤 The fish are still eating.')).catch(() => {});
+      void feedFish(undefined, place).then((ok) => say(ok ? '🍤 Dinner time!' : '🍤 The fish are still eating.')).catch(() => {});
       return;
     }
     void command(cmd as TankCommand, parseValue(b.dataset.value));
@@ -660,10 +772,13 @@ function showInfo(x: number, y: number) {
   const d = entry.drawing;
   const egg = entry.kind === 'egg';
   const lines = egg
-    ? [`an egg from ${parentNames(d)}`, `hatching in about ${Math.max(1, Math.ceil(((d.hatchAt ?? 0) - Date.now()) / 60_000))} min`]
-    : [STYLE_NAMES[motionOf(d)], ...describe(d), aboutOf(d, entry.personality), d.glow ? '✨ has glowing paint' : ''];
+    ? [
+        entry.named ? `an egg from ${parentNames(d)}` : `an egg from two ${plural(d.name)}`,
+        `hatching in about ${Math.max(1, Math.ceil(((entry.hatchAt ?? d.hatchAt ?? 0) - Date.now()) / 60_000))} min`,
+      ]
+    : [STYLE_NAMES[motionOf(d)], ...describe(entry), aboutOf(d, entry.personality), d.glow ? '✨ has glowing paint' : ''];
   const b = document.createElement('b');
-  b.textContent = egg ? '🥚 Egg' : d.name;
+  b.textContent = egg ? '🥚 Egg' : entry.named ? d.name : `A ${d.name}`;
   const by = document.createElement('div');
   by.textContent = `by ${d.artist}`;
   info.replaceChildren(b, by, ...lines.filter(Boolean).map((t) => Object.assign(document.createElement('div'), { textContent: t })));

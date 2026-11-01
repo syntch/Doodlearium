@@ -146,12 +146,14 @@ export class Glow {
     }
   }
 
-  destroy() {
+  /** keepTextures: they're shared (the tank shares a species' pictures between all of it). */
+  destroy(keepTextures = false) {
     for (const { node } of this.nodes) {
       if (node.destroyed) continue;
       this.layer.detach(node);
       node.destroy();
     }
+    if (keepTextures) return;
     for (const t of [this.textures, ...this.textures.pieces]) {
       t.glow?.destroy(true);
       t.uv?.destroy(true);

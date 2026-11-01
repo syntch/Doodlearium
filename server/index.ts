@@ -6,7 +6,7 @@ import express from 'express';
 import { loadHistory } from './history.ts';
 import { api } from './routes.ts';
 import { DRAWINGS_DIR, loadStore } from './store.ts';
-import { startWorld, welcome } from './world.ts';
+import { onConnect, onWatch, startWorld } from './world.ts';
 import { attachWebSocket } from './ws.ts';
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -22,7 +22,7 @@ app.use('/drawings', express.static(DRAWINGS_DIR, { maxAge: '1y', immutable: tru
 if (existsSync(DIST_DIR)) app.use(express.static(DIST_DIR));
 
 const server = createServer(app);
-attachWebSocket(server, welcome);
+attachWebSocket(server, { onConnect, onWatch });
 
 server.listen(PORT, '0.0.0.0', () => {
   const lan = Object.values(networkInterfaces())

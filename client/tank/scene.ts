@@ -1,5 +1,6 @@
 import { Container, Graphics, Sprite, Texture } from 'pixi.js';
 import type { Effect } from '../../shared/sim/world.ts';
+import type { Biome } from '../../shared/world/biomes.ts';
 import { TAU, seededRandom, type World } from './world.ts';
 
 /** The part of the tank's units a screen shows: the tank itself plus extra water or sand around it. */
@@ -26,25 +27,84 @@ interface Heart {
   age: number;
 }
 
-const AERATORS = [0.14, 0.86];
+/** How a biome looks: its water from the surface down, its sky (if the water doesn't fill the screen) and its ground. */
+interface Look {
+  water: [string, string, string];
+  sky: [string, string];
+  sand: [number, number];
+  specks: [number, number];
+  rays: number;
+  /** Where bubbles stream up from (fractions across), like the old tank's aerators. */
+  aerators: number[];
+  /** Now and then a bubble rises from somewhere on the bottom. */
+  seeps: number;
+}
+
+const LOOKS: Partial<Record<Biome, Look>> = {
+  lake: {
+    water: ['#4fb8e0', '#1f78a8', '#0a3456'],
+    sky: ['#9fd8f5', '#d8f1ff'],
+    sand: [0xcbb07a, 0xb89a63],
+    specks: [0x8f7448, 0xe2cf9f],
+    rays: 1,
+    aerators: [0.14, 0.86],
+    seeps: 0,
+  },
+  pond: {
+    water: ['#7cbf8e', '#3b7d63', '#17392e'],
+    sky: ['#a9dcf2', '#e4f6e0'],
+    sand: [0x7d6a4a, 0x66553a],
+    specks: [0x4d4030, 0x9c8a62],
+    rays: 0.7,
+    aerators: [],
+    seeps: 0.6,
+  },
+  ocean: {
+    water: ['#3fa6db', '#135c94', '#03162d'],
+    sky: ['#8fd0f2', '#d6efff'],
+    sand: [0xd9c79c, 0xbfa977],
+    specks: [0x9a8660, 0xf0e3c0],
+    rays: 1.1,
+    aerators: [],
+    seeps: 1.5,
+  },
+  seashore: {
+    water: ['#63d3d6', '#2c9fbd', '#156d92'],
+    sky: ['#7cc8f0', '#e3f5ff'],
+    sand: [0xead39a, 0xd6bb7d],
+    specks: [0xb8995c, 0xfff1c9],
+    rays: 1.3,
+    aerators: [],
+    seeps: 0,
+  },
+};
+
 const RAY_COUNT = 6;
 
-/** Everything that isn't a drawing: water, light, sand, bubbles and the day/night tint. */
+/** Everything that isn't a drawing: water, sky, light, the bottom, bubbles and the day/night tint. */
 export class Scene {
   readonly back = new Container();
   readonly front = new Container();
 
   private background = new Sprite();
   private rays = new Graphics();
+  /** Things that never move: reeds, rocks, coral. */
+  private props = new Graphics();
   private sand = new Graphics();
+  /** The water's surface, where the place has one: waves, foam and lily pads. */
+  private surface = new Graphics();
   private bubbleGfx = new Graphics();
   private night = new Graphics();
   private bubbles: Bubble[] = [];
   private hearts: Heart[] = [];
+  private look: Look = LOOKS.lake!;
+  /** Lily pads on the pond: where across, how big, and their bob. */
+  private pads: { x: number; r: number; phase: number; flower: boolean }[] = [];
   /** Called for every aerator bubble burst, e.g. to make a sound. */
   onBloop: (() => void) | null = null;
   private bloopIn = 3;
-  private aeratorTimers = AERATORS.map(() => 0);
+  private aeratorTimers: number[] = [];
+  private seepIn = 1;
   private rayShape = Array.from({ length: RAY_COUNT }, (_, i) => ({
     x: (i + 0.5) / RAY_COUNT + (Math.random() - 0.5) * 0.08,
     width: 0.03 + Math.random() * 0.05,
@@ -54,7 +114,7 @@ export class Scene {
 
   constructor() {
     this.rays.blendMode = 'add';
-    this.back.addChild(this.background, this.rays, this.sand);
+    this.back.addChild(this.background, this.rays, this.props, this.sand, this.surface);
     this.front.addChild(this.bubbleGfx, this.night);
   }
 
@@ -63,13 +123,25 @@ export class Scene {
   /** visible is how far the screen sees past the tank's own edges (screens of another shape see more). */
   layout(world: World, visible: Visible = { left: 0, top: 0, right: world.width, bottom: world.height }) {
     this.visible = visible;
+    const look = LOOKS[world.biome] ?? LOOKS.lake!;
+    if (look !== this.look) {
+      this.look = look;
+      this.bubbles = [];
+      this.hearts = [];
+    }
+    this.aeratorTimers = look.aerators.map(() => 0);
     if (this.background.texture !== Texture.EMPTY) this.background.texture.destroy(true);
-    // The water darkens with depth down to the sand, and stays that colour below.
     const top = Math.min(0, visible.top);
-    this.background.texture = waterGradient(world.height - top, world.floorY - top);
+    const height = Math.max(world.height, visible.bottom) - top;
+    this.background.texture = backdrop(look, height, world.waterTop - top, world.floorY - top);
     this.background.position.set(visible.left, top);
     this.background.width = visible.right - visible.left;
-    this.background.height = Math.max(world.height, visible.bottom) - top;
+    this.background.height = height;
+    const rand = seededRandom(world.biome);
+    this.pads = world.biome === 'pond'
+      ? [0.12, 0.2, 0.47, 0.66, 0.74, 0.88].map((x) => ({ x: x + rand(-0.03, 0.03), r: rand(26, 44), phase: rand(0, TAU), flower: rand() < 0.35 }))
+      : [];
+    this.drawProps(world);
     this.drawSand(world);
   }
 
@@ -82,22 +154,37 @@ export class Scene {
 
   update(dt: number, world: World) {
     this.drawRays(world);
+    this.drawSurface(world);
 
+    const { aerators, seeps } = this.look;
     this.aeratorTimers.forEach((timer, i) => {
       this.aeratorTimers[i] = timer - dt;
       if (this.aeratorTimers[i] <= 0) {
         this.aeratorTimers[i] = 0.08 + Math.random() * 0.35;
-        this.bubble(AERATORS[i] * world.width + (Math.random() - 0.5) * 10, world.floorY + 10, 2 + Math.random() * 5);
+        const x = aerators[i] * world.width;
+        this.bubble(x + (Math.random() - 0.5) * 10, world.floorAt(x) + 10, 2 + Math.random() * 5);
       }
     });
-    this.bloopIn -= dt;
-    if (this.bloopIn <= 0) {
-      this.bloopIn = 3 + Math.random() * 7;
-      this.onBloop?.();
+    if (aerators.length) {
+      this.bloopIn -= dt;
+      if (this.bloopIn <= 0) {
+        this.bloopIn = 3 + Math.random() * 7;
+        this.onBloop?.();
+      }
+    }
+    if (seeps) {
+      this.seepIn -= dt * seeps;
+      if (this.seepIn <= 0) {
+        this.seepIn = 0.6 + Math.random() * 2;
+        const x = world.waterLeft + Math.random() * (world.width - world.waterLeft);
+        for (let i = 0; i < 1 + Math.random() * 3; i++) this.bubble(x + (Math.random() - 0.5) * 6, world.floorAt(x) + 4 - i * 9, 1.5 + Math.random() * 3);
+      }
     }
 
     const g = this.bubbleGfx.clear();
-    this.bubbles = this.bubbles.filter((b) => b.y > Math.min(0, this.visible.top) - 20);
+    // Bubbles pop at the surface (or, when the water fills the screen, once they're off the top).
+    const popAt = world.waterTop > 0 ? world.waterTop + 2 : Math.min(0, this.visible.top) - 20;
+    this.bubbles = this.bubbles.filter((b) => b.y > popAt);
     for (const b of this.bubbles) {
       b.y -= b.speed * dt;
       b.x += world.current * 1.3 * dt;
@@ -155,50 +242,164 @@ export class Scene {
 
   private drawRays(world: World) {
     const g = this.rays.clear();
+    const top = world.waterTop;
     for (const ray of this.rayShape) {
-      const alpha = 0.035 + 0.03 * Math.sin(world.time * 0.4 + ray.phase);
+      const alpha = (0.035 + 0.03 * Math.sin(world.time * 0.4 + ray.phase)) * this.look.rays;
       const x0 = ray.x * world.width;
-      const top = ray.width * world.width;
-      const bottom = top * 2.6;
+      if (x0 < world.waterLeft) continue;
+      const w = ray.width * world.width;
+      const bottom = w * 2.6;
       const shift = ray.skew * world.width;
-      g.poly([x0, 0, x0 + top, 0, x0 + shift + bottom, world.floorY, x0 + shift, world.floorY]).fill({ color: 0xbfe9ff, alpha });
+      const floor = world.floorAt(x0 + shift);
+      g.poly([x0, top, x0 + w, top, x0 + shift + bottom, floor, x0 + shift, floor]).fill({ color: 0xbfe9ff, alpha });
+    }
+  }
+
+  /** Where the water meets the beach (or the left edge, if it doesn't). */
+  private shoreX(world: World) {
+    let x = 0;
+    while (x < world.width && world.floorAt(x) <= world.waterTop) x += 4;
+    return x;
+  }
+
+  private drawSurface(world: World) {
+    const g = this.surface.clear();
+    if (world.waterTop <= 0) return;
+    const t = world.time;
+    const y0 = world.waterTop;
+    const from = Math.max(Math.min(0, this.visible.left), this.shoreX(world));
+    const right = Math.max(world.width, this.visible.right);
+    // A gently moving surface line, lit from above.
+    const pts: number[] = [];
+    for (let x = from; x <= right + 20; x += 20) pts.push(x, y0 + Math.sin(x * 0.018 + t * 1.6) * 3 + Math.sin(x * 0.041 - t * 2.3) * 1.5);
+    g.poly([...pts, right + 20, y0 + 10, from, y0 + 10], false).fill({ color: 0xffffff, alpha: 0.12 });
+    g.poly(pts, false).stroke({ width: 3, color: 0xeafaff, alpha: 0.7 });
+
+    if (world.biome === 'seashore') {
+      // Waves lap up the beach and slide back.
+      const lap = Math.sin(t * 0.9) * 0.5 + 0.5;
+      const sx = from - lap * 46;
+      const fy = world.floorAt(Math.max(0, sx));
+      g.ellipse(sx + 30, Math.min(fy, y0) + 2, 60 + lap * 20, 5).fill({ color: 0xffffff, alpha: 0.55 });
+      for (let i = 0; i < 4; i++) {
+        const x = from + 120 + i * 170 + Math.sin(t * 0.7 + i) * 30;
+        g.ellipse(x, y0 + 1, 24 + Math.sin(t * 1.3 + i * 2) * 8, 3).fill({ color: 0xffffff, alpha: 0.45 });
+      }
+    }
+    for (const pad of this.pads) {
+      // Lily pads float on top: a circle with a notch, and now and then a pink flower.
+      const x = pad.x * world.width + Math.sin(t * 0.3 + pad.phase) * 6;
+      const y = y0 + Math.sin(t * 1.1 + pad.phase) * 1.5;
+      const r = pad.r;
+      g.ellipse(x, y + 3, r, r * 0.28).fill({ color: 0x0f3324, alpha: 0.35 });
+      g.ellipse(x, y, r, r * 0.26).fill(0x4f9a3f);
+      g.poly([x, y, x + r * 0.95, y - r * 0.12, x + r * 0.95, y + r * 0.12]).fill(0x7cbf8e);
+      g.ellipse(x - r * 0.2, y - r * 0.06, r * 0.5, r * 0.1).fill({ color: 0x8ccf6f, alpha: 0.6 });
+      if (pad.flower) {
+        for (let k = -2; k <= 2; k++) g.ellipse(x - r * 0.35 + k * 5, y - 8 + Math.abs(k) * 2, 5, 11).fill(0xf6a8c8);
+        g.circle(x - r * 0.35, y - 9, 4).fill(0xffe36b);
+      }
+    }
+  }
+
+  /** Reeds at the pond, rocks and coral in the ocean: drawn once per layout. */
+  private drawProps(world: World) {
+    const g = this.props.clear();
+    const rand = seededRandom(`props:${world.biome}`);
+    if (world.biome === 'pond') {
+      for (const cx of [0.02, 0.07, 0.31, 0.92, 0.97]) {
+        for (let i = 0; i < 6; i++) {
+          const x = (cx + rand(-0.025, 0.025)) * world.width;
+          const base = world.floorAt(x) + 14;
+          const top = world.waterTop - rand(30, 120);
+          const lean = rand(-30, 30);
+          const color = rand() < 0.5 ? 0x3f6b2f : 0x557d36;
+          g.moveTo(x, base).quadraticCurveTo(x + lean * 0.3, (base + top) / 2, x + lean, top).stroke({ width: rand(4, 7), color, alpha: 0.85 });
+          if (rand() < 0.45) g.roundRect(x + lean - 6, top - 6, 12, 40, 6).fill(0x6b4426);
+        }
+      }
+    } else if (world.biome === 'ocean') {
+      // Faint, far-off coral and rocks, so the deep feels big.
+      for (let i = 0; i < 9; i++) {
+        const x = rand(0, world.width);
+        const base = world.floorAt(x) + 8;
+        const color = [0xe57a7a, 0xf0a35c, 0xc97ad9][Math.floor(rand(0, 3))];
+        const branch = (bx: number, by: number, angle: number, len: number, depth: number) => {
+          const ex = bx + Math.cos(angle) * len;
+          const ey = by + Math.sin(angle) * len;
+          g.moveTo(bx, by).lineTo(ex, ey).stroke({ width: Math.max(2, depth * 3), color, alpha: 0.35, cap: 'round' });
+          if (depth > 0) for (const turn of [-0.45, 0.4]) branch(ex, ey, angle + turn + rand(-0.15, 0.15), len * 0.72, depth - 1);
+        };
+        branch(x, base, -Math.PI / 2 + rand(-0.2, 0.2), rand(30, 55), 3);
+      }
+      for (let i = 0; i < 7; i++) {
+        const x = rand(0, world.width);
+        const r = rand(24, 70);
+        const y = world.floorAt(x) + 10;
+        g.ellipse(x, y, r, r * 0.6).fill({ color: 0x3d4a5a, alpha: 0.75 });
+        g.ellipse(x - r * 0.25, y - r * 0.25, r * 0.5, r * 0.25).fill({ color: 0x5d6b7b, alpha: 0.5 });
+      }
+    } else if (world.biome === 'seashore') {
+      // Shells and pebbles dotted along the beach.
+      const shore = this.shoreX(world);
+      for (let i = 0; i < 10; i++) {
+        const x = rand(-40, shore + 260);
+        const y = world.floorAt(x) + rand(8, 26);
+        if (rand() < 0.5) g.ellipse(x, y, rand(5, 9), rand(3, 6)).fill(0xa69a88);
+        else g.arc(x, y, rand(6, 10), Math.PI, 0).fill(0xf7d9d0).stroke({ width: 1.5, color: 0xd9a89a });
+      }
     }
   }
 
   private drawSand(world: World) {
-    const { floorY } = world;
+    const { sand, specks } = this.look;
     const left = Math.floor(Math.min(0, this.visible.left) / 20) * 20;
     const right = Math.max(world.width, this.visible.right);
     const height = Math.max(world.height, this.visible.bottom);
     const rand = seededRandom('sand');
     const g = this.sand.clear();
+    const floor = (x: number) => world.floorAt(Math.min(world.width, Math.max(0, x)));
     const points: number[] = [left, height];
     for (let x = left; x <= right + 20; x += 20) {
-      points.push(x, floorY + Math.sin(x * 0.006) * 10 + Math.sin(x * 0.019 + 1) * 4);
+      points.push(x, floor(x) + Math.sin(x * 0.006) * 10 + Math.sin(x * 0.019 + 1) * 4);
     }
     points.push(right + 20, height);
-    g.poly(points).fill(0xcbb07a);
-    g.poly(points.map((v, i) => (i % 2 === 1 && v !== height ? v + 14 : v))).fill(0xb89a63);
+    g.poly(points).fill(sand[0]);
+    g.poly(points.map((v, i) => (i % 2 === 1 && v !== height ? v + 14 : v))).fill(sand[1]);
     for (let i = 0; i < (right - left) / 6; i++) {
       const x = rand(left, right);
-      const y = rand(floorY + 18, height);
-      g.circle(x, y, rand(1, 3.5)).fill({ color: rand() > 0.5 ? 0x8f7448 : 0xe2cf9f, alpha: 0.7 });
+      const y = rand(floor(x) + 18, height);
+      g.circle(x, y, rand(1, 3.5)).fill({ color: rand() > 0.5 ? specks[0] : specks[1], alpha: 0.7 });
+    }
+    if (world.biome === 'seashore') {
+      // The beach above the water is dry and pale; where the waves reach, it's dark and wet.
+      const shore = this.shoreX(world);
+      const dry: number[] = [];
+      for (let x = left; x <= shore; x += 10) dry.push(x, floor(x) + Math.sin(x * 0.006) * 10 + Math.sin(x * 0.019 + 1) * 4);
+      g.poly([...dry, shore, world.waterTop + 30, left, world.waterTop + 30], true).fill({ color: 0xf6e3b4, alpha: 0.6 });
+      g.ellipse(shore - 10, world.waterTop + 6, 70, 10).fill({ color: 0xb3955a, alpha: 0.35 });
     }
   }
 }
 
-/** Light at the top, deep blue by the sand (floor, in the same units as height). */
-function waterGradient(height: number, floor = height) {
+/** The sky (above the water, if any), then the water: light at the surface, deep by the bottom. */
+function backdrop(look: Look, height: number, waterTop: number, floor: number) {
   const canvas = document.createElement('canvas');
   canvas.width = 4;
   canvas.height = Math.max(64, Math.min(1024, Math.round(height)));
   const ctx = canvas.getContext('2d')!;
   const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  const end = Math.min(1, floor / height);
-  grad.addColorStop(0, '#4fb8e0');
-  grad.addColorStop(0.45 * end, '#1f78a8');
-  grad.addColorStop(end, '#0a3456');
-  grad.addColorStop(1, '#0a3456');
+  const f = (y: number) => Math.min(1, Math.max(0, y / height));
+  const surface = f(waterTop);
+  if (surface > 0) {
+    grad.addColorStop(0, look.sky[0]);
+    grad.addColorStop(Math.max(0, surface - 0.001), look.sky[1]);
+  }
+  const end = f(floor);
+  grad.addColorStop(surface, look.water[0]);
+  grad.addColorStop(surface + (end - surface) * 0.45, look.water[1]);
+  grad.addColorStop(end, look.water[2]);
+  grad.addColorStop(1, look.water[2]);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   return Texture.from(canvas);

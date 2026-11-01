@@ -33,6 +33,8 @@ export const newPose = (): Pose => ({ x: 0, y: 0, sx: 1, sy: 1, rot: 0, z: 0.5, 
 
 /** One creature's brain: where it goes and what it does. Screens draw it from its pose. */
 export interface SimCreature {
+  /** Which one it is (the drawing's id for its named original, see shared/world/population.ts). */
+  readonly id: string;
   readonly drawing: Drawing;
   readonly kind: Kind;
   readonly pose: Pose;
@@ -40,6 +42,18 @@ export interface SimCreature {
   update(dt: number, world: World): void;
   /** Documentary mode starts (or stops) filming it. */
   star?(on: boolean): void;
+}
+
+/**
+ * Who to make: one individual of a drawing's species. grownFrom is when a baby hatched, so it grows over its
+ * first week; hatchAt (with nest, 0..1 across) makes it an egg until then.
+ */
+export interface Spec {
+  id: string;
+  drawing: Drawing;
+  grownFrom?: number;
+  hatchAt?: number;
+  nest?: number;
 }
 
 /** What's worth keeping across a server restart, so creatures carry on where they were. */

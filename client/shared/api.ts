@@ -1,8 +1,15 @@
-import type { Drawing, HistoryEntry, NewDrawing, NewEgg, ServerMessage, Story, TankCommand, TankCommandValue } from '../../shared/types.ts';
+import type { ClientMessage, Drawing, HistoryEntry, NewDrawing, NewEgg, ServerMessage, SpeciesWhere, Story, TankCommand, TankCommandValue } from '../../shared/types.ts';
 
 export async function fetchDrawings(): Promise<Drawing[]> {
   const res = await fetch('/api/drawings');
   if (!res.ok) throw new Error(`Failed to load drawings (${res.status})`);
+  return res.json();
+}
+
+/** Where every species lives, by drawing id. */
+export async function fetchPopulation(): Promise<Record<string, SpeciesWhere>> {
+  const res = await fetch('/api/population');
+  if (!res.ok) throw new Error(`Failed to load who lives where (${res.status})`);
   return res.json();
 }
 
@@ -36,33 +43,33 @@ export async function layEgg(egg: NewEgg, now = false): Promise<boolean> {
   return res.ok;
 }
 
-/** Drops food into every open tank. Resolves to false if the fish were fed moments ago. */
-export async function feedFish(x?: number): Promise<boolean> {
+/** Drops food in one place, or (no place) everywhere. Resolves to false if the fish were fed moments ago. */
+export async function feedFish(x?: number, place?: string): Promise<boolean> {
   const res = await fetch('/api/feed', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ x }),
+    body: JSON.stringify({ x, place }),
   });
   return res.ok;
 }
 
-/** Does a ⚙️ menu command in the tank (every screen shows it); resolves to a line to show, if any. */
-export async function sendTankCommand(command: TankCommand, value: TankCommandValue = null): Promise<string> {
+/** Does a ⚙️ menu command (in place, for the ones that happen somewhere); resolves to a line to show, if any. */
+export async function sendTankCommand(command: TankCommand, value: TankCommandValue = null, place?: string): Promise<string> {
   const res = await fetch('/api/tank', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ command, value }),
+    body: JSON.stringify({ command, value, place }),
   });
   if (!res.ok) throw new Error(`Command failed (${res.status})`);
   return (await res.json()).say ?? '';
 }
 
 /** Does a ⚙️ menu command later: at is in ms since 1970. */
-export async function scheduleTankCommand(command: TankCommand, value: TankCommandValue, at: number) {
+export async function scheduleTankCommand(command: TankCommand, value: TankCommandValue, at: number, place?: string) {
   const res = await fetch('/api/schedule', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ command, value, at }),
+    body: JSON.stringify({ command, value, at, place }),
   });
   if (!res.ok) throw new Error(`Scheduling failed (${res.status})`);
 }
@@ -110,12 +117,16 @@ export async function deleteDrawing(id: string) {
   if (!res.ok && res.status !== 404) throw new Error(`Delete failed (${res.status})`);
 }
 
-/** Connects to the live feed and reconnects forever; `onOpen` fires on every (re)connect so callers can resync. */
+/**
+ * Connects to the live feed and reconnects forever; `onOpen` fires on every (re)connect so callers can resync.
+ * Returns a way to tell the server things (dropped while disconnected: say them again in onOpen).
+ */
 export function connectLive(onMessage: (msg: ServerMessage) => void, onOpen?: () => void) {
   const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
   let retryMs = 1000;
+  let ws: WebSocket;
   const open = () => {
-    const ws = new WebSocket(url);
+    ws = new WebSocket(url);
     ws.onopen = () => {
       retryMs = 1000;
       onOpen?.();
@@ -127,4 +138,7 @@ export function connectLive(onMessage: (msg: ServerMessage) => void, onOpen?: ()
     };
   };
   open();
+  return (message: ClientMessage) => {
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message));
+  };
 }

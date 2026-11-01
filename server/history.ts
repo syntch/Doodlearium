@@ -31,8 +31,9 @@ export async function loadHistory() {
 }
 
 /** Writes something that happened into the tank's history (one line per event, never rewritten). */
-export function record(type: string, who: string[], text: string) {
-  const entry: HistoryEntry = { at: Date.now(), type, place: 'lake', who, text };
+/** place is where it happened (unset: everywhere, like nightfall). */
+export function record(type: string, who: string[], text: string, place = '') {
+  const entry: HistoryEntry = { at: Date.now(), type, place, who, text };
   entries.push(entry);
   writing = writing.then(() => appendFile(HISTORY_FILE, `${JSON.stringify(entry)}\n`)).catch((err) => console.warn('History not saved', err));
   broadcast({ type: 'history', entry });

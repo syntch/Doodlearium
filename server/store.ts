@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Attachment, CreatureType, Drawing, Motion, Part } from '../shared/types.ts';
+import type { Biome } from '../shared/world/biomes.ts';
 
 export const DATA_DIR = join(import.meta.dirname, '..', 'data');
 export const DRAWINGS_DIR = join(DATA_DIR, 'drawings');
@@ -43,6 +44,9 @@ type DrawingMeta = {
   nocturnal: boolean;
   parts: Part[];
   glow: boolean;
+  habitats?: Biome[];
+  group?: boolean;
+  home?: string;
   parents?: [string, string];
   hatchAt?: number;
   nest?: number;

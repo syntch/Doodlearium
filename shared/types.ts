@@ -1,4 +1,5 @@
-import type { Frame, RosterEntry, Upcoming } from './sim/protocol.ts';
+import type { Frame, MapSummary, RosterEntry, Upcoming } from './sim/protocol.ts';
+import type { Biome } from './world/biomes.ts';
 
 /** Where a drawing lives: open water, walking on the sand, growing from the sand, or sitting on it. */
 export const CREATURE_TYPES = ['swimmer', 'crawler', 'plant', 'decor'] as const;
@@ -82,6 +83,15 @@ export interface Drawing {
   nest?: number;
   /** Has glowing paint, marked in a separate image (`glowUrl`). */
   glow?: boolean;
+  /**
+   * A drawing is a species: the world fills its places with as many as suit them. Where it can live
+   * (unset: the usual places for its style, see shared/world/biomes.ts).
+   */
+  habitats?: Biome[];
+  /** Comes in a school (or later, a flock or herd). Unset: fish do, others don't. */
+  group?: boolean;
+  /** The place the named original lives (unset: wherever suits it). */
+  home?: string;
 }
 
 export interface NewDrawing {
@@ -97,12 +107,16 @@ export interface NewDrawing {
   partsImage?: string;
   /** PNG data URL, the same size as image: red where the paint glows, green where it's blacklight paint. */
   glowImage?: string;
+  habitats?: Biome[];
+  group?: boolean;
+  home?: string;
 }
 
-/** A baby made by the tank from two parents, sent to be laid as an egg. */
+/** A baby made by the tank from two parents, sent to be laid as an egg (in the place the parents are). */
 export interface NewEgg extends NewDrawing {
   parents: [string, string];
   nest: number;
+  place?: string;
 }
 
 /** Things the tank's ⚙️ menu can do (to the one shared tank), now or at a set time. */
@@ -110,17 +124,28 @@ export const TANK_COMMANDS = ['time', 'season', 'blacklight', 'film', 'visit', '
 export type TankCommand = (typeof TANK_COMMANDS)[number];
 export type TankCommandValue = string | number | boolean | null;
 
+/** Where a species lives (GET /api/population): its original's place, and how many of it are in each place. */
+export interface SpeciesWhere {
+  home: string;
+  places: Record<string, number>;
+}
+
+/** What a screen tells the server: which place it's showing (null: the map), so it gets that place's news. */
+export type ClientMessage = { type: 'watch'; place: string | null };
+
 export type ServerMessage =
   | { type: 'drawing:added'; drawing: Drawing }
   | { type: 'drawing:updated'; drawing: Drawing }
   | { type: 'drawing:removed'; id: string }
   /** Feeding time: x is where across the tank (0..1) the food drops (screens play the plops). */
   | { type: 'feed'; x: number }
-  /** Who's in the tank, and how it looks right now (see shared/sim/protocol.ts). */
-  | { type: 'roster'; creatures: RosterEntry[] }
+  /** Who's in the place being watched, and how it looks right now (see shared/sim/protocol.ts). */
+  | { type: 'roster'; place: string; creatures: RosterEntry[] }
   | { type: 'frame'; frame: Frame }
+  /** Every place at a glance, about once a second. */
+  | { type: 'map'; places: MapSummary; species: Record<string, number> }
   /** The server would like a screen to blend two parents into a baby and lay its egg (see babies.ts). */
-  | { type: 'egg:make'; parents: [string, string]; nest: number; now: boolean }
+  | { type: 'egg:make'; parents: [string, string]; nest: number; place: string; now: boolean }
   | { type: 'upcoming'; items: Upcoming[] }
   | { type: 'history'; entry: HistoryEntry };
 

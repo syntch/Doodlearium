@@ -28,11 +28,15 @@ export function seededRandom(seed: string) {
 export const depthScale = (z: number) => 1 - 0.45 * z;
 
 /** Babies hatch a bit over half size and grow up over their first week. */
-export function babyScale(drawing: Drawing, now = Date.now()) {
-  if (!drawing.parents) return 1;
-  const days = (now - (drawing.hatchAt ?? drawing.createdAt)) / 86_400_000;
+export function growScale(hatched: number | undefined, now = Date.now()) {
+  if (hatched === undefined) return 1;
+  const days = (now - hatched) / 86_400_000;
   return 0.6 + 0.35 * Math.min(1, Math.max(0, days) / 7);
 }
+
+/** How grown a blended baby is (drawn babies' originals). */
+export const babyScale = (drawing: Drawing, now = Date.now()) =>
+  growScale(drawing.parents ? (drawing.hatchAt ?? drawing.createdAt) : undefined, now);
 
 /** 0 during the day, up to 0.5 at night, easing through dawn (5–8h) and dusk (18–21h). */
 export function nightDarkness(hour: number) {

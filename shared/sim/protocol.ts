@@ -3,9 +3,15 @@ import type { Flake } from './food.ts';
 import type { Season } from './math.ts';
 import type { Effect } from './world.ts';
 
-/** Who's in the tank, sent whenever that changes (a new drawing, an egg hatching...). */
+/** Who's in a place, sent whenever that changes (a new drawing, an egg hatching...). */
 export interface RosterEntry {
   id: string;
+  /** The drawing it's one of. */
+  species: string;
+  /** The species' named original (others are "a Clowny"). */
+  named?: boolean;
+  /** An egg: when it hatches. */
+  hatchAt?: number;
   kind: Kind;
   personality?: Personality;
   /** Arrived just now, so screens can say hello. */
@@ -28,7 +34,12 @@ export interface Upcoming {
   at: number;
   icon: string;
   text: string;
+  /** Where (unset: everywhere). */
+  place?: string;
 }
+
+/** A glance at every place, for the map: how many live there and a few of their species. */
+export type MapSummary = Record<string, { count: number; species: string[] }>;
 
 /** What the ⚙️ menu has set (null: back to normal). */
 export interface Settings {
@@ -42,6 +53,8 @@ export interface Settings {
  * [id, x, y, sx, sy, rot, z, phase, effort, drowsy, puff, flags], where flags is 1 for out, 2 for starring.
  */
 export interface Frame {
+  /** Which place this is. */
+  place: string;
   t: number;
   darkness: number;
   blacklight: number;

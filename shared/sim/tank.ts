@@ -1,37 +1,29 @@
-import { motionOf, type CreatureType, type Drawing } from '../types.ts';
-import type { Saved, SimCreature } from './creature.ts';
+import { motionOf, type Drawing } from '../types.ts';
+import { isGroup, type Biome } from '../world/biomes.ts';
+import type { Saved, SimCreature, Spec } from './creature.ts';
 import { SimCrawler } from './crawler.ts';
 import { SimEgg } from './egg.ts';
 import { SimFood } from './food.ts';
-import { babyScale, nightDarkness } from './math.ts';
+import { growScale, nightDarkness } from './math.ts';
 import { SimStill } from './still.ts';
 import { SimSwimmer } from './swimmer.ts';
-import { burst, newWorld, type Hideout, type World } from './world.ts';
-
-/** Babies get their own few places, so they never crowd out the family's drawings. */
-export type Bucket = CreatureType | 'baby';
-export const bucketOf = (d: Drawing): Bucket => (d.parents ? 'baby' : d.type);
-
-/** How many of each kind the tank shows at once; older ones retire to the gallery. */
-export const CAPS: Record<Bucket, number> = { swimmer: 40, crawler: 10, plant: 24, decor: 14, baby: 6 };
-
-/** The drawings that live in the tank: the newest of each kind, up to its cap. */
-export function shownDrawings(drawings: Drawing[]) {
-  const counts: Record<Bucket, number> = { swimmer: 0, crawler: 0, plant: 0, decor: 0, baby: 0 };
-  return [...drawings].sort((a, b) => b.createdAt - a.createdAt).filter((d) => counts[bucketOf(d)]++ < CAPS[bucketOf(d)]);
-}
+import { burst, newWorld, type Hideout, type School, type World } from './world.ts';
 
 /** Night creatures come out once it's getting properly dark. */
 const NIGHT = 0.25;
+/** Schools of one species keep to this size; a big group swims as several. */
+const SCHOOL_SIZE = 7;
 
 /**
- * One tank's life: its creatures, food, schools, currents and the time of day. The server runs the real one
- * (so every screen shows the same tank); the draw page's preview runs a little one of its own.
+ * One place's life: its creatures, food, schools, currents and the time of day. The server runs one for every
+ * place in the world (so every screen shows the same thing); the draw page's preview runs a little one of
+ * its own. Who lives here comes from outside (see shared/world/population.ts).
  */
 export class Tank {
   readonly food = new SimFood();
-  readonly world: World = newWorld(this.food);
+  readonly world: World;
   readonly creatures = new Map<string, SimCreature>();
+  private specs = new Map<string, Spec>();
   /** The hour to show, or null for the real time. */
   hour: number | null = null;
   /** 0 in daylight, 0.5 at full night; eases when the hour changes. */
@@ -44,53 +36,68 @@ export class Tank {
   private currentFor = 0;
   private currentDir = 1;
 
+  constructor(readonly biome: Biome = 'lake') {
+    this.world = newWorld(this.food, biome);
+  }
+
   get isNight() {
     return this.darkness >= NIGHT;
   }
 
-  /** Adds a drawing's creature: an egg until it hatches. saved puts it back where it was before a restart. */
-  add(drawing: Drawing, dropIn: boolean, saved?: Saved) {
-    const creature = this.make(drawing, dropIn, saved);
-    this.creatures.set(drawing.id, creature);
-    if (dropIn && creature.kind !== 'egg') burst(this.world, creature.pose.x, 0);
+  /** Adds a creature: an egg until it hatches. saved puts it back where it was before a restart. */
+  add(spec: Spec, dropIn: boolean, saved?: Saved) {
+    const creature = this.make(spec, dropIn, saved);
+    this.creatures.set(spec.id, creature);
+    this.specs.set(spec.id, spec);
+    if (dropIn && creature.kind !== 'egg') burst(this.world, creature.pose.x, this.world.waterTop);
     return creature;
   }
 
-  private make(drawing: Drawing, dropIn: boolean, saved?: Saved): SimCreature {
-    if ((drawing.hatchAt ?? 0) > Date.now()) return new SimEgg(drawing, this.world, dropIn);
+  private make({ id, drawing, hatchAt, nest, grownFrom }: Spec, dropIn: boolean, saved?: Saved): SimCreature {
+    if ((hatchAt ?? 0) > Date.now()) return new SimEgg(id, drawing, this.world, dropIn, hatchAt!, nest ?? 0.5);
     switch (motionOf(drawing)) {
       case 'crawler':
-        return new SimCrawler(drawing, this.world, dropIn, saved);
+        return new SimCrawler(id, drawing, this.world, dropIn, saved);
       case 'plant':
-        return new SimStill(drawing, 'plant', this.world);
+        return new SimStill(id, drawing, 'plant', this.world);
       case 'decor':
-        return new SimStill(drawing, 'decor', this.world);
+        return new SimStill(id, drawing, 'decor', this.world);
       default:
-        return new SimSwimmer(drawing, this.world, dropIn, saved);
+        return new SimSwimmer(id, drawing, this.world, dropIn, saved, grownFrom);
     }
   }
 
-  /** An edited drawing: same creature, carrying on from where it was. */
-  replace(drawing: Drawing) {
-    const old = this.creatures.get(drawing.id);
+  /** An edited drawing: the same creature, carrying on from where it was. */
+  replace(spec: Spec) {
+    const old = this.creatures.get(spec.id);
     const saved = old && 'save' in old ? (old as SimSwimmer).save() : undefined;
-    this.creatures.delete(drawing.id);
-    this.add(drawing, false, saved);
+    this.creatures.delete(spec.id);
+    this.add(spec, false, saved);
   }
 
   remove(id: string) {
     this.creatures.delete(id);
+    this.specs.delete(id);
   }
 
-  /** Brings the creatures in line with the drawings (the newest of each kind, up to its cap). */
-  sync(drawings: Drawing[], saved: Record<string, Saved> = {}) {
-    const shown = shownDrawings(drawings);
-    const ids = new Set(shown.map((d) => d.id));
-    for (const id of this.creatures.keys()) if (!ids.has(id)) this.remove(id);
-    for (const d of shown) {
-      const had = this.creatures.get(d.id);
-      if (!had) this.add(d, false, saved[d.id]);
-      else if (had.drawing.updatedAt !== d.updatedAt) this.replace(d);
+  /** Where everyone is, to carry on from after a restart. */
+  save() {
+    const saved: Record<string, Saved> = {};
+    for (const [id, c] of this.creatures) if ('save' in c) saved[id] = (c as SimSwimmer).save();
+    return saved;
+  }
+
+  /** Brings the creatures in line with who lives here. With dropIn, newcomers arrive from above. */
+  sync(specs: Spec[], saved: Record<string, Saved> = {}, dropIn = false) {
+    const ids = new Set(specs.map((s) => s.id));
+    for (const id of [...this.creatures.keys()]) if (!ids.has(id)) this.remove(id);
+    for (const spec of specs) {
+      const had = this.specs.get(spec.id);
+      if (!had) this.add(spec, dropIn && !saved[spec.id], saved[spec.id]);
+      else if (had.drawing.updatedAt !== spec.drawing.updatedAt || had.drawing !== spec.drawing) {
+        if (had.drawing.updatedAt !== spec.drawing.updatedAt) this.replace(spec);
+        else this.specs.set(spec.id, { ...had, drawing: spec.drawing });
+      }
     }
   }
 
@@ -102,7 +109,7 @@ export class Tank {
 
   /** A new school forms right away. */
   startSchool() {
-    this.world.school = null;
+    this.world.schools = this.world.schools.filter((s) => s.species);
     this.nextSchoolAt = 0;
   }
 
@@ -124,13 +131,14 @@ export class Tank {
     for (const c of this.creatures.values()) {
       // Night creatures only come out after dark.
       const out = !c.drawing.nocturnal || c.kind === 'egg' || this.isNight;
-      if (out && !c.pose.out) world.notes.push({ kind: 'out', who: c.drawing.id });
+      if (out && !c.pose.out) world.notes.push({ kind: 'out', who: c.id });
       c.pose.out = out;
       if (!out) continue;
       if (c instanceof SimSwimmer) world.fish.push(c);
       else if (c instanceof SimStill) hideouts.push(c.hideout());
     }
     world.hideouts = hideouts;
+    this.updateGroups();
     this.updateSchool();
     this.updateCurrent(dt);
     this.food.update(dt, world);
@@ -142,7 +150,8 @@ export class Tank {
     for (const [id, c] of this.creatures) {
       if (!(c instanceof SimEgg) || !c.ready) continue;
       const at = c.pose;
-      const baby = this.make(c.drawing, false);
+      const spec = this.specs.get(id)!;
+      const baby = this.make({ ...spec, hatchAt: undefined }, false);
       if (baby instanceof SimSwimmer) baby.placeAt(at);
       this.creatures.set(id, baby);
       burst(this.world, at.x, at.y, 16);
@@ -150,26 +159,66 @@ export class Tank {
     }
   }
 
+  /** Species that live in groups swim as schools of their own kind, for good. */
+  private updateGroups() {
+    const world = this.world;
+    const bySpecies = new Map<string, SimSwimmer[]>();
+    for (const f of world.fish) {
+      if (!isGroup(f.drawing) || f.puffed) continue;
+      bySpecies.set(f.drawing.id, [...(bySpecies.get(f.drawing.id) ?? []), f]);
+    }
+    const kept: School[] = [];
+    for (const [species, fish] of bySpecies) {
+      if (fish.length < 3) continue;
+      // Keep the same leaders from moment to moment, so the schools don't keep reshuffling.
+      const old = world.schools.filter((s) => s.species === species);
+      const leaders = old.map((s) => s.leader).filter((l) => fish.includes(l));
+      const others = fish.filter((f) => !leaders.includes(f));
+      const wanted = Math.ceil(fish.length / SCHOOL_SIZE);
+      while (leaders.length < wanted) leaders.push(others.shift()!);
+      while (leaders.length > wanted) others.push(leaders.pop()!);
+      leaders.forEach((leader, i) => {
+        const members = others.filter((_, k) => k % leaders.length === i);
+        kept.push({ leader, members, until: Infinity, species });
+      });
+    }
+    const passing = world.schools.find((s) => !s.species);
+    world.schools = passing ? [...kept, passing] : kept;
+  }
+
   /** Every couple of minutes a few fish team up and follow a leader for a while. */
   private updateSchool() {
     const world = this.world;
-    const school = world.school;
+    const school = world.schools.find((s) => !s.species);
     if (school) {
       if (world.time > school.until || !world.fish.includes(school.leader)) {
         if (world.time > school.until && school.members[0]) {
-          world.notes.push({ kind: 'school-end', leader: school.leader.drawing.id, first: school.members[0].drawing.id });
+          world.notes.push({ kind: 'school-end', leader: school.leader.id, first: school.members[0].id });
         }
-        world.school = null;
+        world.schools = world.schools.filter((s) => s !== school);
       } else school.members = school.members.filter((m) => world.fish.includes(m));
       return;
     }
     if (world.time < this.nextSchoolAt || world.sleepiness > 0.4) return;
     this.nextSchoolAt = world.time + 70 + Math.random() * 80;
-    const candidates = world.fish.filter((f) => f.style.schools && f.personality !== 'shy').sort(() => Math.random() - 0.5);
+    const grouped = new Set(world.schools.flatMap((s) => [s.leader, ...s.members]));
+    // Sometimes it's two of a group species pairing off instead (they might lay an egg).
+    const groups = world.schools.filter((s) => s.species && s.members.length);
+    if (groups.length && Math.random() < 0.3) {
+      const g = groups[Math.floor(Math.random() * groups.length)];
+      world.notes.push({ kind: 'school-end', leader: g.leader.id, first: g.members[0].id });
+      return;
+    }
+    const candidates = world.fish
+      .filter((f) => f.style.schools && f.personality !== 'shy' && !grouped.has(f))
+      .sort(() => Math.random() - 0.5);
     if (candidates.length < 3) return;
     const [leader, ...rest] = candidates;
-    world.school = { leader, members: rest.slice(0, 2 + Math.floor(Math.random() * 4)), until: world.time + 25 };
-    world.notes.push({ kind: 'school', leader: leader.drawing.id, members: world.school.members.map((m) => m.drawing.id) });
+    // Fish of the leader's own kind join first.
+    rest.sort((a, b) => Number(b.drawing.id === leader.drawing.id) - Number(a.drawing.id === leader.drawing.id));
+    const members = rest.slice(0, 2 + Math.floor(Math.random() * 4));
+    world.schools.push({ leader, members, until: world.time + 25 });
+    world.notes.push({ kind: 'school', leader: leader.id, members: members.map((m) => m.id) });
   }
 
   /** Every few minutes a gentle current sweeps through for a little while. */
@@ -181,13 +230,19 @@ export class Tank {
     this.world.current = this.currentDir * this.world.height * 0.03 * Math.sin((this.currentFor / 25) * Math.PI) ** 2;
   }
 
-  /** Two grown-up fish that could have a baby together. */
+  /** A grown-up fish that could have a baby. */
   canParent(d: Drawing) {
     return !d.parents && motionOf(d) === 'fish';
   }
 
-  /** How big a baby has grown (1 once it's a week old). */
-  grownUp(d: Drawing) {
-    return d.parents !== undefined && babyScale(d) >= 0.95;
+  /** Whether a baby (hatched at grownFrom) has grown up: a week old. */
+  grownUp(id: string) {
+    const spec = this.specs.get(id);
+    return spec?.grownFrom !== undefined && this.creatures.get(id)?.kind !== 'egg' && growScale(spec.grownFrom) >= 0.95;
+  }
+
+  /** Who this creature is. */
+  specOf(id: string) {
+    return this.specs.get(id);
   }
 }

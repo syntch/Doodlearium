@@ -116,6 +116,16 @@
         <label class="fill" title="Only comes out after dark, and stays bright while the tank dims">
           <input type="checkbox" id="nocturnal" /> 🌙 Night creature
         </label>
+        <div class="where">
+          <span class="fill">Lives in:</span>
+          <span class="habitats" id="habitats"></span>
+          <label class="fill" title="More of them turn up together, as a school, flock or herd">
+            <input type="checkbox" id="group" /> 🐟🐟 Comes in a group
+          </label>
+          <label class="fill" title="Where the one you drew lives (the world adds more of its kind wherever they suit)">
+            🏠 <select id="home"></select>
+          </label>
+        </div>
         <button class="primary" type="submit" id="send">Add to tank 🌊</button>
       </form>
       <p class="toast" id="toast" role="status"></p>

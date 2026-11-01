@@ -1,3 +1,4 @@
+import { shapeOf, type Biome } from '../world/biomes.ts';
 import type { SimFood } from './food.ts';
 import type { SimSwimmer } from './swimmer.ts';
 
@@ -31,15 +32,19 @@ export type Note =
 export interface World {
   width: number;
   height: number;
-  /** Top edge of the sand. */
+  /** Top edge of the sand where the water is deepest. */
   floorY: number;
+  /** The place's shape: where the water starts and how the bottom runs (see shared/world/biomes.ts). */
+  waterTop: number;
+  waterLeft: number;
+  floorAt(x: number): number;
   /** Seconds since the world began. */
   time: number;
   food: SimFood;
   /** Every fish currently out and about, so fish can react to each other. */
   fish: SimSwimmer[];
-  /** A group of fish swimming together for a while, following the leader. */
-  school: School | null;
+  /** Groups of fish swimming together, following a leader: a passing school, and species that live in groups. */
+  schools: School[];
   /** 0 by day, 1 deep in the night: day creatures get drowsy and doze off. */
   sleepiness: number;
   /** Plants and decorations, where fish sleep and hide. */
@@ -65,26 +70,35 @@ export interface School {
   /** Followers in order; each one's place in line decides its spot in the formation. */
   members: SimSwimmer[];
   until: number;
+  /** A species that lives in a group (it keeps going), rather than a school that formed for a while. */
+  species?: string;
 }
 
-export const newWorld = (food: SimFood): World => ({
-  width: WORLD_W,
-  height: WORLD_H,
-  floorY: FLOOR_Y,
-  time: 0,
-  food,
-  fish: [],
-  school: null,
+export function newWorld(food: SimFood, biome: Biome = 'lake'): World {
+  const shape = shapeOf(biome, WORLD_W, WORLD_H);
+  return {
+    width: WORLD_W,
+    height: WORLD_H,
+    floorY: shape.floorAt(WORLD_W),
+    ...shape,
+    time: 0,
+    food,
+    fish: [],
+    schools: [],
   sleepiness: 0,
   hideouts: [],
-  current: 0,
-  effects: [],
-  notes: [],
-});
+    current: 0,
+    effects: [],
+    notes: [],
+  };
+}
 
-/** Things resting on the sand: far ones sit at the back edge, near ones toward the bottom of the tank. */
-export const sandY = (world: Pick<World, 'floorY' | 'height'>, z: number) =>
-  world.floorY + (1 - z) * (world.height - world.floorY) * 0.75 + 4;
+/** Halfway (f = 0.5) down through the water, or any other fraction of the way from the top to the bottom. */
+export const waterY = (world: Pick<World, 'waterTop' | 'floorY'>, f: number) => world.waterTop + (world.floorY - world.waterTop) * f;
+
+/** Things resting on the sand at x: far ones sit at the back edge, near ones toward the front of the tank. */
+export const sandY = (world: Pick<World, 'floorAt' | 'height'>, z: number, x: number) =>
+  world.floorAt(x) + (1 - z) * world.height * 0.105 + 4;
 
 /** Too many effects at once (nobody is collecting them, say) just get dropped. */
 const MAX_EFFECTS = 400;

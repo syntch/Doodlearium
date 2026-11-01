@@ -1,5 +1,6 @@
 import { Application, Container, RenderLayer, Texture } from 'pixi.js';
 import type { Drawing } from '../../shared/types.ts';
+import type { Biome } from '../../shared/world/biomes.ts';
 import { packFlake } from '../../shared/sim/protocol.ts';
 import { Tank } from '../../shared/sim/tank.ts';
 import { WORLD_H, WORLD_W } from '../../shared/sim/world.ts';
@@ -8,7 +9,7 @@ import { createCreature } from './creatures.ts';
 import { Food } from './food.ts';
 import type { Cutout } from './parts.ts';
 import { Scene } from './scene.ts';
-import type { Creature, World } from './world.ts';
+import { shapeFor, type Creature, type World } from './world.ts';
 
 /** The camera shows part of the tank, close up, so the creature is big enough to watch. */
 const ZOOM = 2;
@@ -18,6 +19,8 @@ export interface Preview {
   show(drawing: Drawing, texture: Texture, cutout?: Cutout | null, glow?: GlowTextures | null): void;
   /** Turns the preview tank's blacklight on or off. */
   setBlacklight(on: boolean): void;
+  /** Shows the creature in another kind of place. */
+  setBiome(biome: Biome): void;
   destroy(): void;
 }
 
@@ -31,12 +34,12 @@ export async function createPreview(container: HTMLElement): Promise<Preview> {
   await app.init({ resizeTo: container, antialias: true, background: 0x0a3456, autoDensity: true, resolution: devicePixelRatio });
   container.append(app.canvas);
 
-  const tank = new Tank();
+  let tank = new Tank();
   // Always daytime in the preview, whatever the clock says, so the drawing is easy to see.
   tank.hour = 12;
   const scene = new Scene();
   const food = new Food();
-  const world: World = { width: WORLD_W, height: WORLD_H, floorY: tank.world.floorY, time: 0, scene, current: 0 };
+  const world: World = { width: WORLD_W, height: WORLD_H, ...shapeFor(tank.biome), time: 0, scene, current: 0 };
   const creatureLayer = new Container({ sortableChildren: true });
   const nightLayer = new Container({ sortableChildren: true });
   food.view.zIndex = 500;
@@ -46,7 +49,7 @@ export async function createPreview(container: HTMLElement): Promise<Preview> {
   camera.addChild(scene.back, creatureLayer, scene.front, nightLayer, glowLayer);
   app.stage.addChild(camera);
   // A handle for poking at the preview from the browser console, like the tank's.
-  Object.assign(window, { doodlearium: { tank, world, creature: () => creature } });
+  Object.assign(window, { doodlearium: { tank: () => tank, world, creature: () => creature } });
 
   let creature: Creature | null = null;
   let id = '';
@@ -136,10 +139,10 @@ export async function createPreview(container: HTMLElement): Promise<Preview> {
       // Night creatures come out in the preview too, so they can be seen by day.
       const simDrawing = { ...drawing, nocturnal: false, updatedAt: Date.now() };
       // The same id carries on from where the previous version was, so redrawing doesn't make it jump around.
-      if (id === drawing.id && tank.creatures.has(id)) tank.replace(simDrawing);
+      if (id === drawing.id && tank.creatures.has(id)) tank.replace({ id, drawing: simDrawing });
       else {
         if (id) tank.remove(id);
-        tank.add(simDrawing, false);
+        tank.add({ id: drawing.id, drawing: simDrawing }, false);
       }
       id = drawing.id;
       centre();
@@ -151,6 +154,19 @@ export async function createPreview(container: HTMLElement): Promise<Preview> {
     },
     setBlacklight(on) {
       tank.blacklightOn = on;
+    },
+    setBiome(biome) {
+      if (biome === tank.biome) return;
+      const spec = tank.specOf(id);
+      const blacklight = tank.blacklightOn;
+      tank = new Tank(biome);
+      tank.hour = 12;
+      tank.blacklightOn = blacklight;
+      if (spec) tank.add(spec, false);
+      centre();
+      Object.assign(world, shapeFor(biome));
+      size.width = 0;
+      relayoutIfResized();
     },
     destroy() {
       clear();

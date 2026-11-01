@@ -13,6 +13,8 @@ import {
   type PartMotion,
 } from '../../shared/types.ts';
 import { fetchDrawings, setupFeedButton, submitDrawing, updateDrawing } from '../shared/api.ts';
+import { BIOME_NAMES, WATER_BIOMES, defaultGroup, defaultHabitats, type Biome } from '../../shared/world/biomes.ts';
+import { LIVE_PLACES, placeById } from '../../shared/world/places.ts';
 import { enclosedHoles, exportDrawing, inkBounds, type PlacedAttachment, type PlacedPart } from './export.ts';
 import { MATERIALS, MATERIAL_LABELS, MATERIAL_TURNS, floodFill, floodRegion, materialPreview, type Material } from './fill.ts';
 import { readPhoto, removePaper } from './photo.ts';
@@ -80,6 +82,9 @@ const nameInput = document.querySelector<HTMLInputElement>('#name')!;
 const artistInput = document.querySelector<HTMLInputElement>('#artist')!;
 const sendButton = document.querySelector<HTMLButtonElement>('#send')!;
 const nocturnalInput = document.querySelector<HTMLInputElement>('#nocturnal')!;
+const groupInput = document.querySelector<HTMLInputElement>('#group')!;
+const homeSelect = document.querySelector<HTMLSelectElement>('#home')!;
+const habitatsEl = document.querySelector<HTMLSpanElement>('#habitats')!;
 
 const state = {
   motion: 'fish' as Motion,
@@ -341,11 +346,57 @@ const PLACEHOLDERS: Record<Motion, string> = {
 const hasFacing = (motion: Motion) => motion !== 'jelly' && motion !== 'plant' && motion !== 'decor';
 
 function setMotion(motion: Motion) {
+  const restyled = motion !== state.motion;
   state.motion = motion;
   press(document.querySelectorAll('.kinds [data-motion]'), (b) => b.dataset.motion === motion);
+  if (restyled) setWhere(defaultHabitats(motion), defaultGroup(motion));
   suggestEl.hidden = true;
   renderGuide();
   changed();
+}
+
+// --- where it lives: its habitats, whether it comes in a group, and (optionally) the original's home ------
+
+/** The places it can live, in the order they were picked (the preview shows the first). */
+let habitats: Biome[] = [];
+
+function setWhere(list: Biome[], group: boolean, home = '') {
+  habitats = WATER_BIOMES.filter((b) => list.includes(b)).sort((a, b) => list.indexOf(a) - list.indexOf(b));
+  groupInput.checked = group;
+  renderWhere(home);
+}
+
+function renderWhere(home = homeSelect.value) {
+  habitatsEl.replaceChildren(
+    ...WATER_BIOMES.map((biome) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = BIOME_NAMES[biome];
+      b.setAttribute('aria-pressed', String(habitats.includes(biome)));
+      b.onclick = () => {
+        // Always somewhere to live.
+        if (habitats.includes(biome) && habitats.length > 1) habitats = habitats.filter((h) => h !== biome);
+        else if (!habitats.includes(biome)) habitats = [...habitats, biome];
+        renderWhere();
+        schedulePreview();
+      };
+      return b;
+    }),
+  );
+  const places = LIVE_PLACES.filter((p) => habitats.includes(p.biome));
+  homeSelect.replaceChildren(new Option('Anywhere it suits', ''), ...places.map((p) => new Option(`At ${p.name}`, p.id)));
+  homeSelect.value = places.some((p) => p.id === home) ? home : '';
+}
+
+/** What to send: nothing where it's just the style's usual, so it keeps following the style. */
+function wherePayload() {
+  const usual = defaultHabitats(state.motion).filter((b) => WATER_BIOMES.includes(b));
+  const same = usual.length === habitats.length && usual.every((b) => habitats.includes(b));
+  return {
+    habitats: same ? undefined : habitats,
+    group: groupInput.checked === defaultGroup(state.motion) ? undefined : groupInput.checked,
+    home: homeSelect.value || undefined,
+  };
 }
 document.querySelectorAll<HTMLButtonElement>('.kinds [data-motion]').forEach((b) => {
   b.onclick = () => setMotion(b.dataset.motion as Motion);
@@ -1270,6 +1321,8 @@ async function refreshPreview() {
   ]);
   const cutout = partsImage ? toCutout(splitParts(image!, partsImage, exported.parts)) : null;
   const glow = glowImage ? glowTextures(image!, glowImage, partsImage ?? undefined) : null;
+  // The preview shows where it'll live: its home, or the first place picked.
+  view.setBiome(placeById(homeSelect.value)?.biome ?? habitats[0] ?? 'lake');
   view.show(
     {
       // This id seeds an easygoing creature near the front glass at a typical size.
@@ -1293,6 +1346,7 @@ async function refreshPreview() {
 }
 document.querySelector<HTMLInputElement>('#paper-fill')!.addEventListener('change', schedulePreview);
 nocturnalInput.addEventListener('change', schedulePreview);
+homeSelect.addEventListener('change', schedulePreview);
 
 // --- submit --------------------------------------------------------------
 
@@ -1323,6 +1377,7 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
     parts: exported.parts,
     partsImage: exported.partsImage,
     glowImage: exported.glowImage,
+    ...wherePayload(),
   };
 
   sendButton.disabled = true;
@@ -1344,6 +1399,7 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
     baseParts = [];
     nameInput.value = '';
     nocturnalInput.checked = false;
+    setWhere(defaultHabitats(state.motion), defaultGroup(state.motion));
     suggestDismissed = false;
     closePhotoPanel();
     redraw();
@@ -1416,6 +1472,7 @@ async function loadForEditing(id: string) {
   nameInput.value = drawing.name;
   artistInput.value = drawing.artist;
   nocturnalInput.checked = drawing.nocturnal === true;
+  setWhere(drawing.habitats?.length ? drawing.habitats : defaultHabitats(motionOf(drawing)), drawing.group ?? defaultGroup(motionOf(drawing)), drawing.home);
   sendButton.textContent = 'Save changes 💾';
   const banner = document.querySelector<HTMLParagraphElement>('#editing')!;
   banner.hidden = false;
@@ -1432,6 +1489,7 @@ press(materialButtons, (b) => b === materialButtons[0]);
 press(extraButtons, (b) => b === extraButtons[0]);
 setTool('brush');
 renderGuide();
+setWhere(defaultHabitats(state.motion), defaultGroup(state.motion));
 
 const editId = new URLSearchParams(location.search).get('edit');
 if (editId) {

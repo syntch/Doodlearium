@@ -1,5 +1,6 @@
-import { imageUrl, motionOf, type Drawing, type HistoryEntry, type Motion, type Story } from '../../shared/types.ts';
-import { connectLive, fetchDrawings, fetchHistory, fetchStories, saveStory } from '../shared/api.ts';
+import { imageUrl, motionOf, type Drawing, type HistoryEntry, type Motion, type SpeciesWhere, type Story } from '../../shared/types.ts';
+import { REGIONS, placeById, placeName } from '../../shared/world/places.ts';
+import { connectLive, fetchDrawings, fetchHistory, fetchPopulation, fetchStories, saveStory } from '../shared/api.ts';
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 const fromInput = $<HTMLInputElement>('#from');
@@ -11,6 +12,8 @@ const empty = $<HTMLParagraphElement>('#empty');
 const DAY = 86_400_000;
 /** Every drawing, by id, for names and thumbnails. */
 const drawings = new Map<string, Drawing>();
+/** Where each species lives, for the story prompt. */
+let population: Record<string, SpeciesWhere> = {};
 let entries: HistoryEntry[] = [];
 
 /** yyyy-mm-dd in local time, for date inputs. */
@@ -30,6 +33,7 @@ fromInput.value = dateValue(new Date(now.getTime() - 6 * DAY));
 
 async function load() {
   const [all, history] = await Promise.all([fetchDrawings(), fetchHistory(range())]);
+  population = await fetchPopulation().catch(() => population);
   for (const d of all) drawings.set(d.id, d);
   entries = history;
   render();
@@ -110,9 +114,30 @@ function describe(d: Drawing) {
   if (d.parents) bits.push(`baby of ${d.parents.map((id) => drawings.get(id)?.name ?? 'a fish that has since left').join(' and ')}`);
   if (d.nocturnal) bits.push('only comes out at night');
   if (d.glow) bits.push('has glowing paint');
+  const where = population[d.id];
+  if (where?.home) bits.push(`${d.name} lives at ${placeName(where.home)}`);
+  const others = Object.entries(where?.places ?? {}).reduce((n, [, count]) => n + count, 0) - 1;
+  if (others > 0) {
+    const places = Object.keys(where!.places).map(placeName).join(', ');
+    bits.push(`there ${others === 1 ? 'is 1 more' : `are ${others} more`} of its kind around the world (at ${places}), called "a ${d.name}"`);
+  }
   const days = Math.max(0, Math.floor((Date.now() - d.createdAt) / DAY));
-  bits.push(days < 1 ? 'new to the tank' : `in the tank for ${days} day${days === 1 ? '' : 's'}`);
+  bits.push(days < 1 ? 'new to the world' : `in the world for ${days} day${days === 1 ? '' : 's'}`);
   return `- ${bits.join('; ')}`;
+}
+
+const BIOME_WORDS: Record<string, string> = {
+  lake: 'a sparkling lake',
+  pond: 'a small, green lily pond with reeds',
+  ocean: 'the big, deep ocean',
+  seashore: 'the shallow sea by a sandy beach',
+};
+
+/** The places a story happens in. */
+function describePlace(id: string) {
+  const p = placeById(id)!;
+  const region = REGIONS.find((r) => r.id === p.region)?.name;
+  return `- ${p.name}: ${BIOME_WORDS[p.biome] ?? p.biome}${region ? `, in ${region}` : ''}`;
 }
 
 function storyPrompt() {
@@ -127,7 +152,8 @@ function storyPrompt() {
   return [
     `Please write a short story for a young reader about what happened in our family's aquarium, Doodlearium, ${span}.`,
     '',
-    "Doodlearium is a digital fish tank on our TV. Every creature in it was drawn by someone in our family (the artist's name is given), so they'll love seeing their creatures as characters.",
+    "Doodlearium is a little underwater world on our TV, with a lake, a pond, the ocean and a beach. Every creature in it was drawn by someone in our family (the artist's name is given), so they'll love seeing their creatures as characters.",
+    'Each drawing is a kind of creature: the one that was drawn has its own name, and there can be more of its kind around the world, called things like "a Clowny".',
     star ? `The story is about ${star.name}.` : '',
     '',
     'Please:',
@@ -136,6 +162,9 @@ function storyPrompt() {
     '- Give each creature a bit of personality that matches what it did.',
     '- Keep it kind: chases end with everyone safe, nobody gets eaten except fish food.',
     '- Put the title on the first line.',
+    '',
+    'The places:',
+    ...[...new Set(entries.map((e) => e.place).filter((p) => placeById(p)))].map(describePlace),
     '',
     'The creatures:',
     ...people.map(describe),

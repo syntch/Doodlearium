@@ -32,7 +32,7 @@ export class SimFood {
       this.flakes.push({
         id: this.nextId++,
         x: cx + (Math.random() - 0.5) * world.width * 0.14,
-        y: -Math.random() * world.height * 0.1,
+        y: world.waterTop - Math.random() * world.height * 0.1,
         size: world.height * (0.004 + Math.random() * 0.004),
         color: Math.floor(Math.random() * FOOD_COLORS.length),
         phase: Math.random() * TAU,
@@ -64,7 +64,7 @@ export class SimFood {
     for (let i = this.flakes.length - 1; i >= 0; i--) {
       const f = this.flakes[i];
       f.age += dt;
-      const restY = world.floorY + f.size * 2;
+      const restY = world.floorAt(f.x) + f.size * 2;
       if (f.y < restY) {
         f.y = Math.min(restY, f.y + world.height * 0.045 * dt);
         f.x += (Math.sin(f.age * 2 + f.phase) * f.drift + world.current) * dt;

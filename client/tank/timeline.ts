@@ -30,6 +30,11 @@ export class Timeline {
     return this.frames.at(-1)?.frame ?? null;
   }
 
+  /** Forgets everything (the screen moved to another place). */
+  clear() {
+    this.frames = [];
+  }
+
   push(frame: Frame) {
     const last = this.latest;
     // A restarted server starts its clock again: start over.
