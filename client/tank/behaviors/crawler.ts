@@ -72,6 +72,10 @@ export class Crawler implements Creature {
     return { x: this.view.x, y: this.view.y - this.sprite.texture.height * this.scale - 8 };
   }
 
+  get moving() {
+    return this.parts;
+  }
+
   get body() {
     return this.sprite;
   }

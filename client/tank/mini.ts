@@ -127,7 +127,7 @@ export async function createPreview(container: HTMLElement): Promise<Preview> {
       creature = createCreature(drawing, newTexture, world, false, newCutout?.pieces);
       if (was && creature instanceof Swimmer) Object.assign(creature, was);
       (drawing.nocturnal ? nightLayer : creatureLayer).addChild(creature.view);
-      if (glowTextures && creature.body) glow = new Glow(creature.body, glowTextures, glowLayer);
+      if (glowTextures && creature.body) glow = new Glow(creature.body, glowTextures, glowLayer, creature.moving);
       place();
       follow(1);
     },

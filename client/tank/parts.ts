@@ -1,11 +1,15 @@
 import { Container, Matrix, Sprite, Texture } from 'pixi.js';
-import { partsUrl, type Drawing, type Part } from '../../shared/types.ts';
+import { isHinged, partsUrl, type Drawing, type Part } from '../../shared/types.ts';
 import type { Deform } from './attachments.ts';
 import { TAU } from './world.ts';
 
 /** One animated part cut out of a drawing, in the drawing's texture coordinates. */
 export interface Piece {
   part: Part;
+  /** Its place in the drawing's list of parts. */
+  index: number;
+  /** The middle of the rest of the drawing (everything that isn't this part), so it can open away from it. */
+  rest: { x: number; y: number };
   canvas: HTMLCanvasElement;
   /** Top-left of the piece within the drawing. */
   x: number;
@@ -96,7 +100,16 @@ export function splitParts(picture: CanvasImageSource, partsImage: CanvasImageSo
       }
     }
     c.putImageData(out, 0, 0);
-    pieces.push({ part, canvas, x: left, y: top });
+    // Where the rest of the drawing is, sampled sparsely.
+    let sx = 0, sy = 0, n = 0;
+    for (let i = 0; i < width * height; i += 7) {
+      if (px[i * 4 + 3] < 128 || (marks[i * 4 + 3] >= 128 && Math.abs(marks[i * 4] - value) <= 10)) continue;
+      sx += i % width;
+      sy += Math.floor(i / width);
+      n++;
+    }
+    const rest = n ? { x: sx / n, y: sy / n } : { x: width / 2, y: height / 2 };
+    pieces.push({ part, index, rest, canvas, x: left, y: top });
   });
 
   const bodyCanvas = Object.assign(document.createElement('canvas'), { width, height });
@@ -115,6 +128,8 @@ interface Live {
   h2: { x: number; y: number };
   mid: { x: number; y: number };
   centre: { x: number; y: number };
+  /** Open & close: which way round it opens (1 or -1). */
+  opens: number;
 }
 
 /** Animates a drawing's pieces in place, riding the body's own bend like extras do. */
@@ -136,6 +151,7 @@ export class Parts {
       const [x1, y1, x2, y2] = piece.part.hinge;
       const h1 = { x: x1 * texW, y: y1 * texH };
       const h2 = { x: x2 * texW, y: y2 * texH };
+      const centre = { x: piece.x + piece.canvas.width / 2, y: piece.y + piece.canvas.height / 2 };
       return {
         piece,
         holder,
@@ -144,9 +160,15 @@ export class Parts {
         h1,
         h2,
         mid: { x: (h1.x + h2.x) / 2, y: (h1.y + h2.y) / 2 },
-        centre: { x: piece.x + piece.canvas.width / 2, y: piece.y + piece.canvas.height / 2 },
+        centre,
+        opens: opensAway(piece.part, { x: (h1.x + h2.x) / 2, y: (h1.y + h2.y) / 2 }, centre, piece.rest),
       };
     });
+  }
+
+  /** The container that moves a part, by its place in the drawing's list (to hang its glow on). */
+  holderFor(index: number) {
+    return this.live.find((l) => l.piece.index === index)?.holder;
   }
 
   get empty() {
@@ -159,7 +181,7 @@ export class Parts {
     for (const l of this.live) {
       const m = this.motion(l, dt * (l.piece.part.speed ?? 1), effort, sleepy);
       // Pieces follow the body's bend at the point they're attached.
-      const at = l.piece.part.motion === 'popout' || l.piece.part.motion === 'flap' ? l.mid : l.centre;
+      const at = isHinged(l.piece.part.motion) ? l.mid : l.centre;
       const bend = deform?.(at.x / this.texW, at.y / this.texH) ?? { dx: 0, dy: 0 };
       m.prepend(new Matrix(1, 0, 0, 1, bend.dx - this.origin.x, bend.dy - this.origin.y));
       l.holder.setFromMatrix(m);
@@ -183,6 +205,14 @@ export class Parts {
       case 'flap':
         l.phase += dt * (3 + effort);
         return aroundPoint(l.mid, m.rotate(Math.sin(l.phase) * 0.45 * amount));
+      case 'chomp': {
+        // Opens away from the rest of the body, holds, snaps shut, and rests a moment before the next.
+        l.phase += dt * (1.6 + effort * 0.6);
+        const c = (l.phase / TAU) % 1;
+        const ease = (t: number) => t * t * (3 - 2 * t);
+        const open = c < 0.3 ? ease(c / 0.3) : c < 0.45 ? 1 : c < 0.6 ? 1 - ease((c - 0.45) / 0.15) : 0;
+        return aroundPoint(l.mid, m.rotate(open * Math.min(1.1, 0.5 * amount) * l.opens));
+      }
       case 'spin':
         l.phase += dt * 4 * amount;
         return aroundPoint(l.centre, m.rotate(l.phase));
@@ -205,6 +235,16 @@ export class Parts {
       }
     }
   }
+}
+
+/** Which way to turn a part around its hinge so it swings away from the rest of the drawing (a clam's lid opens upward). */
+function opensAway(part: Part, hinge: { x: number; y: number }, centre: { x: number; y: number }, middle: { x: number; y: number }) {
+  // Turning by a small angle moves the part's middle along (-ry, rx), where r runs from the hinge to it.
+  const rx = centre.x - hinge.x;
+  const ry = centre.y - hinge.y;
+  const away = -ry * (centre.x - middle.x) + rx * (centre.y - middle.y);
+  const sign = away < 0 ? -1 : 1;
+  return part.flip ? -sign : sign;
 }
 
 /** Applies m around point p instead of around the origin. */

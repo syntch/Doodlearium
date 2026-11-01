@@ -150,7 +150,7 @@ async function addDrawing(drawing: Drawing, dropIn: boolean) {
 
 function attachGlow(entry: Entry) {
   const body = entry.creature.body;
-  if (entry.glowTextures && body) entry.glow = new Glow(body, entry.glowTextures, glowLayer);
+  if (entry.glowTextures && body) entry.glow = new Glow(body, entry.glowTextures, glowLayer, entry.creature.moving);
 }
 
 const isAwake = (entry: Entry) => entry.creature instanceof Egg || !entry.creature.drawing.nocturnal || scene.isNight;
@@ -249,8 +249,10 @@ function safeUpdate(entry: Entry, dt: number) {
 function destroyEntry({ creature, cutout, glow, glowTextures }: Entry) {
   if (glow) glow.destroy();
   else {
-    glowTextures?.glow?.destroy(true);
-    glowTextures?.uv?.destroy(true);
+    for (const t of glowTextures ? [glowTextures, ...glowTextures.pieces] : []) {
+      t.glow?.destroy(true);
+      t.uv?.destroy(true);
+    }
   }
   creature.view.destroy({ children: true });
   if (cutout) cutout.destroy();

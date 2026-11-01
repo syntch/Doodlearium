@@ -115,6 +115,14 @@ export class Selection {
     this.changedMask();
   }
 
+  /** Selects wherever the image has something, drawn at (x, y). */
+  addImage(image: CanvasImageSource, x: number, y: number) {
+    const m = this.mctx;
+    m.globalCompositeOperation = 'source-over';
+    m.drawImage(image, x, y);
+    this.changedMask();
+  }
+
   selectAll() {
     const m = this.mctx;
     m.globalCompositeOperation = 'source-over';

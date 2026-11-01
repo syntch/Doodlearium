@@ -28,6 +28,12 @@ export function removePaper(photo: ImageBitmap, maxW: number, maxH: number, stre
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(photo, 0, 0, width, height);
   const image = ctx.getImageData(0, 0, width, height);
+  // 0: not a photo of paper (a screenshot, say), so just clear a plain background around the edges.
+  if (strength <= 0) {
+    clearBackground(image);
+    ctx.putImageData(image, 0, 0);
+    return canvas;
+  }
   const d = image.data;
 
   const paper = paperMap(d, width, height);
@@ -54,6 +60,42 @@ export function removePaper(photo: ImageBitmap, maxW: number, maxH: number, stre
   }
   ctx.putImageData(image, 0, 0);
   return canvas;
+}
+
+/**
+ * If the picture's edges are mostly one colour (a screenshot's white or black background), clears that
+ * colour wherever it joins up with the edges, leaving the same colour inside the picture alone.
+ */
+function clearBackground(image: ImageData) {
+  const { width, height, data: d } = image;
+  const edge: number[] = [];
+  for (let x = 0; x < width; x++) edge.push(x, (height - 1) * width + x);
+  for (let y = 0; y < height; y++) edge.push(y * width, y * width + width - 1);
+  // The most common edge colour, roughly.
+  const counts = new Map<number, number>();
+  const key = (i: number) => ((d[i * 4] >> 4) << 8) | ((d[i * 4 + 1] >> 4) << 4) | (d[i * 4 + 2] >> 4);
+  for (const i of edge) counts.set(key(i), (counts.get(key(i)) ?? 0) + 1);
+  const [top, count] = [...counts].sort((a, b) => b[1] - a[1])[0];
+  if (count < edge.length * 0.5) return;
+  const sample = edge.find((i) => key(i) === top)!;
+  const bg = [d[sample * 4], d[sample * 4 + 1], d[sample * 4 + 2]];
+  const distance = (i: number) => Math.max(Math.abs(d[i * 4] - bg[0]), Math.abs(d[i * 4 + 1] - bg[1]), Math.abs(d[i * 4 + 2] - bg[2]));
+  const seen = new Uint8Array(width * height);
+  const stack = edge.filter((i) => distance(i) < 40);
+  for (const i of stack) seen[i] = 1;
+  while (stack.length) {
+    const i = stack.pop()!;
+    // Soft edges: pixels part-way to the background colour become part see-through.
+    const dist = distance(i);
+    d[i * 4 + 3] = Math.min(d[i * 4 + 3], Math.round(smoothstep(12, 40, dist) * 255));
+    if (dist >= 40) continue;
+    const x = i % width;
+    for (const n of [x > 0 ? i - 1 : -1, x < width - 1 ? i + 1 : -1, i - width, i + width]) {
+      if (n < 0 || n >= width * height || seen[n]) continue;
+      seen[n] = 1;
+      stack.push(n);
+    }
+  }
 }
 
 const smoothstep = (a: number, b: number, v: number) => {

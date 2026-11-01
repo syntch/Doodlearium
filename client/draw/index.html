@@ -63,12 +63,12 @@
         <button id="undo" title="Undo (Ctrl+Z)">↶ Undo</button>
         <button id="clear">🗑 Clear</button>
         <button id="preview-toggle" aria-pressed="false" title="See it move like it will in the tank">▶ Preview</button>
-        <button id="photo" title="Use a photo of a drawing on paper">📷 Photo</button>
+        <button id="photo" title="Use a photo of a drawing on paper (or paste a picture with Ctrl+V)">📷 Photo</button>
         <input type="file" id="photo-input" accept="image/*" hidden />
       </div>
       <div class="photo-panel" id="photo-panel" hidden>
-        <label for="photo-strength">Paper removal: gentle</label>
-        <input type="range" id="photo-strength" min="1" max="10" value="5" />
+        <label for="photo-strength">Paper removal: background only</label>
+        <input type="range" id="photo-strength" min="0" max="10" value="5" />
         <span>strong</span>
         <button id="photo-done">Done</button>
       </div>

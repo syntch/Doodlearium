@@ -2,6 +2,7 @@ import {
   MAX_ATTACHMENTS,
   MAX_PARTS,
   PART_MOTIONS,
+  isHinged,
   glowUrl,
   imageUrl,
   motionOf,
@@ -55,6 +56,8 @@ type Point = { x: number; y: number; pressure: number };
 type Op =
   | { type: 'stroke'; color: string; size: number; erase: boolean; mirror: Mirror; points: Point[]; paint?: Paint }
   | { type: 'fill'; x: number; y: number; color: string; material: Material; mirror: Mirror; paint?: Paint; turn?: number }
+  /** A picture pasted on top of the drawing. */
+  | { type: 'paste'; image: HTMLCanvasElement; x: number; y: number }
   | { type: 'attach'; attachment: PlacedAttachment }
   | { type: 'detach'; target: PlacedAttachment }
   | { type: 'part'; part: EditorPart }
@@ -62,7 +65,7 @@ type Op =
   /** A hand-drawn hinge; result is the part with it, made once so later ops can find it. */
   | { type: 'hinge'; target: EditorPart; hinge: [number, number, number, number]; result?: EditorPart }
   /** A part made faster, slower, bigger or smaller. */
-  | { type: 'tune'; target: EditorPart; speed: number; amount: number; result?: EditorPart }
+  | { type: 'tune'; target: EditorPart; speed: number; amount: number; flip?: boolean; result?: EditorPart }
   | TransformOp;
 
 const paper = document.querySelector<HTMLCanvasElement>('#paper')!;
@@ -677,6 +680,7 @@ function redraw() {
   for (const op of ops) {
     if (op.type === 'stroke') op.points.forEach((_, i) => drawSegment(op, i));
     else if (op.type === 'fill') applyFill(op);
+    else if (op.type === 'paste') ctx.drawImage(op.image, op.x, op.y);
     else if (op.type === 'transform') {
       applyTransform(ctx, op);
       applyTransform(holes, op);
@@ -943,7 +947,7 @@ function currentParts(): EditorPart[] {
       if (i >= 0) list[i] = op.result ??= { ...op.target, hinge: op.hinge };
     } else if (op.type === 'tune') {
       const i = list.indexOf(op.target);
-      if (i >= 0) list[i] = op.result ??= { ...op.target, speed: op.speed, amount: op.amount };
+      if (i >= 0) list[i] = op.result ??= { ...op.target, speed: op.speed, amount: op.amount, flip: op.flip };
     } else if (op.type === 'transform') carryParts(list, op);
   }
   if (selection.moved) carryParts(list, selection.pendingOp());
@@ -999,7 +1003,7 @@ function renderParts() {
     partsOverlay.drawImage(outline(part.mask, 5, 'rgba(20, 30, 60, 0.85)'), 0, 0);
     partsOverlay.drawImage(outline(part.mask, 2.5, 'rgba(255, 255, 255, 0.95)'), 0, 0);
     const [x1, y1, x2, y2] = part.hinge;
-    if (part.motion === 'popout' || part.motion === 'flap') {
+    if (isHinged(part.motion)) {
       partsOverlay.save();
       partsOverlay.lineWidth = 6;
       partsOverlay.lineCap = 'round';
@@ -1050,7 +1054,7 @@ function renderParts() {
         button.textContent = steps[i][1];
         button.title = title;
         button.onclick = () => {
-          const tuned = { speed: part.speed ?? 1, amount: part.amount ?? 1, [key]: steps[(i + 1) % steps.length][0] };
+          const tuned = { speed: part.speed ?? 1, amount: part.amount ?? 1, flip: part.flip, [key]: steps[(i + 1) % steps.length][0] };
           ops.push({ type: 'tune', target: part, ...tuned });
           changed();
         };
@@ -1058,7 +1062,18 @@ function renderParts() {
       };
       tune('speed', 'Speed (tap to change): normal, fast or slow', [[1, '▶'], [1.8, '⏩'], [0.5, '🐢']]);
       tune('amount', 'How far it moves (tap to change): normal, big or small', [[1, '◐'], [1.6, '⬤'], [0.5, '·']]);
-      if (part.motion === 'popout' || part.motion === 'flap') {
+      if (part.motion === 'chomp') {
+        const flip = document.createElement('button');
+        flip.textContent = '🔃';
+        flip.title = 'Open the other way';
+        flip.setAttribute('aria-pressed', String(Boolean(part.flip)));
+        flip.onclick = () => {
+          ops.push({ type: 'tune', target: part, speed: part.speed ?? 1, amount: part.amount ?? 1, flip: !part.flip });
+          changed();
+        };
+        chip.append(flip);
+      }
+      if (isHinged(part.motion)) {
         const pin = document.createElement('button');
         pin.textContent = '📍';
         pin.title = 'Draw where it is attached';
@@ -1095,15 +1110,19 @@ let photo: ImageBitmap | null = null;
 
 document.querySelector<HTMLButtonElement>('#photo')!.onclick = () => {
   if ((ops.length || base) && !confirm('Start over with a photo? This replaces the current drawing.')) return;
+  photoStrength.value = '5';
   photoInput.click();
 };
 
-photoInput.onchange = async () => {
+photoInput.onchange = () => {
   const file = photoInput.files?.[0];
   photoInput.value = '';
-  if (!file) return;
+  if (file) void usePhoto(file);
+};
+
+async function usePhoto(file: Blob) {
   try {
-    photo = await readPhoto(file);
+    photo = await readPhoto(file as File);
   } catch {
     showToast("Couldn't open that photo.", true);
     return;
@@ -1114,8 +1133,47 @@ photoInput.onchange = async () => {
   selection.clear();
   photoPanel.hidden = false;
   applyPhoto();
-  showToast('Photo added! Slide to clean up the paper, then touch it up with the tools.');
-};
+  showToast('Picture added! Slide to clean up the paper (all the way left just clears a plain background), then touch it up with the tools.');
+}
+
+// Pasting a picture (say a screenshot from Windows + Shift + S): onto an empty page it's used like a photo;
+// onto a drawing it lands on top, selected, ready to move and resize.
+addEventListener('paste', async (e) => {
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+  const file = [...(e.clipboardData?.items ?? [])].find((i) => i.kind === 'file' && i.type.startsWith('image/'))?.getAsFile();
+  if (!file) return;
+  e.preventDefault();
+  if (!ops.length && !base) {
+    // Most pasted pictures are screenshots, not photos of paper.
+    photoStrength.value = '0';
+    void usePhoto(file);
+    return;
+  }
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await readPhoto(file);
+  } catch {
+    showToast("Couldn't paste that picture.", true);
+    return;
+  }
+  // Clear a plain background, so a pasted hat doesn't arrive in a white box.
+  const image = removePaper(bitmap, paper.width * 0.6, paper.height * 0.6, 0);
+  bitmap.close();
+  const op: Op = {
+    type: 'paste',
+    image,
+    x: Math.round((paper.width - image.width) / 2),
+    y: Math.round((paper.height - image.height) / 2),
+  };
+  setTool('select');
+  finishSelection();
+  ops.push(op);
+  redraw();
+  selection.addImage(image, op.x, op.y);
+  renderSelection();
+  renderSelectBar();
+  showToast('Pasted! Drag it where you want it, or resize and turn it.');
+});
 
 /** (Re)builds the base image from the photo at the current paper-removal strength. */
 function applyPhoto() {

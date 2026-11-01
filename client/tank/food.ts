@@ -12,6 +12,8 @@ export interface Flake {
   /** Seconds since it reached the sand; flakes there fade away. */
   landedFor: number;
   eaten: boolean;
+  /** A submarine is on its way to collect it (and its neighbours), so it lingers on the sand longer. */
+  claimed?: boolean;
 }
 
 const COLORS = [0xe0882f, 0xc8552d, 0x9cc25a, 0xe8c25a];
@@ -40,12 +42,12 @@ export class Food {
     world.scene.burst(cx, 0, 12);
   }
 
-  /** The closest uneaten flake, drifting or (while still fresh) on the sand. */
-  nearest(x: number, y: number): Flake | null {
+  /** The closest uneaten flake, drifting or (while still fresh) on the sand; or only ones that have sunk below `below`. */
+  nearest(x: number, y: number, below = -Infinity): Flake | null {
     let best: Flake | null = null;
     let bestDist = Infinity;
     for (const f of this.flakes) {
-      if (f.eaten || f.landedFor > LANDED_SECONDS - 2) continue;
+      if (f.eaten || f.landedFor > LANDED_SECONDS - 2 || (f.landedFor <= 0 && f.y < below)) continue;
       const d = Math.hypot(f.x - x, f.y - y);
       if (d < bestDist) {
         best = f;
@@ -65,7 +67,7 @@ export class Food {
         f.y = Math.min(restY, f.y + world.height * 0.045 * dt);
         f.x += (Math.sin(f.age * 2 + f.phase) * f.drift + world.current) * dt;
       } else {
-        f.landedFor += dt;
+        f.landedFor += dt * (f.claimed ? 0.25 : 1);
       }
       if (f.eaten || f.landedFor > LANDED_SECONDS) {
         this.flakes.splice(i, 1);

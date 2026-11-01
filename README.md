@@ -14,7 +14,7 @@ The server prints its address on your network, for example `http://192.168.1.20:
 | Page | What it's for |
 | --- | --- |
 | `/tank/` | The aquarium. Double-click for full screen; click to drop food. Move the mouse (or tap) and buttons appear: **✏️ Draw** and **🖼️ Gallery** to get around, **⚙️** for the tank controls (see below) and **🔇/🔊** (or the S key) for soft sounds. They hide again, with the cursor, when left alone. Point at a creature (or tap it) to see its name, who drew it and what it's like. The tank dims at night. See **Life in the tank** below for what goes on. |
-| `/draw/` | Pick how it moves (see **Motion styles** below), draw it, then add it to the tank. It drops in live. **▶ Preview** shows it moving in a little tank while you draw (tap the preview to feed it). If the drawing's shape suits another style, a suggestion pops up. Tools: brush (with rainbow paint, and **invisible** paint that makes see-through holes, shown as a checkerboard), eraser, a **fill** bucket with materials (brick, stone, wood, bark, scales, stripes, dots, rainbow; **Turn** points scales up, down, left or right, and runs wood, bark, brick, stripes and rainbow across or up and down), **💡 Glow paint** (glows softly, brightest at night) and **🟣 Blacklight paint** (looks ordinary until the tank's blacklight goes on) for the brush and fill, **mirror** drawing, **⬚ Select** (paint over a part, or draw a loop around it, then drag it to move it, or make it bigger, smaller, turned, flipped, copied or deleted; extras on it come along), and **extras**. Extras are animated things pinned to a drawing: bubbles, sparkles, a glow, a googly eye, a waving flag and a propeller. The preview's **🟣 Blacklight** button shows blacklight paint glowing. **📷 Photo** turns a photo of a paper drawing into a drawing, removing the paper. **🌙 Night creature** makes it only come out after dark. |
+| `/draw/` | Pick how it moves (see **Motion styles** below), draw it, then add it to the tank. It drops in live. **▶ Preview** shows it moving in a little tank while you draw (tap the preview to feed it). If the drawing's shape suits another style, a suggestion pops up. Tools: brush (with rainbow paint, and **invisible** paint that makes see-through holes, shown as a checkerboard), eraser, a **fill** bucket with materials (brick, stone, wood, bark, scales, stripes, dots, rainbow; **Turn** points scales up, down, left or right, and runs wood, bark, brick, stripes and rainbow across or up and down), **💡 Glow paint** (glows softly, brightest at night) and **🟣 Blacklight paint** (looks ordinary until the tank's blacklight goes on) for the brush and fill, **mirror** drawing, **⬚ Select** (paint over a part, or draw a loop around it, then drag it to move it, or make it bigger, smaller, turned, flipped, copied or deleted; extras on it come along), and **extras**. Extras are animated things pinned to a drawing: bubbles, sparkles, a glow, a googly eye, a waving flag and a propeller. The preview's **🟣 Blacklight** button shows blacklight paint glowing. **📷 Photo** turns a photo of a paper drawing into a drawing, removing the paper. You can also **paste** a picture (Ctrl+V, say after a Windows + Shift + S screenshot): on an empty page it's used like a photo, and on a drawing it lands on top, selected, ready to move and resize. A plain background around a pasted picture is cleared. **🌙 Night creature** makes it only come out after dark. |
 | `/gallery/` | Every drawing ever made, babies included (**🐣 Babies** shows just those). **Edit** opens one in the draw page, for example to fix a fish that swims backwards. **Remove** deletes it. |
 
 Every page has a **🍤 Feed** button that drops food into every open tank.
@@ -80,7 +80,7 @@ The style picked on the draw page decides how a drawing moves and where it lives
 | 🪼 Jellyfish | jellyfish, squid, balloons | pulses upward and sinks between pulses; tentacles trail. Draw the bell on top |
 | 🦄 Seahorse | seahorses, anything upright | hovers upright and bobs, tail curling. Draw the head at the top |
 | 🐢 Glider | turtles, rays, birds, penguins | sails along in long, smooth swoops, its edges rippling. For flapping flippers or wings, make them moving parts (**⬚ Select → ✨ Animate → 🦋 Flap**) |
-| 🚢 Vessel | submarines, boats, robots | stays rigid; extras like propellers still animate |
+| 🚢 Vessel | submarines, boats, robots | stays rigid and patrols in long, steady runs, now and then stopping to hover, puffing exhaust bubbles out of the back. It doesn't race the fish for food, but tidies up flakes that sink to the sand. Extras like propellers still animate |
 | 🦀 Crawler | crabs, snails, starfish | walks along the sand with a bouncy step and eats food that lands there |
 | 🌿 Plant | seaweed, coral | grows from the sand and sways |
 | 🏰 Decoration | castles, chests, rocks | sits still on the sand |
@@ -94,12 +94,13 @@ Any part of a drawing can move on its own, on top of the whole-body motion. With
 | Motion | Good for |
 | --- | --- |
 | 🪽 Pop-out | side fins and flaps: lifts up out of the paper where it's attached, uncovering a cut-out shadow |
-| 🦋 Flap | tails, jaws, flippers: swings back and forth where it's attached |
+| 🦋 Flap | tails, flippers: swings back and forth where it's attached |
+| 🦪 Open & close | clams, mouths, lids: opens away from the rest of the drawing, holds, snaps shut and rests. **🔃** on its chip opens it the other way |
 | 🌀 Spin | propellers, wheels |
 | 💓 Pulse | hearts, lights |
 | 😉 Blink | eyes |
 
-Each part's chip under the drawing has **▶** for its speed (normal, ⏩ fast, 🐢 slow) and **◐** for how far it moves (normal, ⬤ big, · small). Pop-out and Flap show an orange line where the part is attached. It's found automatically, but if it's in the wrong place, tap **📍** on the part's chip under the drawing and draw a new line. Moving parts are saved with the drawing (as `<id>.parts.png` beside it) and come back when it's edited.
+Each part's chip under the drawing has **▶** for its speed (normal, ⏩ fast, 🐢 slow) and **◐** for how far it moves (normal, ⬤ big, · small). Pop-out, Flap and Open & close show an orange line where the part is attached. It's found automatically, but if it's in the wrong place, tap **📍** on the part's chip under the drawing and draw a new line. Moving parts are saved with the drawing (as `<id>.parts.png` beside it) and come back when it's edited.
 
 ## How the animation works
 
@@ -111,7 +112,7 @@ The motion style picks the behaviour (`client/tank/creatures.ts`):
 - **Decorations** (`behaviors/decor.ts`): sit still on the sand.
 - **Puffers** are swimmers whose mesh can round out into a disc (`shape` in `behaviors/swimmer.ts`), with spikes drawn behind it.
 - **Eggs** (`babies.ts`, `behaviors/egg.ts`): the tank blends the parents' pictures and asks the server for an egg (`POST /api/eggs`). The server saves the baby as a drawing with `parents` and `hatchAt`, and every tank shows it as an egg until then.
-- **Glowing paint** (`glow.ts`): the draw page saves which pixels glow in a second image (`<id>.glow.png`: red for glow paint, green for blacklight paint). The tank lays a sharp and a blurred copy of those pixels over the creature, sharing its mesh so they bend with it, drawn above the night tint so they shine in the dark.
+- **Glowing paint** (`glow.ts`): the draw page saves which pixels glow in a second image (`<id>.glow.png`: red for glow paint, green for blacklight paint). The tank lays a sharp and a blurred copy of those pixels over the creature, sharing its mesh so they bend with it, drawn above the night tint so they shine in the dark. Glowing paint on a moving part is cut out with the part and rides along with it.
 - **The rest of tank life**: `documentary.ts`, `seasons.ts`, `events.ts` and `sounds.ts` (made on the fly, no sound files). The ⚙️ menu sends its commands through the server (`POST /api/tank`) to every open tank.
 - **Moving parts** (`parts.ts`): drawings with parts are split when loaded into a body and one piece per part. Each piece animates around its hinge or middle and rides the body's bend, like extras do.
 

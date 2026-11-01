@@ -30,8 +30,10 @@ export interface Attachment {
 }
 
 /** How a selected part of a drawing moves on its own, on top of the whole-body motion. */
-export const PART_MOTIONS = ['popout', 'flap', 'spin', 'pulse', 'blink'] as const;
+export const PART_MOTIONS = ['popout', 'flap', 'chomp', 'spin', 'pulse', 'blink'] as const;
 export type PartMotion = (typeof PART_MOTIONS)[number];
+/** Motions that move around the line where the part is attached (rather than around its middle). */
+export const isHinged = (m: PartMotion) => m === 'popout' || m === 'flap' || m === 'chomp';
 export const MAX_PARTS = 8;
 
 /**
@@ -45,6 +47,8 @@ export interface Part {
   /** How fast and how far it moves, 0.25 to 3 (1 = normal). */
   speed?: number;
   amount?: number;
+  /** Open & close: opens the other way round from the way it would pick by itself. */
+  flip?: boolean;
 }
 
 export const isAttachmentColor = (c: unknown): c is string =>

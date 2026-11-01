@@ -16,6 +16,7 @@ export interface PlacedPart {
   hinge: [number, number, number, number];
   speed?: number;
   amount?: number;
+  flip?: boolean;
 }
 
 /**
@@ -63,10 +64,10 @@ export function exportDrawing(
     return { x: mirror ? 1 - x : x, y: clampFraction((py - (bounds.top - PADDING)) / cropH) };
   };
   const exportedAttachments = attachments.map((a) => ({ ...a, ...toFraction(a.x, a.y) }));
-  const exportedParts: Part[] = parts.map(({ motion, hinge: [x1, y1, x2, y2], speed = 1, amount = 1 }) => {
+  const exportedParts: Part[] = parts.map(({ motion, hinge: [x1, y1, x2, y2], speed = 1, amount = 1, flip }) => {
     const a = toFraction(x1, y1);
     const b = toFraction(x2, y2);
-    return { motion, hinge: [a.x, a.y, b.x, b.y], speed, amount };
+    return { motion, hinge: [a.x, a.y, b.x, b.y], speed, amount, ...(flip ? { flip } : {}) };
   });
   const scale = Math.min(1, MAX_SIZE / Math.max(cropW, cropH));
   const width = Math.max(1, Math.round(cropW * scale));

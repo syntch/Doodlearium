@@ -1,6 +1,7 @@
 import type { Container } from 'pixi.js';
 import type { Drawing } from '../../shared/types.ts';
 import type { Swimmer } from './behaviors/swimmer.ts';
+import type { Parts } from './parts.ts';
 import type { Food } from './food.ts';
 import type { Scene } from './scene.ts';
 
@@ -66,6 +67,8 @@ export interface Creature {
   labelAnchor(): { x: number; y: number };
   /** The drawing itself (a bent mesh or a sprite), for glowing paint to follow. */
   readonly body?: Container;
+  /** Its moving parts, for their glowing paint to ride along. */
+  readonly moving?: Parts;
   /** Documentary mode is filming it: time to show off. */
   star?(on: boolean): void;
 }

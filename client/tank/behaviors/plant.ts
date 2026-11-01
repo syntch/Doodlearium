@@ -50,6 +50,10 @@ export class Plant implements Creature {
     this.layout(world);
   }
 
+  get moving() {
+    return this.parts;
+  }
+
   get body() {
     return this.mesh;
   }

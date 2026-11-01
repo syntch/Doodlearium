@@ -117,6 +117,8 @@ export class Swimmer implements Creature {
     // Some of the bigger easygoing fish (and eels) are hunters: they prowl after smaller fish, which hide.
     const hunts = motionOf(drawing) === 'fish' || motionOf(drawing) === 'eel';
     if (hunts && roll >= 0.5 && roll < 0.64 && this.size > 1) this.personality = 'hunter';
+    // Machines aren't shy (curious submarines still come and peek through the glass).
+    if (this.style.machine && this.personality === 'shy') this.personality = 'easygoing';
     this.mesh = new MeshPlane({ texture, verticesX: this.style.columns, verticesY: this.style.rows });
     this.texW = texture.width;
     this.texH = texture.height;
@@ -176,6 +178,10 @@ export class Swimmer implements Creature {
     this.applyDepth();
   }
 
+  get moving() {
+    return this.parts;
+  }
+
   get body() {
     return this.mesh;
   }
@@ -203,6 +209,11 @@ export class Swimmer implements Creature {
   /** The fish a hunter is after right now. */
   get stalking(): Swimmer | null {
     return this.stalk?.prey ?? null;
+  }
+
+  /** Half the creature's on-screen height. */
+  get halfHeight() {
+    return (this.texH * this.scale) / 2;
   }
 
   /** Half the fish's on-screen length. */
@@ -241,7 +252,8 @@ export class Swimmer implements Creature {
     const steer = this.dropTime > 0 ? 0.6 : this.legSpeed > 1.5 ? 2.4 : 1.4;
     let k = Math.min(1, dt * steer);
     let wantX = dirX * speed * arrive;
-    let wantY = dirY * speed * arrive * style.vertical;
+    // Machines dive properly when there are flakes to collect.
+    let wantY = dirY * speed * arrive * (style.machine && this.meal ? 1 : style.vertical);
     if (style.move === 'pulse' && this.dropTime <= 0) {
       // Jellyfish: each contraction shoots up and along; in between they sink. Over a whole beat the rise
       // and sink cancel out (a half-sine averages 1/π), so the drift toward the target sets where it goes.
@@ -286,7 +298,11 @@ export class Swimmer implements Creature {
     this.bubbleIn -= dt;
     if (this.bubbleIn <= 0) {
       this.bubbleIn = (4 + Math.random() * 10) * (1 + this.drowsy * 2);
-      world.scene.bubble(this.headX(), this.y, 2 + Math.random() * 2);
+      if (this.style.machine) {
+        // Exhaust: a little trail of bubbles from the back, more often than a fish breathes.
+        this.bubbleIn *= 0.4;
+        for (let i = 0; i < 3; i++) world.scene.bubble(this.tailX(), this.y + (Math.random() - 0.5) * this.halfHeight * 0.4, 1.5 + Math.random() * 2);
+      } else world.scene.bubble(this.headX(), this.y, 2 + Math.random() * 2);
     }
   }
 
@@ -329,7 +345,11 @@ export class Swimmer implements Creature {
     }
     this.trickIn -= dt;
     if (!this.trick && this.trickIn <= 0) {
-      const kinds: Trick[] = this.style.puffs ? ['puff', 'puff', 'loop', 'bubbles'] : ['loop', 'dash', 'waggle', 'bubbles'];
+      const kinds: Trick[] = this.style.puffs
+        ? ['puff', 'puff', 'loop', 'bubbles']
+        : this.style.machine
+          ? ['loop', 'dash', 'bubbles']
+          : ['loop', 'dash', 'waggle', 'bubbles'];
       const options = kinds.filter((k) => k !== this.lastTrick);
       const kind = options[Math.floor(Math.random() * options.length)];
       this.trick = { kind, t: 0, length: TRICK_SECONDS[kind] };
@@ -511,10 +531,20 @@ export class Swimmer implements Creature {
     if (world.time < this.fullUntil) return false;
     // Re-pick the nearest flake when ours is gone (eaten by someone else, or fading on the sand).
     if (!this.meal || this.meal.eaten || this.meal.landedFor > 5) {
-      this.meal = world.food.nearest(this.x, this.y);
+      this.meal = world.food.nearest(this.x, this.y, this.style.machine ? world.height * 0.72 : -Infinity);
     }
     if (!this.meal) return false;
     this.visit = null;
+    if (this.style.machine) {
+      // Sweep down over flakes sinking to the sand, and scoop them up from underneath.
+      this.zGoal = this.zHome;
+      this.target.x = this.meal.x;
+      this.target.y = Math.min(this.meal.y - this.halfHeight * 0.6, this.bounds(world).bottom);
+      this.legSpeed = 1.2;
+      // The flakes around it wait for the sub to come and collect them all.
+      for (const f of world.food.flakes) if (Math.abs(f.x - this.meal.x) < world.width * 0.2) f.claimed = true;
+      return true;
+    }
     this.zGoal = Math.min(this.zHome, 0.3);
     // Aim so the head (not the middle of the body) reaches the flake.
     const side = this.meal.x >= this.x ? 1 : -1;
@@ -527,6 +557,14 @@ export class Swimmer implements Creature {
 
   private tryToEat(world: World) {
     if (!this.meal || this.meal.eaten) return;
+    if (this.style.machine) {
+      const reach = this.meal.y - (this.y + this.halfHeight);
+      if (Math.abs(this.meal.x - this.x) > this.halfLength * 0.7 || reach < -this.halfHeight * 2 || reach > Math.max(40, this.halfHeight * 1.2)) return;
+      this.meal.eaten = true;
+      this.meal = null;
+      world.scene.bubble(this.x, this.y + this.halfHeight * 0.4, 3);
+      return;
+    }
     if (Math.hypot(this.meal.x - this.headX(), this.meal.y - this.y) > Math.max(16, this.halfLength * 0.45)) return;
     this.meal.eaten = true;
     this.meal = null;
@@ -611,6 +649,10 @@ export class Swimmer implements Creature {
 
   // --- helpers -------------------------------------------------------------
 
+  private tailX() {
+    return this.x - this.halfLength * 0.95 * Math.sign(this.facing || 1);
+  }
+
   private headX() {
     return this.x + this.halfLength * 0.9 * Math.sign(this.facing || 1);
   }
@@ -693,6 +735,15 @@ export class Swimmer implements Creature {
 
   private pickTarget(world: World) {
     const b = this.bounds(world);
+    if (this.style.machine) {
+      // Patrols: long, steady runs at much the same depth, now and then stopping to hover a while.
+      const hover = Math.random() < 0.25;
+      this.legSpeed = hover ? 0.15 : 0.85 + Math.random() * 0.2;
+      this.target.x = hover ? this.x + (Math.random() - 0.5) * 30 : Math.random() < 0.5 ? b.left : b.right;
+      this.target.y = clamp(this.y + (Math.random() - 0.5) * world.height * 0.12, b.top, b.bottom);
+      this.retargetIn = hover ? 3 + Math.random() * 3 : 14 + Math.random() * 10;
+      return;
+    }
     // Mostly lazy cruising, sometimes a quick dart.
     this.legSpeed = this.style.darts && Math.random() < 0.15 ? 2.2 : 0.6 + Math.random() * 0.6;
     // Prefer horizontal travel: pick a far-off x and a nearby y (hoverers roam up and down more).

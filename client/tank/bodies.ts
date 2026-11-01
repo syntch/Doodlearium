@@ -36,6 +36,11 @@ export interface BodyStyle {
   schools: boolean;
   /** Puffer fish: now and then (and when a hunter comes) blows up into a spiky ball. */
   puffs?: boolean;
+  /**
+   * Submarines and boats: they patrol rather than wander, never shy away, and don't race for food. Instead
+   * they tidy up flakes that have sunk to the sand, and puff exhaust bubbles out of the back.
+   */
+  machine?: boolean;
   /** 'pulse' moves in jellyfish-style bursts instead of steady swimming. */
   move: 'cruise' | 'pulse';
   /** Bob amplitude as a share of tank height. */
@@ -209,6 +214,7 @@ const vessel: BodyStyle = {
   flips: true,
   darts: false,
   schools: false,
+  machine: true,
   move: 'cruise',
   bob: 0.006,
   beat: () => 0,
