@@ -160,7 +160,7 @@ function storyPrompt() {
   return [
     `Please write a short story for a young reader about what happened in our family's aquarium, Doodlearium, ${span}.`,
     '',
-    "Doodlearium is a little world on our TV: a lake, a pond, the ocean and a beach underwater, and meadows and a farm up on land. Every creature in it was drawn by someone in our family (the artist's name is given), so they'll love seeing their creatures as characters.",
+    "Doodlearium is a little world on our TV: a lake, a pond, the ocean and a beach underwater, and a meadow, a farm, hills and woods up on land. Every creature in it was drawn by someone in our family (the artist's name is given), so they'll love seeing their creatures as characters.",
     'Each drawing is a kind of creature: the one that was drawn has its own name, and there can be more of its kind around the world, called things like "a Clowny".',
     star ? `The story is about ${star.name}.` : '',
     '',

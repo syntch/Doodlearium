@@ -37,8 +37,8 @@ export const PLACES: Place[] = [
   { id: 'seashore', name: 'Shell Beach', biome: 'seashore', region: 'coast', x: 700, y: 430, live: true },
   { id: 'meadow', name: 'Buttercup Meadow', biome: 'meadow', region: 'valley', x: 330, y: 598, live: true },
   { id: 'farm', name: 'Sunny Farm', biome: 'farm', region: 'valley', x: 520, y: 520, live: true },
-  { id: 'hills', name: 'Rolling Hills', biome: 'hills', region: 'highlands', x: 300, y: 150, live: false },
-  { id: 'forest', name: 'Whispering Woods', biome: 'forest', region: 'highlands', x: 140, y: 250, live: false },
+  { id: 'hills', name: 'Rolling Hills', biome: 'hills', region: 'highlands', x: 300, y: 150, live: true },
+  { id: 'forest', name: 'Whispering Woods', biome: 'forest', region: 'highlands', x: 140, y: 250, live: true },
 ];
 
 export const LIVE_PLACES = PLACES.filter((p) => p.live);

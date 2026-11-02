@@ -460,14 +460,15 @@ export class Scene {
     const top = Math.min(0, this.visible.top);
     const t = world.time;
     const rand = seededRandom('stars');
-    for (let i = 0; i < 90; i++) {
+    // In the Woods the leaves hide the sky.
+    for (let i = 0; i < (world.biome === 'forest' ? 0 : 90); i++) {
       const x = rand(left, right);
       const y = rand(top, world.floorAt(Math.min(world.width, Math.max(0, x))) - 140);
       const twinkle = 0.55 + 0.45 * Math.sin(t * rand(1, 3) + i);
       g.circle(x, y, rand(1, 2.6)).fill({ color: 0xfffbe6, alpha: n * twinkle * 0.9 });
     }
     const mx = world.width * 0.82;
-    const my = world.height * 0.12;
+    const my = world.height * (world.biome === 'forest' ? -1 : 0.12);
     g.circle(mx, my, 70).fill({ color: 0xfff6d5, alpha: n * 0.08 });
     g.circle(mx, my, 34).fill({ color: 0xfff6d5, alpha: n * 0.95 });
     g.circle(mx - 9, my - 6, 7).fill({ color: 0xe8dcb5, alpha: n * 0.8 });
@@ -485,10 +486,22 @@ export class Scene {
     }
   }
 
+  /** In the Woods: two big trunks right up close at the sides, framing the view. */
+  private drawNearTrunks(world: World, g: Graphics) {
+    if (world.biome !== 'forest') return;
+    const top = Math.min(0, this.visible.top);
+    const bottom = Math.max(world.height, this.visible.bottom) + 10;
+    for (const [x, w] of [[Math.min(0, this.visible.left) + 20, 90], [Math.max(world.width, this.visible.right) - 30, 110]]) {
+      g.poly([x - w / 2, top, x + w / 2, top, x + w * 0.65, bottom, x - w * 0.65, bottom]).fill(0x3e2f22);
+      g.poly([x - w * 0.1, top, x + w * 0.15, top, x + w * 0.2, bottom, x - w * 0.1, bottom]).fill({ color: 0x5a4532, alpha: 0.8 });
+    }
+  }
+
   /** Tufts of long grass along the front edge of a land place, swaying in the breeze. */
   private drawGrass(world: World) {
     const g = this.foreground.clear();
     if (!world.land) return;
+    this.drawNearTrunks(world, g);
     const left = Math.min(0, this.visible.left);
     const right = Math.max(world.width, this.visible.right);
     const bottom = Math.max(world.height, this.visible.bottom);
@@ -618,6 +631,24 @@ export class Scene {
   private drawLandBack(world: World, g: Graphics, rand: (lo?: number, hi?: number) => number) {
     const left = Math.min(0, this.visible.left) - 40;
     const right = Math.max(world.width, this.visible.right) + 40;
+    const top = Math.min(0, this.visible.top);
+    const floor = (x: number) => world.floorAt(Math.min(world.width, Math.max(0, x)));
+    if (world.biome === 'hills') {
+      // Far mountains, misty blue, most with snow on top.
+      for (let i = 0; i < 6; i++) {
+        const cx = left + ((i + rand(0.1, 0.9)) * (right - left)) / 6;
+        const base = floor(cx) + 20;
+        const h = rand(220, 330);
+        const w = rand(180, 280);
+        g.poly([cx - w, base, cx, base - h, cx + w, base]).fill(i % 2 ? 0xa9bfd0 : 0x9db4c7);
+        if (rand() < 0.75) {
+          g.poly([cx - w * 0.28, base - h * 0.72, cx, base - h, cx + w * 0.28, base - h * 0.72, cx + w * 0.1, base - h * 0.66, cx - w * 0.06, base - h * 0.76, cx - w * 0.16, base - h * 0.68]).fill(0xf4f8fb);
+        }
+      }
+      // Mist settling in front of them.
+      const mist = floor(world.width / 2);
+      for (let k = 1; k <= 8; k++) g.rect(left, mist - k * 22, right - left, k * 22).fill({ color: 0xeef4f6, alpha: 0.05 });
+    }
     // Two rows of far hills, paler the further away they are.
     for (const [lift, color, wave] of [[110, 0xb4d6c0, 0.004], [55, 0x9cc98a, 0.007]] as const) {
       const pts: number[] = [left, world.floorAt(0) + 30];
@@ -627,8 +658,12 @@ export class Scene {
       pts.push(right, world.floorAt(world.width) + 30);
       g.poly(pts).fill(color);
     }
+    if (world.biome === 'forest') {
+      this.drawWoods(world, g, rand, left, right, top);
+      return;
+    }
     // A line of round trees along the far edge.
-    const trees = world.biome === 'farm' ? 7 : 12;
+    const trees = world.biome === 'farm' ? 7 : world.biome === 'hills' ? 5 : 12;
     for (let i = 0; i < trees; i++) {
       const x = rand(left, right);
       if (world.biome === 'farm' && x > world.width * 0.68 && x < world.width * 0.95) continue; // the barn's there
@@ -663,6 +698,44 @@ export class Scene {
     }
   }
 
+  /**
+   * The Woods: rows of tall trees, misty far back and darker nearer, their leaves meeting overhead, with
+   * beams of sunlight slanting down through the gaps.
+   */
+  private drawWoods(world: World, g: Graphics, rand: (lo?: number, hi?: number) => number, left: number, right: number, top: number) {
+    const floor = (x: number) => world.floorAt(Math.min(world.width, Math.max(0, x)));
+    const rows = [
+      { count: 18, trunk: 0x9aa79a, leaf: 0xa9c3ae, wide: [8, 14], lift: 0 },
+      { count: 12, trunk: 0x7a6650, leaf: 0x6f9a62, wide: [16, 26], lift: 8 },
+      { count: 8, trunk: 0x5e4a36, leaf: 0x4f7f45, wide: [28, 42], lift: 18 },
+    ];
+    for (const row of rows) {
+      for (let i = 0; i < row.count; i++) {
+        const x = left + ((i + rand(0.15, 0.85)) * (right - left)) / row.count;
+        const base = floor(x) + row.lift;
+        const w = rand(row.wide[0], row.wide[1]);
+        g.poly([x - w / 2, top, x + w / 2, top, x + w * 0.6, base, x - w * 0.6, base]).fill(row.trunk);
+        // A branch or two.
+        if (rand() < 0.6) {
+          const by = rand(world.height * 0.15, world.height * 0.35);
+          const dir = rand() < 0.5 ? -1 : 1;
+          g.moveTo(x, by + 20).lineTo(x + dir * w * 2.2, by - 10).stroke({ width: Math.max(3, w * 0.25), color: row.trunk, cap: 'round' });
+        }
+        // Leaves overhead.
+        for (let k = 0; k < 4; k++) {
+          g.circle(x + rand(-90, 90), rand(top - 20, world.height * 0.14), rand(60, 110)).fill(row.leaf);
+        }
+      }
+    }
+    // Sunbeams.
+    for (let i = 0; i < 5; i++) {
+      const x = rand(world.width * 0.1, world.width * 0.9);
+      const w = rand(30, 70);
+      const base = floor(x) + 120;
+      g.poly([x, world.height * 0.08, x + w, world.height * 0.08, x + w + 140, base, x + 140 - w * 0.5, base]).fill({ color: 0xfff5c8, alpha: 0.12 });
+    }
+  }
+
   /** On land, the ground: grass that's lighter at the back, tufts and flowers, a pond's edge or a ploughed field. */
   private drawGround(world: World) {
     const { sand, specks } = this.look;
@@ -693,6 +766,53 @@ export class Scene {
         const top = py - rand(30, 70);
         g.moveTo(x, py + rand(0, 12)).lineTo(x + rand(-6, 6), top).stroke({ width: 3, color: 0x4f7d2f });
         if (rand() < 0.4) g.roundRect(x - 4, top - 4, 8, 22, 4).fill(0x6b4426);
+      }
+    } else if (world.biome === 'hills') {
+      // A path winding down the hillside toward us, and rocks dotted about.
+      const x0 = world.width * 0.56;
+      const y0 = floor(x0) + 6;
+      const edgeL: number[] = [];
+      const edgeR: number[] = [];
+      for (let y = y0; y <= height + 20; y += 15) {
+        const t = (y - y0) / (height - y0);
+        const cx = x0 + Math.sin(t * 4.2) * 140 * t + t * 120;
+        const w = 8 + t * 80;
+        edgeL.push(cx - w, y);
+        edgeR.unshift(cx + w, y);
+      }
+      g.poly([...edgeL, ...edgeR]).fill({ color: 0xd9c18e, alpha: 0.9 });
+      for (const [x, k, s] of [[0.12, 0.2, 1], [0.3, 0.55, 1.4], [0.82, 0.35, 1.1], [0.9, 0.8, 1.8], [0.4, 0.15, 0.8], [0.7, 0.7, 1.3]] as const) {
+        const cx = world.width * x;
+        const cy = floor(cx) + 20 + k * (height - floor(cx) - 40);
+        const r = 26 * s * (0.6 + k * 0.6);
+        g.ellipse(cx, cy, r * 1.3, r * 0.75).fill(0x8d949a);
+        g.ellipse(cx - r * 0.25, cy - r * 0.3, r * 0.8, r * 0.38).fill(0xaab1b6);
+        g.ellipse(cx, cy + r * 0.6, r * 1.3, r * 0.18).fill({ color: 0x2f4a22, alpha: 0.25 });
+      }
+    } else if (world.biome === 'forest') {
+      // Dappled light on the forest floor, ferns and toadstools.
+      for (let i = 0; i < 12; i++) {
+        const x = rand(left, right);
+        const y = rand(floor(x) + 20, height);
+        g.ellipse(x, y, rand(40, 110), rand(10, 24)).fill({ color: 0xfff1b0, alpha: 0.13 });
+      }
+      for (let i = 0; i < 16; i++) {
+        const x = rand(left, right);
+        const y = rand(floor(x) + 20, height);
+        const s = 18 + ((y - floor(x)) / (height - floor(x))) * 40;
+        for (let k = -3; k <= 3; k++) {
+          const a = -Math.PI / 2 + k * 0.38;
+          g.moveTo(x, y).quadraticCurveTo(x + Math.cos(a) * s * 0.7, y + Math.sin(a) * s * 1.1, x + Math.cos(a) * s * 1.2, y + Math.sin(a) * s * 0.7).stroke({ width: Math.max(2, s * 0.12), color: k % 2 ? 0x3f7a35 : 0x4f8f3f, cap: 'round' });
+        }
+      }
+      for (let i = 0; i < 9; i++) {
+        const x = rand(left, right);
+        const y = rand(floor(x) + 20, height - 10);
+        const s = 6 + ((y - floor(x)) / (height - floor(x))) * 14;
+        g.rect(x - s * 0.25, y - s * 1.1, s * 0.5, s * 1.1).fill(0xf3ead6);
+        g.ellipse(x, y - s * 1.1, s, s * 0.6).fill(0xd8382d);
+        g.ellipse(x, y - s * 1.0, s * 0.85, s * 0.16).fill(0xf3ead6);
+        for (const [dx, dy] of [[-0.4, -0.2], [0.35, -0.3], [0, -0.45]]) g.circle(x + dx * s, y - s * 1.1 + dy * s, s * 0.13).fill(0xffffff);
       }
     } else if (world.biome === 'farm') {
       // A ploughed field on the left, with rows of young crops, and a dirt track to the barn.

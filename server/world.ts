@@ -167,7 +167,7 @@ export async function startWorld() {
     const ps = places[spot.id];
     spot.tank.world.time = ps?.time ?? 0;
     if (ps?.nextVisit?.name && pickVisitor(season(), ps.nextVisit.name)) spot.nextVisit = ps.nextVisit;
-    else spot.nextVisit.name = pickVisitor(season(), undefined, spot.place.biome)?.name ?? '';
+    else spot.nextVisit.name = pickVisitor(season(), undefined, spot.place.biome, spot.tank.isNight)?.name ?? '';
     if (ps?.nextDoc) spot.nextDoc = Math.max(ps.nextDoc, Date.now() + MINUTE);
     spot.tank.sync(specsFor(spot.id), ps?.saved);
     spot.tank.step(0);
@@ -527,8 +527,10 @@ function updateDoc(spot: Spot, now: number) {
   if (!spot.doc && now >= spot.nextDoc && !startDoc(spot)) spot.nextDoc = now + MINUTE;
 }
 
-function startVisit(spot: Spot, name?: string) {
-  const info = pickVisitor(season(), name, spot.place.biome);
+function startVisit(spot: Spot, name?: string, planned = false) {
+  let info = pickVisitor(season(), name, spot.place.biome);
+  // A night visitor planned a while back, and it's light now: someone else comes instead.
+  if (planned && info?.night && !spot.tank.isNight) info = pickVisitor(season(), undefined, spot.place.biome, false);
   if (!info) return;
   spot.visit = { name: info.name, seed: Math.floor(Math.random() * 1e9), startedAt: spot.tank.world.time };
   spot.visitEnds = spot.tank.world.time + info.seconds;
@@ -538,9 +540,9 @@ function startVisit(spot: Spot, name?: string) {
 function updateVisit(spot: Spot, now: number) {
   if (spot.visit && spot.tank.world.time > spot.visitEnds) {
     spot.visit = null;
-    spot.nextVisit = { at: now + rand(8, 20) * MINUTE, name: pickVisitor(season(), undefined, spot.place.biome)?.name ?? '' };
+    spot.nextVisit = { at: now + rand(8, 20) * MINUTE, name: pickVisitor(season(), undefined, spot.place.biome, spot.tank.isNight)?.name ?? '' };
   }
-  if (!spot.visit && spot.nextVisit.name && now >= spot.nextVisit.at) startVisit(spot, spot.nextVisit.name);
+  if (!spot.visit && spot.nextVisit.name && now >= spot.nextVisit.at) startVisit(spot, spot.nextVisit.name, true);
 }
 
 /** Feeding time, from a click on a screen or a Feed button: in one place, or (no place) everywhere. */

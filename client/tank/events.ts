@@ -418,7 +418,204 @@ const kite: TankEvent = {
   },
 };
 
-const EVENTS: Record<string, TankEvent> = { whale, diver, ghost, ducks, heron, gulls, tractor, kite };
+const balloon: TankEvent = {
+  name: 'balloon',
+  start(world, layers, rand, seconds) {
+    // A hot-air balloon drifts slowly over the hills, its burner flaring now and then to lift it.
+    const node = new Container();
+    const s = world.height * 0.12;
+    const colors = [[0xe84a4a, 0xffd34d], [0x4d8cff, 0xffffff], [0x9b59d0, 0x6bd6a0]][Math.floor(rand(0, 3))];
+    const envelope = new Graphics();
+    // Stripes: alternating segments of the round top, narrowing to the mouth.
+    const segs = 6;
+    for (let i = 0; i < segs; i++) {
+      const a = -s * 0.9 + (i / segs) * s * 1.8;
+      const b = -s * 0.9 + ((i + 1) / segs) * s * 1.8;
+      const pts: number[] = [];
+      for (let k = 0; k <= 12; k++) {
+        const t = k / 12;
+        const y = -s * 1.1 + t * s * 1.9;
+        const width = t < 0.6 ? Math.sin(Math.acos(1 - t / 0.6)) : 1 - ((t - 0.6) / 0.4) * 0.72;
+        pts.push(a * width, y);
+      }
+      for (let k = 12; k >= 0; k--) {
+        const t = k / 12;
+        const y = -s * 1.1 + t * s * 1.9;
+        const width = t < 0.6 ? Math.sin(Math.acos(1 - t / 0.6)) : 1 - ((t - 0.6) / 0.4) * 0.72;
+        pts.push(b * width, y);
+      }
+      envelope.poly(pts).fill(colors[i % 2]);
+    }
+    const flame = new Graphics();
+    const basket = new Graphics()
+      .moveTo(-s * 0.25, s * 0.8).lineTo(-s * 0.18, s * 1.15).moveTo(s * 0.25, s * 0.8).lineTo(s * 0.18, s * 1.15)
+      .stroke({ width: 2, color: 0x5a3b1e })
+      .roundRect(-s * 0.2, s * 1.15, s * 0.4, s * 0.28, 4).fill(0x9a6a36)
+      .rect(-s * 0.2, s * 1.2, s * 0.4, s * 0.04).fill(0x7a4f24);
+    node.addChild(flame, envelope, basket);
+    // Far off: behind everyone, and a little smaller.
+    node.scale.set(0.8);
+    layers.back.addChild(node);
+    const y = world.height * rand(0.18, 0.28);
+    const move = crossing(node, world, seconds, y, s * 0.15, rand);
+    return {
+      update(_dt, _world, t) {
+        const burning = Math.sin(t * 0.9) > 0.6;
+        flame.clear();
+        if (burning) flame.ellipse(0, s * 0.95, s * 0.06, s * 0.14 + Math.sin(t * 30) * s * 0.03).fill(0xffb03b).ellipse(0, s * 0.98, s * 0.03, s * 0.08).fill(0xfff0a0);
+        return move(t);
+      },
+      destroy: () => node.destroy({ children: true }),
+    };
+  },
+};
+
+const deer: TankEvent = {
+  name: 'deer',
+  start(world, layers, rand, seconds) {
+    // A deer steps out of the trees, stops to nibble and look about, then bounds away.
+    const node = new Container();
+    const s = world.height * 0.17;
+    const coat = 0xa8693a;
+    const legs: Graphics[] = [];
+    for (const [x, back] of [[-s * 0.42, true], [-s * 0.3, false], [s * 0.3, true], [s * 0.42, false]] as const) {
+      const leg = new Graphics()
+        .rect(-s * 0.035, 0, s * 0.07, s * 0.55).fill(back ? 0x8e5730 : coat)
+        .rect(-s * 0.04, s * 0.5, s * 0.08, s * 0.06).fill(0x3b2a1e);
+      leg.position.set(x, -s * 0.62);
+      legs.push(leg);
+      node.addChild(leg);
+    }
+    const body = new Graphics()
+      .ellipse(0, -s * 0.75, s * 0.55, s * 0.24).fill(coat)
+      .ellipse(0, -s * 0.62, s * 0.4, s * 0.1).fill({ color: 0xf1dcc0, alpha: 0.8 })
+      .ellipse(-s * 0.56, -s * 0.85, s * 0.07, s * 0.1).fill(0xffffff);
+    for (const [dx, dy] of [[-0.2, -0.85], [0, -0.9], [0.18, -0.84], [-0.1, -0.78], [0.1, -0.79]]) body.circle(dx * s, dy * s, s * 0.025).fill(0xf6e7d0);
+    const head = new Container();
+    head.addChild(
+      new Graphics()
+        .poly([-s * 0.06, s * 0.1, s * 0.06, s * 0.12, s * 0.12, -s * 0.3, -s * 0.02, -s * 0.32]).fill(coat)
+        .ellipse(s * 0.1, -s * 0.36, s * 0.16, s * 0.09).fill(coat)
+        .ellipse(s * 0.25, -s * 0.33, s * 0.04, s * 0.035).fill(0x2b1d14)
+        .ellipse(-s * 0.02, -s * 0.47, s * 0.05, s * 0.11).fill(0x8e5730)
+        .circle(s * 0.1, -s * 0.39, s * 0.025).fill(0x1b1b1b)
+        .moveTo(s * 0.04, -s * 0.44).lineTo(s * 0.0, -s * 0.66).lineTo(-s * 0.06, -s * 0.75).moveTo(s * 0.0, -s * 0.66).lineTo(s * 0.08, -s * 0.74)
+        .moveTo(s * 0.12, -s * 0.44).lineTo(s * 0.14, -s * 0.64).lineTo(s * 0.2, -s * 0.72)
+        .stroke({ width: Math.max(2, s * 0.025), color: 0x6b4a2e, cap: 'round' }),
+    );
+    head.position.set(s * 0.45, -s * 0.85);
+    node.addChild(body, head);
+    // Towards the back of the clearing.
+    node.scale.set(0.85);
+    layers.back.addChild(node);
+    const z = 0.75;
+    const ground = (x: number) => world.floorAt(Math.min(world.width, Math.max(0, x))) + (1 - z) * world.height * (world.groundDepth ?? 0.1) + 4;
+    const dir = rand() < 0.5 ? 1 : -1;
+    node.scale.x *= dir;
+    const margin = s;
+    const from = dir > 0 ? -margin : world.width + margin;
+    const stop = world.width * rand(0.35, 0.65);
+    const to = dir > 0 ? world.width + margin : -margin;
+    const walkFor = seconds * 0.35;
+    const leaveAt = seconds * 0.7;
+    return {
+      update(_dt, _world, t) {
+        let x: number;
+        let lift = 0;
+        let stride = 0;
+        let speed = 6;
+        if (t < walkFor) {
+          x = from + (stop - from) * (t / walkFor);
+          stride = 1;
+        } else if (t < leaveAt) {
+          x = stop;
+        } else {
+          const k = (t - leaveAt) / (seconds - leaveAt);
+          x = stop + (to - stop) * k;
+          // Bounding: big springy leaps.
+          lift = Math.abs(Math.sin(k * Math.PI * 6)) * s * 0.35;
+          stride = 1.4;
+          speed = 12;
+        }
+        legs.forEach((leg, i) => (leg.rotation = stride * Math.sin(t * speed + (i % 2 ? Math.PI : 0)) * 0.4));
+        // Standing: a nibble at the grass, then head up, ears and eyes on us.
+        const grazing = t >= walkFor && t < leaveAt && Math.sin((t - walkFor) * 0.9) > 0;
+        head.rotation += ((grazing ? 1.2 : 0) - head.rotation) * 0.08;
+        node.position.set(x, ground(x) - lift);
+        return t < seconds;
+      },
+      destroy: () => node.destroy({ children: true }),
+    };
+  },
+};
+
+const owl: TankEvent = {
+  name: 'owl',
+  start(world, layers, rand, seconds) {
+    // At night an owl lands on a branch, blinks its big eyes and turns its head about, then flies off.
+    const node = new Container();
+    const s = world.height * 0.08;
+    const x = world.width * rand(0.25, 0.75);
+    const y = world.height * rand(0.2, 0.3);
+    const branch = new Graphics()
+      .moveTo(-s * 3, s * 0.9).quadraticCurveTo(0, s * 0.75, s * 2.4, s * 1.05).stroke({ width: s * 0.22, color: 0x4a3626, cap: 'round' })
+      .ellipse(s * 1.6, s * 0.75, s * 0.35, s * 0.15).fill(0x3f6b35);
+    const wings = [-1, 1].map((side) => {
+      const w = new Graphics().ellipse(side * s * 0.55, 0, s * 0.3, s * 0.65).fill(0x6e4f33);
+      w.pivot.set(side * s * 0.35, -s * 0.4);
+      w.position.set(side * s * 0.35, -s * 0.4);
+      return w;
+    });
+    const body = new Graphics()
+      .ellipse(0, 0, s * 0.62, s * 0.85).fill(0x8a6542)
+      .ellipse(0, s * 0.2, s * 0.42, s * 0.55).fill(0xd9c4a0);
+    for (let i = 0; i < 6; i++) body.moveTo(-s * 0.15 + (i % 3) * s * 0.15, s * (0.05 + Math.floor(i / 3) * 0.3)).lineTo(-s * 0.1 + (i % 3) * s * 0.15, s * (0.12 + Math.floor(i / 3) * 0.3)).stroke({ width: 2, color: 0x9a7a52 });
+    const face = new Container();
+    const eyes = new Graphics();
+    const lids = new Graphics();
+    face.addChild(
+      new Graphics()
+        .poly([-s * 0.5, -s * 0.55, -s * 0.38, -s * 1.05, -s * 0.18, -s * 0.7]).fill(0x7a5a3a)
+        .poly([s * 0.5, -s * 0.55, s * 0.38, -s * 1.05, s * 0.18, -s * 0.7]).fill(0x7a5a3a)
+        .ellipse(0, -s * 0.5, s * 0.6, s * 0.45).fill(0x8a6542)
+        .circle(-s * 0.24, -s * 0.5, s * 0.22).fill(0xe8dcc4)
+        .circle(s * 0.24, -s * 0.5, s * 0.22).fill(0xe8dcc4),
+      eyes,
+      lids,
+      new Graphics().poly([-s * 0.06, -s * 0.38, s * 0.06, -s * 0.38, 0, -s * 0.24]).fill(0xe0a630),
+    );
+    node.addChild(branch, wings[0], wings[1], body, face);
+    layers.front.addChild(node);
+    const blinks = [0.25, 0.45, 0.6, 0.72].map((f) => f * seconds + rand(-0.5, 0.5));
+    const arrive = 3;
+    const leaveAt = seconds - 4;
+    return {
+      update(_dt, _world, t) {
+        // Flying in, sitting, flying off.
+        const flying = t < arrive || t > leaveAt;
+        const k = t < arrive ? 1 - t / arrive : t > leaveAt ? (t - leaveAt) / 4 : 0;
+        node.position.set(x + k * world.width * 0.4, y - k * world.height * 0.25);
+        branch.position.set(-k * world.width * 0.4, k * world.height * 0.25);
+        branch.alpha = Math.min(1, t / 1.5, (seconds - t) / 1.5);
+        wings.forEach((w, i) => (w.rotation = flying ? (i ? -1 : 1) * (0.9 + Math.sin(t * 14) * 0.7) : 0));
+        // A slow look one way, then the other.
+        const turn = flying ? 0 : Math.sin(t * 0.5) * 0.18;
+        face.position.x = turn * s * 1.2;
+        const blink = blinks.some((b) => Math.abs(t - b) < 0.12);
+        eyes.clear();
+        lids.clear();
+        for (const side of [-1, 1]) {
+          if (blink) lids.ellipse(side * s * 0.24, -s * 0.5, s * 0.2, s * 0.05).fill(0x6e4f33);
+          else eyes.circle(side * s * 0.24, -s * 0.5, s * 0.15).fill(0xffc928).circle(side * s * 0.24 + turn * s * 0.3, -s * 0.5, s * 0.08).fill(0x111111).circle(side * s * 0.24 + turn * s * 0.3 + s * 0.03, -s * 0.53, s * 0.025).fill(0xffffff);
+        }
+        return t < seconds;
+      },
+      destroy: () => node.destroy({ children: true }),
+    };
+  },
+};
+
+const EVENTS: Record<string, TankEvent> = { whale, diver, ghost, ducks, heron, gulls, tractor, kite, balloon, deer, owl };
 
 /** Shows the visit the simulation says is happening (if any), from where it's got to. */
 export class Events {

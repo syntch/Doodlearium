@@ -18,6 +18,8 @@ export interface VisitorInfo {
   weight: number;
   seconds: number;
   biomes?: Biome[];
+  /** Only comes after dark. */
+  night?: boolean;
 }
 
 export const VISITOR_PACKS: Record<string, VisitorInfo[]> = {
@@ -31,6 +33,9 @@ export const VISITOR_PACKS: Record<string, VisitorInfo[]> = {
   land: [
     { name: 'tractor', icon: '🚜', text: 'the tractor', weight: 1, seconds: 40, biomes: ['farm'] },
     { name: 'kite', icon: '🪁', text: 'a kite', weight: 1, seconds: 36, biomes: ['meadow'] },
+    { name: 'balloon', icon: '🎈', text: 'a hot-air balloon', weight: 1, seconds: 50, biomes: ['hills'] },
+    { name: 'deer', icon: '🦌', text: 'a deer', weight: 1, seconds: 30, biomes: ['forest'] },
+    { name: 'owl', icon: '🦉', text: 'an owl', weight: 1.5, seconds: 30, biomes: ['forest'], night: true },
   ],
   spooky: [{ name: 'ghost', icon: '👻', text: 'a friendly ghost', weight: 1.5, seconds: 22 }],
 };
@@ -39,13 +44,13 @@ export const ALL_VISITORS = Object.values(VISITOR_PACKS).flat();
 
 export const visitorPacks = (season: Season) => ['water', 'land', ...(season.halloween ? ['spooky'] : [])];
 
-/** A random visitor from the packs in play that suits the biome, or a named one. */
-export function pickVisitor(season: Season, name?: string, biome?: Biome): VisitorInfo | undefined {
+/** A random visitor from the packs in play that suits the biome (and the time of day), or a named one. */
+export function pickVisitor(season: Season, name?: string, biome?: Biome, night = false): VisitorInfo | undefined {
   const pool = name
     ? ALL_VISITORS.filter((v) => v.name === name)
     : visitorPacks(season)
         .flatMap((p) => VISITOR_PACKS[p] ?? [])
-        .filter((v) => !biome || !v.biomes || v.biomes.includes(biome));
+        .filter((v) => (!biome || !v.biomes || v.biomes.includes(biome)) && (!v.night || night));
   const total = pool.reduce((s, v) => s + v.weight, 0);
   let roll = Math.random() * total;
   return pool.find((v) => (roll -= v.weight) <= 0) ?? pool[0];

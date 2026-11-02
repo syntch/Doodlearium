@@ -29,6 +29,8 @@ const TARGETS: Partial<Record<Biome, Partial<Record<CreatureType, number>>>> = {
   seashore: { swimmer: 14, crawler: 8, plant: 8, decor: 4, walker: 2, flier: 4 },
   meadow: { walker: 8, flier: 6, plant: 16, decor: 4 },
   farm: { walker: 10, flier: 4, plant: 10, decor: 5 },
+  hills: { walker: 8, flier: 6, plant: 12, decor: 4 },
+  forest: { walker: 8, flier: 6, plant: 18, decor: 4 },
 };
 /** Fewer than this many species to choose from, and a place borrows from other regions. */
 const MIN_CHOICE = 4;
