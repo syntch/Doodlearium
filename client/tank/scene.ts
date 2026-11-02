@@ -301,9 +301,10 @@ export class Scene {
       const under: number[] = [];
       for (let x = edge; x <= end; x += 5) {
         const y = this.sandTop(world, x);
-        const deep = Math.min(1, (x - edge) / 80);
+        // Thickest just up the beach, thinning to nothing at the leading edge and out over the open water.
+        const deep = Math.min(1, (x - edge) / 80, (end - x) / 60);
         top.push(x, Math.min(y, y0) - 2 - deep * 9);
-        under.unshift(x, y + 4);
+        under.unshift(x, Math.min(y, y0) + 4);
       }
       // A wet, darker band of sand left behind as the water slides back.
       const wet: number[] = [];
@@ -393,9 +394,15 @@ export class Scene {
     if (world.biome === 'seashore') {
       // The beach above the water is dry and pale; where the waves reach, it's dark and wet.
       const shore = this.shoreX(world);
+      // A band along the top of the sand, thinning away to nothing at the water's edge.
       const dry: number[] = [];
-      for (let x = left; x <= shore; x += 10) dry.push(x, this.sandTop(world, x));
-      g.poly([...dry, shore, world.waterTop + 30, left, world.waterTop + 30], true).fill({ color: 0xf6e3b4, alpha: 0.6 });
+      const below: number[] = [];
+      for (let x = left; x <= shore + 10; x += 10) {
+        const y = this.sandTop(world, x);
+        dry.push(x, y);
+        below.unshift(x, y + 30 * Math.max(0, Math.min(1, (shore - x) / 120)));
+      }
+      g.poly([...dry, ...below], true).fill({ color: 0xf6e3b4, alpha: 0.6 });
       // Shells and pebbles dotted along the beach and the shallows.
       const r = seededRandom('shells');
       for (let i = 0; i < 12; i++) {
