@@ -18,6 +18,7 @@ export interface PlacedPart {
   amount?: number;
   flip?: boolean;
   lift?: boolean;
+  behind?: boolean;
 }
 
 /**
@@ -34,6 +35,7 @@ export function exportDrawing(
     attachments,
     holes,
     glow,
+    behind,
     parts = [],
   }: {
     mirror: boolean;
@@ -44,6 +46,8 @@ export function exportDrawing(
     parts?: PlacedPart[];
     /** Where glow paint and blacklight paint are. */
     glow?: { glow: HTMLCanvasElement; uv: HTMLCanvasElement };
+    /** What's painted behind the parts that have it, already kept to their areas. */
+    behind?: HTMLCanvasElement;
   },
 ): {
   dataUrl: string;
@@ -53,6 +57,7 @@ export function exportDrawing(
   parts: Part[];
   partsImage?: string;
   glowImage?: string;
+  behindImage?: string;
 } | null {
   const bounds = inkBounds(source);
   if (!bounds) return null;
@@ -65,10 +70,18 @@ export function exportDrawing(
     return { x: mirror ? 1 - x : x, y: clampFraction((py - (bounds.top - PADDING)) / cropH) };
   };
   const exportedAttachments = attachments.map((a) => ({ ...a, ...toFraction(a.x, a.y) }));
-  const exportedParts: Part[] = parts.map(({ motion, hinge: [x1, y1, x2, y2], speed = 1, amount = 1, flip, lift }) => {
+  const exportedParts: Part[] = parts.map(({ motion, hinge: [x1, y1, x2, y2], speed = 1, amount = 1, flip, lift, behind: painted }) => {
     const a = toFraction(x1, y1);
     const b = toFraction(x2, y2);
-    return { motion, hinge: [a.x, a.y, b.x, b.y], speed, amount, ...(flip ? { flip } : {}), ...(lift ? { lift } : {}) };
+    return {
+      motion,
+      hinge: [a.x, a.y, b.x, b.y],
+      speed,
+      amount,
+      ...(flip ? { flip } : {}),
+      ...(lift ? { lift } : {}),
+      ...(painted && behind ? { behind: true } : {}),
+    };
   });
   const scale = Math.min(1, MAX_SIZE / Math.max(cropW, cropH));
   const width = Math.max(1, Math.round(cropW * scale));
@@ -144,6 +157,12 @@ export function exportDrawing(
       glowImage = marks.toDataURL('image/png');
     }
   }
+  let behindImage: string | undefined;
+  if (behind && exportedParts.some((p) => p.behind)) {
+    const c = Object.assign(document.createElement('canvas'), { width, height });
+    place(c.getContext('2d')!, behind);
+    behindImage = c.toDataURL('image/png');
+  }
   return {
     dataUrl: out.toDataURL('image/png'),
     width,
@@ -152,6 +171,7 @@ export function exportDrawing(
     parts: exportedParts,
     partsImage,
     glowImage,
+    behindImage,
   };
 }
 

@@ -64,6 +64,11 @@ export interface Part {
   flip?: boolean;
   /** Open & close, seen from the front: lifts straight off the rest (a clam's top shell) instead of swinging. */
   lift?: boolean;
+  /**
+   * What shows where it was, as it moves, has been painted (in a separate image, `behindUrl`). Otherwise
+   * a shadow of it is left there, like the hole left when a paper cut-out lifts.
+   */
+  behind?: boolean;
 }
 
 export const isAttachmentColor = (c: unknown): c is string =>
@@ -121,6 +126,8 @@ export interface NewDrawing {
   partsImage?: string;
   /** PNG data URL, the same size as image: red where the paint glows, green where it's blacklight paint. */
   glowImage?: string;
+  /** PNG data URL, the same size as image: what's painted behind the parts that have `behind`. */
+  behindImage?: string;
   habitats?: Biome[];
   group?: boolean;
   home?: string;
@@ -196,3 +203,5 @@ export const partsUrl = (d: Pick<Drawing, 'id' | 'createdAt' | 'updatedAt'>) =>
   `/drawings/${d.id}.parts.png?v=${d.updatedAt ?? d.createdAt}`;
 export const glowUrl = (d: Pick<Drawing, 'id' | 'createdAt' | 'updatedAt'>) =>
   `/drawings/${d.id}.glow.png?v=${d.updatedAt ?? d.createdAt}`;
+export const behindUrl = (d: Pick<Drawing, 'id' | 'createdAt' | 'updatedAt'>) =>
+  `/drawings/${d.id}.behind.png?v=${d.updatedAt ?? d.createdAt}`;

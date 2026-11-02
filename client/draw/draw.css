@@ -243,3 +243,8 @@ svg.icon { width: 1.05em; height: 1.05em; vertical-align: -0.18em; }
   color: var(--text);
 }
 .parts-list .chip button { padding: 2px 8px; background: transparent; border: 0; box-shadow: none; }
+.parts-list .chip button[aria-pressed='true'] { background: rgba(255, 214, 0, 0.5); border-radius: 999px; }
+.parts-list .chip .label { cursor: pointer; }
+.parts-list .chip.picked { background: rgba(255, 214, 0, 0.45); border-color: #e0b400; box-shadow: 0 0 0 2px rgba(255, 214, 0, 0.6); }
+.parts-list .parts-help { flex-basis: 100%; margin: 0; text-align: center; font-size: 0.85em; }
+.hint button { margin-left: 6px; }

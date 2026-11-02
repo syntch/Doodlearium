@@ -1,4 +1,6 @@
-export const MATERIALS = ['solid', 'brick', 'stone', 'wood', 'bark', 'scales', 'stripes', 'dots', 'rainbow'] as const;
+export const MATERIALS = [
+  'solid', 'brick', 'stone', 'wood', 'bark', 'scales', 'feathers', 'fur', 'hair', 'wool', 'patches', 'stripes', 'dots', 'rainbow',
+] as const;
 export type Material = (typeof MATERIALS)[number];
 
 export const MATERIAL_LABELS: Record<Material, string> = {
@@ -8,6 +10,11 @@ export const MATERIAL_LABELS: Record<Material, string> = {
   wood: 'Wood',
   bark: 'Bark',
   scales: 'Scales',
+  feathers: 'Feathers',
+  fur: 'Fur',
+  hair: 'Hair',
+  wool: 'Wool',
+  patches: 'Patches',
   stripes: 'Stripes',
   dots: 'Dots',
   rainbow: 'Rainbow',
@@ -15,7 +22,8 @@ export const MATERIAL_LABELS: Record<Material, string> = {
 
 /**
  * Which ways a material can be turned: quarter turns clockwise, with an arrow for the button. Scales
- * point the way their rounded edges do; the others run along (↔) or up and down (↕).
+ * and feathers point the way their rounded edges do, fur the way it lies; the others run along (↔) or
+ * up and down (↕).
  */
 export const MATERIAL_TURNS: Partial<Record<Material, { turn: number; label: string; title: string }[]>> = {
   scales: [
@@ -23,6 +31,22 @@ export const MATERIAL_TURNS: Partial<Record<Material, { turn: number; label: str
     { turn: 1, label: '⬅', title: 'Scales point left' },
     { turn: 2, label: '⬆', title: 'Scales point up' },
     { turn: 3, label: '➡', title: 'Scales point right' },
+  ],
+  feathers: [
+    { turn: 0, label: '⬇', title: 'Feathers point down' },
+    { turn: 1, label: '⬅', title: 'Feathers point left' },
+    { turn: 2, label: '⬆', title: 'Feathers point up' },
+    { turn: 3, label: '➡', title: 'Feathers point right' },
+  ],
+  fur: [
+    { turn: 0, label: '⬇', title: 'Fur lies down' },
+    { turn: 1, label: '⬅', title: 'Fur lies to the left' },
+    { turn: 2, label: '⬆', title: 'Fur sticks up' },
+    { turn: 3, label: '➡', title: 'Fur lies to the right' },
+  ],
+  hair: [
+    { turn: 0, label: '↕', title: 'Hair hangs down' },
+    { turn: 1, label: '↔', title: 'Hair flows across' },
   ],
   wood: [
     { turn: 0, label: '↔', title: 'Planks run across' },
@@ -82,6 +106,13 @@ const wrapDist = (a: number, b: number) => {
   const d = Math.abs(a - b) % TILE;
   return Math.min(d, TILE - d);
 };
+/** a - b the short way round the tile, from -TILE/2 to TILE/2. */
+const wrapDiff = (a: number, b: number) => {
+  const d = (a - b) % TILE;
+  return d > TILE / 2 ? d - TILE : d < -TILE / 2 ? d + TILE : d;
+};
+/** A grid cell's index wrapped to the tile, so cells near the edges match the far side. */
+const cell = (i: number, size: number) => ((i % (TILE / size)) + TILE / size) % (TILE / size);
 
 /** Colour of one pixel of a material tile. `base` gives the paint colour at that spot (it varies for rainbow paint). */
 const PAINTERS: Record<Material, (x: number, y: number, base: (x: number, y: number) => RGB) => RGB> = {
@@ -156,6 +187,100 @@ const PAINTERS: Record<Material, (x: number, y: number, base: (x: number, y: num
       }
     }
     return base(x, y);
+  },
+
+  feathers: (x, y, base) => {
+    // Rows of feathers, tips pointing down, each row's tips lying over the row below (like roof tiles).
+    for (let row = Math.ceil(y / 12); row <= Math.floor((y + 30) / 12); row++) {
+      const dy = row * 12 - y; // 0 at the tip, 30 at the base
+      if (dy < 0 || dy > 30) continue;
+      const offset = ((row % 2) + 2) % 2 ? 12 : 0;
+      const dx = Math.abs(x - (Math.round((x - offset) / 24) * 24 + offset));
+      // A rounded point at the tip, full width further up.
+      const half = 12.5 * Math.sin(Math.min(1, dy / 14) * (Math.PI / 2));
+      if (dx > half) continue;
+      const c = base(x, y);
+      if (dx > half - 1.5) return darken(c, 0.4);
+      // The shaft down the middle, and barbs slanting out from it.
+      if (dx < 0.8 && dy > 3) return lighten(c, 0.3);
+      const barb = (dy - dx * 0.7 + 40) % 3 < 0.9 ? -0.12 : 0;
+      // Lighter toward the tip, darker where the next row up tucks under.
+      return shade(c, 0.3 - (dy / 30) * 0.5 - (dx / 12) * 0.08 + barb);
+    }
+    return darken(base(x, y), 0.25);
+  },
+
+  fur: (x, y, base) => {
+    // Short strands: each square of an 8px grid sprouts one that hangs down, a little to one side.
+    let strand = 0;
+    const cx = Math.floor(x / 8);
+    const cy = Math.floor(y / 8);
+    for (let j = -2; j <= 0; j++) {
+      for (let i = -1; i <= 1; i++) {
+        const hi = cell(cx + i, 8);
+        const hj = cell(cy + j, 8);
+        const angle = Math.PI / 2 + (hash(hi, hj, 22) - 0.5) * 0.8;
+        const len = 10 + hash(hi, hj, 23) * 6;
+        const dx = x - ((cx + i) * 8 + hash(hi, hj, 20) * 8);
+        const dy = y - ((cy + j) * 8 + hash(hi, hj, 21) * 8);
+        const along = dx * Math.cos(angle) + dy * Math.sin(angle);
+        if (along < 0 || along > len) continue;
+        // Thinning toward the tip.
+        if (Math.abs(dy * Math.cos(angle) - dx * Math.sin(angle)) < 1.3 * (1 - (along / len) * 0.6)) {
+          strand = hash(hi, hj, 24) < 0.5 ? -0.28 : 0.22;
+        }
+      }
+    }
+    return shade(base(x, y), strand || -0.06 + (hash(x, y, 25) - 0.5) * 0.08);
+  },
+
+  hair: (x, y, base) => {
+    // Long locks flowing down in gentle waves, strand by strand, with a shine across them.
+    const u = (((x + 4 * Math.sin((y / TILE) * TAU * 2 + Math.sin((x / TILE) * TAU) * 1.5)) % TILE) + TILE) % TILE;
+    const strand = Math.floor(u / 4);
+    const edge = u % 4 < 0.9 ? -0.2 : 0;
+    const shine = Math.sin((y / TILE) * TAU + strand * 0.4) > 0.8 ? 0.16 : 0;
+    return shade(base(x, y), (hash(strand, 0, 30) - 0.5) * 0.3 + edge + shine + (hash(x, y, 31) - 0.5) * 0.05);
+  },
+
+  wool: (x, y, base) => {
+    // Little curls packed together: round bumps, each with a curl line winding into it.
+    let d1 = Infinity, d2 = Infinity, near = { x: 0, y: 0, k: 0 };
+    const cx = Math.floor(x / 12);
+    const cy = Math.floor(y / 12);
+    for (let j = -1; j <= 1; j++) {
+      for (let i = -1; i <= 1; i++) {
+        const hi = cell(cx + i, 12);
+        const hj = cell(cy + j, 12);
+        const sx = (cx + i) * 12 + 2 + hash(hi, hj, 40) * 8;
+        const sy = (cy + j) * 12 + 2 + hash(hi, hj, 41) * 8;
+        const d = Math.hypot(x - sx, y - sy);
+        if (d < d1) {
+          d2 = d1;
+          d1 = d;
+          near = { x: sx, y: sy, k: hi * 8 + hj };
+        } else if (d < d2) d2 = d;
+      }
+    }
+    const c = base(x, y);
+    if (d2 - d1 < 1.2) return darken(c, 0.22);
+    const turn = (Math.atan2(y - near.y, x - near.x) / TAU + hash(near.k, 0, 42) + 1) % 1;
+    const curl = d1 < 6.5 && (d1 - turn * 3.2 + 6.4) % 3.2 < 0.8 ? -0.2 : 0;
+    return shade(c, 0.25 * (1 - d1 / 9) - 0.05 + curl);
+  },
+
+  patches: (x, y, base) => {
+    // Big blotches with wobbly edges, like a cow's or a giraffe's.
+    let inside = false;
+    for (let i = 0; i < 5 && !inside; i++) {
+      const dx = wrapDiff(x, hash(i, 0, 50) * TILE);
+      const dy = wrapDiff(y, hash(i, 1, 50) * TILE);
+      const a = Math.atan2(dy, dx);
+      const r = (11 + hash(i, 2, 50) * 8) * (1 + 0.22 * Math.sin(a * 3 + i) + 0.12 * Math.sin(a * 5 + i * 2));
+      inside = Math.hypot(dx, dy) < r;
+    }
+    const c = base(x, y);
+    return inside ? darken(c, 0.62) : shade(c, (hash(x, y, 51) - 0.5) * 0.05);
   },
 
   stripes: (x, y, base) => ((x + y) % 24 < 12 ? base(x, y) : lighten(base(x, y), 0.55)),

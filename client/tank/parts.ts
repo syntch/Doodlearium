@@ -1,5 +1,5 @@
 import { Container, Matrix, Sprite, Texture } from 'pixi.js';
-import { isHinged, partsUrl, type Drawing, type Part } from '../../shared/types.ts';
+import { behindUrl, isHinged, partsUrl, type Drawing, type Part } from '../../shared/types.ts';
 import type { Deform } from './attachments.ts';
 import { TAU } from './world.ts';
 
@@ -50,15 +50,20 @@ export function toCutout(split: Split): Cutout {
 }
 
 export async function loadCutout(drawing: Drawing, image: string): Promise<Cutout> {
-  const [picture, parts] = await Promise.all([loadImage(image), loadImage(partsUrl(drawing))]);
-  return toCutout(splitParts(picture, parts, drawing.parts ?? []));
+  const [picture, parts, behind] = await Promise.all([
+    loadImage(image),
+    loadImage(partsUrl(drawing)),
+    drawing.parts?.some((p) => p.behind) ? loadImage(behindUrl(drawing)).catch(() => undefined) : undefined,
+  ]);
+  return toCutout(splitParts(picture, parts, drawing.parts ?? [], behind));
 }
 
 /**
  * Cuts each part out of the picture. Where a part was, the body keeps a darker copy of it,
- * like the hole and shadow left when something is cut out of paper and lifted.
+ * like the hole and shadow left when something is cut out of paper and lifted, or what was painted
+ * behind it.
  */
-export function splitParts(picture: CanvasImageSource, partsImage: CanvasImageSource, parts: Part[]): Split {
+export function splitParts(picture: CanvasImageSource, partsImage: CanvasImageSource, parts: Part[], behindImage?: CanvasImageSource): Split {
   const width = (picture as HTMLImageElement).width;
   const height = (picture as HTMLImageElement).height;
   const read = (source: CanvasImageSource) => {
@@ -68,6 +73,7 @@ export function splitParts(picture: CanvasImageSource, partsImage: CanvasImageSo
   };
   const body = read(picture);
   const marks = read(partsImage).data;
+  const behind = behindImage ? read(behindImage).data : null;
   const px = body.data;
 
   const pieces: Piece[] = [];
@@ -95,8 +101,9 @@ export function splitParts(picture: CanvasImageSource, partsImage: CanvasImageSo
         if (marks[i * 4 + 3] < 128 || Math.abs(marks[i * 4] - value) > 10) continue;
         const o = ((y - top) * w + (x - left)) * 4;
         for (let k = 0; k < 4; k++) out.data[o + k] = px[i * 4 + k];
-        // Under the part: the same shape, in shadow.
-        for (let k = 0; k < 3; k++) px[i * 4 + k] *= 0.4;
+        // Under the part: what was painted there, or the same shape in shadow.
+        if (part.behind && behind) for (let k = 0; k < 4; k++) px[i * 4 + k] = behind[i * 4 + k];
+        else for (let k = 0; k < 3; k++) px[i * 4 + k] *= 0.4;
       }
     }
     c.putImageData(out, 0, 0);

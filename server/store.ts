@@ -53,13 +53,13 @@ type DrawingMeta = {
   nest?: number;
 };
 
-/** Images that go with a drawing: which pixels are moving parts, and which glow. */
-export type ExtraImages = { parts: Buffer | null; glow: Buffer | null };
-const NO_EXTRAS: ExtraImages = { parts: null, glow: null };
+/** Images that go with a drawing: which pixels are moving parts, which glow, and what's painted behind parts. */
+export type ExtraImages = { parts: Buffer | null; glow: Buffer | null; behind: Buffer | null };
+const NO_EXTRAS: ExtraImages = { parts: null, glow: null, behind: null };
 
 /** Saves the drawing's extra images, removing any it no longer has. */
 async function writeExtras(id: string, extra: ExtraImages) {
-  for (const kind of ['parts', 'glow'] as const) {
+  for (const kind of ['parts', 'glow', 'behind'] as const) {
     const file = join(DRAWINGS_DIR, `${id}.${kind}.png`);
     const bytes = extra[kind];
     if (bytes) await writeFile(file, bytes);

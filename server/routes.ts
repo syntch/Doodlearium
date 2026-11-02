@@ -66,6 +66,15 @@ function parseDrawing(body: any) {
       return { error: 'glowImage must be a PNG the same size as image' };
     }
   }
+  // What's painted behind parts; without it, parts leave their usual shadow.
+  let behindPng = null;
+  if (parts.some((p) => p.behind) && body.behindImage !== undefined) {
+    behindPng = decodePng(body.behindImage);
+    if (!behindPng || behindPng.width !== width || behindPng.height !== height) {
+      return { error: 'behindImage must be a PNG the same size as image' };
+    }
+  }
+  if (!behindPng) for (const p of parts) delete p.behind;
   const attachments = parseAttachments(body.attachments);
   if (!attachments) return { error: `attachments must be a list of at most ${MAX_ATTACHMENTS} valid extras` };
   const meta = {
@@ -87,7 +96,7 @@ function parseDrawing(body: any) {
     home: typeof body.home === 'string' && placeById(body.home)?.live ? body.home : undefined,
     size: body.size === 'small' || body.size === 'big' ? body.size : undefined,
   };
-  return { meta, png: png.bytes, extra: { parts: partsPng?.bytes ?? null, glow: glowPng?.bytes ?? null } };
+  return { meta, png: png.bytes, extra: { parts: partsPng?.bytes ?? null, glow: glowPng?.bytes ?? null, behind: behindPng?.bytes ?? null } };
 }
 
 /** A PNG data URL's bytes and size, or null if it isn't one. */
@@ -121,6 +130,7 @@ function parseParts(value: unknown): Part[] | null {
     const part: Part = { motion: p.motion, hinge: [hinge[0], hinge[1], hinge[2], hinge[3]], speed, amount };
     if (p.flip === true) part.flip = true;
     if (p.lift === true) part.lift = true;
+    if (p.behind === true) part.behind = true;
     result.push(part);
   }
   return result;

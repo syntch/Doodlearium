@@ -7,6 +7,7 @@ import {
   imageUrl,
   motionOf,
   partsUrl,
+  behindUrl,
   type AttachmentKind,
   type Drawing,
   type Motion,
@@ -21,7 +22,7 @@ import { enclosedHoles, exportDrawing, inkBounds, type PlacedAttachment, type Pl
 import { MATERIALS, MATERIAL_LABELS, MATERIAL_TURNS, floodFill, floodRegion, materialPreview, type Material } from './fill.ts';
 import { readPhoto, removePaper } from './photo.ts';
 import { Selection, applyTransform, maskHas, type TransformOp } from './selection.ts';
-import { PART_INFO, carryParts, cloneCanvas, findHinge, partsFromImage, type EditorPart } from './parts.ts';
+import { PART_INFO, behindArea, carryParts, cloneCanvas, findHinge, partsFromImage, type EditorPart } from './parts.ts';
 
 /** Colour and the name shown when hovering it. 'clear' paints and fills see-through. */
 const COLORS: [string, string][] = [
@@ -58,8 +59,10 @@ type Point = { x: number; y: number; pressure: number };
 
 /** Everything on the paper is a replayable list of operations, so undo works the same for every tool. */
 type Op =
-  | { type: 'stroke'; color: string; size: number; erase: boolean; mirror: Mirror; points: Point[]; paint?: Paint }
-  | { type: 'fill'; x: number; y: number; color: string; material: Material; mirror: Mirror; paint?: Paint; turn?: number }
+  /** behind: painted behind a moving part (see behindCanvas), not on the drawing. */
+  | { type: 'stroke'; color: string; size: number; erase: boolean; mirror: Mirror; points: Point[]; paint?: Paint; behind?: boolean }
+  /** behind: filled behind a moving part, within this area. */
+  | { type: 'fill'; x: number; y: number; color: string; material: Material; mirror: Mirror; paint?: Paint; turn?: number; behind?: HTMLCanvasElement }
   /** A picture pasted on top of the drawing. */
   | { type: 'paste'; image: HTMLCanvasElement; x: number; y: number }
   | { type: 'attach'; attachment: PlacedAttachment }
@@ -70,6 +73,8 @@ type Op =
   | { type: 'hinge'; target: EditorPart; hinge: [number, number, number, number]; result?: EditorPart }
   /** A part made faster, slower, bigger or smaller. */
   | { type: 'tune'; target: EditorPart; speed: number; amount: number; flip?: boolean; lift?: boolean; result?: EditorPart }
+  /** A part given a painted background behind it. */
+  | { type: 'behind'; target: EditorPart; result: EditorPart }
   | TransformOp;
 
 const paper = document.querySelector<HTMLCanvasElement>('#paper')!;
@@ -113,6 +118,7 @@ let base: {
   y: number;
   holes?: HTMLCanvasElement;
   glow?: Record<'glow' | 'uv', HTMLCanvasElement>;
+  behind?: HTMLImageElement;
 } | null = null;
 let baseAttachments: PlacedAttachment[] = [];
 let baseParts: EditorPart[] = [];
@@ -134,6 +140,13 @@ const glowViews = {
   glow: document.querySelector<HTMLCanvasElement>('#glow-view')!.getContext('2d')!,
   uv: document.querySelector<HTMLCanvasElement>('#uv-view')!.getContext('2d')!,
 };
+/**
+ * What's painted behind moving parts, showing where they were as they move. Only what's within a part
+ * that has a painted background is kept.
+ */
+const behindCanvas = Object.assign(document.createElement('canvas'), { width: paper.width, height: paper.height });
+const behindCtx = behindCanvas.getContext('2d')!;
+const behindView = document.querySelector<HTMLCanvasElement>('#behind-view')!.getContext('2d')!;
 const overlay = document.querySelector<HTMLCanvasElement>('#selection-overlay')!.getContext('2d')!;
 /** The paper as committed, under a selection that is being moved around. */
 const snapshot = Object.assign(document.createElement('canvas'), { width: paper.width, height: paper.height });
@@ -146,6 +159,11 @@ let selectStart: { x: number; y: number; moved: number } | null = null;
 /** The part whose hinge is being drawn, and the line so far. */
 let hingeFor: EditorPart | null = null;
 let hingeLine: [number, number, number, number] | null = null;
+/** The part whose background is being painted. */
+let behindFor: EditorPart | null = null;
+/** The part tapped, or pointed at, in the list of moving parts: it's picked out on the paper. */
+let pickedPart: EditorPart | null = null;
+let hoverPart: EditorPart | null = null;
 
 try {
   artistInput.value = localStorage.getItem('doodlearium.artist') ?? '';
@@ -193,7 +211,8 @@ paintButtons.forEach(
     }),
 );
 function renderPaintKind() {
-  paintEl.hidden = !(state.tool === 'brush' || state.tool === 'fill') || state.color === 'clear';
+  // What's painted behind a part doesn't glow.
+  paintEl.hidden = !(state.tool === 'brush' || state.tool === 'fill') || state.color === 'clear' || !!behindFor;
 }
 
 const sizesEl = document.querySelector<HTMLDivElement>('#sizes')!;
@@ -274,6 +293,8 @@ const toolButtons = document.querySelectorAll<HTMLButtonElement>('[data-tool]');
 toolButtons.forEach((b) => (b.onclick = () => setTool(b.dataset.tool as Tool)));
 
 function setTool(tool: Tool) {
+  // Painting behind a part is done with the brush, eraser and fill.
+  if (behindFor && (tool === 'select' || tool === 'extras')) finishBehind();
   if (tool !== 'select') finishSelection();
   state.tool = tool;
   press(toolButtons, (b) => b.dataset.tool === tool);
@@ -291,7 +312,17 @@ function setTool(tool: Tool) {
 
 function renderHint() {
   if (hingeFor) {
-    hint.textContent = '📍 Draw a line on the drawing where this part is attached.';
+    hint.textContent = `📍 ${PART_INFO[hingeFor.motion].attach ?? 'Draw a line on the drawing where this part is attached.'}`;
+    return;
+  }
+  if (behindFor) {
+    const done = document.createElement('button');
+    done.textContent = '✓ Done';
+    done.onclick = finishBehind;
+    hint.replaceChildren(
+      `🖼️ Paint what shows where this ${PART_INFO[behindFor.motion].label.toLowerCase()} was, as it moves: more of the body, or the sky... Anything left checked shows nothing there. `,
+      done,
+    );
     return;
   }
   const extra = EXTRAS.find((e) => e.kind === state.extra)!;
@@ -525,6 +556,7 @@ document.querySelector<HTMLButtonElement>('#clear')!.onclick = () => {
   baseParts = [];
   selection.clear();
   closePhotoPanel();
+  if (behindFor) finishBehind();
   redraw();
 };
 addEventListener('keydown', (e) => {
@@ -532,6 +564,7 @@ addEventListener('keydown', (e) => {
     e.preventDefault();
     undo();
   }
+  if (e.key === 'Escape' && behindFor) finishBehind();
 });
 
 function undo() {
@@ -540,6 +573,7 @@ function undo() {
   else if (!selection.empty) selection.clear();
   else ops.pop();
   redraw();
+  if (behindFor && !currentParts().includes(behindFor)) finishBehind();
 }
 
 // --- painting ------------------------------------------------------------
@@ -578,6 +612,7 @@ paper.addEventListener('pointerdown', (e) => {
       mirror: state.mirror,
       paint: state.paint,
       turn: materialTurn(),
+      behind: behindFor ? behindArea(behindFor.mask) : undefined,
     };
     ops.push(op);
     applyFill(op);
@@ -610,6 +645,7 @@ paper.addEventListener('pointerdown', (e) => {
     mirror: state.mirror,
     points: [p],
     paint: state.tool === 'eraser' ? 'normal' : state.paint,
+    behind: behindFor ? true : undefined,
   };
   ops.push(current);
   drawSegment(current, 0);
@@ -693,9 +729,14 @@ function drawSegment(stroke: Extract<Op, { type: 'stroke' }>, i: number) {
     });
     c.stroke();
   };
-  ctx.globalCompositeOperation = stroke.erase || invisible ? 'destination-out' : 'source-over';
-  ctx.strokeStyle = stroke.color === 'rainbow' ? `hsl(${(i * 4) % 360} 85% 58%)` : invisible ? '#000' : stroke.color;
-  line(ctx);
+  const target = stroke.behind ? behindCtx : ctx;
+  target.globalCompositeOperation = stroke.erase || invisible ? 'destination-out' : 'source-over';
+  target.strokeStyle = stroke.color === 'rainbow' ? `hsl(${(i * 4) % 360} 85% 58%)` : invisible ? '#000' : stroke.color;
+  line(target);
+  if (stroke.behind) {
+    showBehind();
+    return;
+  }
   // Invisible paint marks a see-through spot; real paint over one covers it up again.
   if (invisible || !stroke.erase) {
     holes.globalCompositeOperation = invisible ? 'source-over' : 'destination-out';
@@ -722,6 +763,10 @@ function brushWidth(size: number, pressure: number, erase: boolean) {
 function applyFill(op: Extract<Op, { type: 'fill' }>) {
   ctx.globalCompositeOperation = 'source-over';
   const material = op.material === 'solid' && op.color === 'rainbow' ? 'rainbow' : op.material;
+  if (op.behind) {
+    fillBehind(op, op.behind, material);
+    return;
+  }
   const area = floodFill(ctx, withMirror(op, op.mirror), material, op.color, op.turn ?? 0);
   const image = holes.getImageData(0, 0, holesCanvas.width, holesCanvas.height);
   const alpha = op.color === 'clear' ? 255 : 0;
@@ -737,6 +782,83 @@ function applyFill(op: Extract<Op, { type: 'fill' }>) {
     c.putImageData(marks, 0, 0);
   }
   showGlow();
+}
+
+/** A fill behind a part fills only within the part's area (empty, it fills all of it). */
+function fillBehind(op: Extract<Op, { type: 'fill' }>, area: HTMLCanvasElement, material: Material) {
+  const within = Object.assign(document.createElement('canvas'), { width: paper.width, height: paper.height });
+  const w = within.getContext('2d', { willReadFrequently: true })!;
+  w.drawImage(behindCanvas, 0, 0);
+  w.globalCompositeOperation = 'destination-in';
+  w.drawImage(area, 0, 0);
+  w.globalCompositeOperation = 'source-over';
+  floodFill(w, withMirror(op, op.mirror), material, op.color, op.turn ?? 0);
+  w.globalCompositeOperation = 'destination-in';
+  w.drawImage(area, 0, 0);
+  behindCtx.globalCompositeOperation = 'destination-out';
+  behindCtx.drawImage(area, 0, 0);
+  behindCtx.globalCompositeOperation = 'source-over';
+  behindCtx.drawImage(within, 0, 0);
+  showBehind();
+}
+
+/** A light checkerboard, for what's see-through behind a part. */
+const checks = (() => {
+  const c = Object.assign(document.createElement('canvas'), { width: 24, height: 24 });
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, 24, 24);
+  g.fillStyle = '#dde3ea';
+  g.fillRect(0, 0, 12, 12);
+  g.fillRect(12, 12, 12, 12);
+  return behindView.createPattern(c, 'repeat')!;
+})();
+
+/** While painting behind a part: its area shows what's painted behind it instead of the part. */
+function showBehind() {
+  behindView.globalCompositeOperation = 'source-over';
+  behindView.clearRect(0, 0, paper.width, paper.height);
+  if (!behindFor) return;
+  behindView.drawImage(behindArea(behindFor.mask), 0, 0);
+  behindView.globalCompositeOperation = 'source-in';
+  behindView.fillStyle = checks;
+  behindView.fillRect(0, 0, paper.width, paper.height);
+  behindView.globalCompositeOperation = 'source-over';
+  behindView.drawImage(behindWithin([behindFor]), 0, 0);
+}
+
+/** What's painted behind the given parts, within their areas. */
+function behindWithin(parts: EditorPart[]) {
+  const out = Object.assign(document.createElement('canvas'), { width: paper.width, height: paper.height });
+  const o = out.getContext('2d')!;
+  for (const part of parts) o.drawImage(behindArea(part.mask), 0, 0);
+  o.globalCompositeOperation = 'source-in';
+  o.drawImage(behindCanvas, 0, 0);
+  return out;
+}
+
+function startBehind(part: EditorPart) {
+  hingeFor = null;
+  if (!part.behind) {
+    const result = { ...part, behind: true };
+    ops.push({ type: 'behind', target: part, result });
+    part = result;
+  }
+  behindFor = part;
+  if (state.tool === 'select' || state.tool === 'extras') setTool('brush');
+  renderPaintKind();
+  renderHint();
+  showBehind();
+  changed();
+}
+
+function finishBehind() {
+  behindFor = null;
+  renderPaintKind();
+  renderHint();
+  showBehind();
+  renderParts();
+  schedulePreview();
 }
 
 let glowTimer = 0;
@@ -757,6 +879,9 @@ function showGlow() {
 function redraw() {
   ctx.globalCompositeOperation = 'source-over';
   ctx.clearRect(0, 0, paper.width, paper.height);
+  behindCtx.globalCompositeOperation = 'source-over';
+  behindCtx.clearRect(0, 0, paper.width, paper.height);
+  if (base?.behind) behindCtx.drawImage(base.behind, base.x, base.y);
   holes.globalCompositeOperation = 'source-over';
   holes.clearRect(0, 0, holesCanvas.width, holesCanvas.height);
   if (base) ctx.drawImage(base.image, base.x, base.y);
@@ -775,9 +900,11 @@ function redraw() {
       applyTransform(holes, op);
       applyTransform(glowCtx.glow, op);
       applyTransform(glowCtx.uv, op);
+      applyTransform(behindCtx, op);
     }
   }
   showHoles();
+  showBehind();
   showGlow();
   snapshotPaper();
   renderSelection();
@@ -1021,7 +1148,12 @@ function makePart(motion: PartMotion) {
   renderSelection();
   renderSelectBar();
   changed();
-  showToast(`${PART_INFO[motion].icon} ${PART_INFO[motion].label} added! Open ▶ Preview to see it move.`);
+  const { icon, label } = PART_INFO[motion];
+  showToast(
+    isHinged(motion)
+      ? `${icon} ${label} added! The orange dashed line is where it's joined on: tap 📍 on its chip to draw it yourself.`
+      : `${icon} ${label} added! Open ▶ Preview to see it move.`,
+  );
 }
 
 function currentParts(): EditorPart[] {
@@ -1037,21 +1169,24 @@ function currentParts(): EditorPart[] {
     } else if (op.type === 'tune') {
       const i = list.indexOf(op.target);
       if (i >= 0) list[i] = op.result ??= { ...op.target, speed: op.speed, amount: op.amount, flip: op.flip, lift: op.lift };
+    } else if (op.type === 'behind') {
+      const i = list.indexOf(op.target);
+      if (i >= 0) list[i] = op.result;
     } else if (op.type === 'transform') carryParts(list, op);
   }
   if (selection.moved) carryParts(list, selection.pendingOp());
   return list;
 }
 
-/** Parts with their hinges worked out from the drawing as it is now. */
-function placedParts(): PlacedPart[] {
+/** Parts with their hinges worked out from the drawing as it is now (and the part each came from). */
+function placedParts(): (PlacedPart & { source: EditorPart })[] {
   const parts = currentParts();
   if (!parts.length) return [];
   const ink = ctx.getImageData(0, 0, paper.width, paper.height);
   const headRight = !(hasFacing(state.motion) && state.facingLeft);
   return parts.flatMap((part) => {
     const hinge = findHinge(ink, part, headRight);
-    return hinge ? [{ ...part, hinge }] : [];
+    return hinge ? [{ ...part, hinge, source: part }] : [];
   });
 }
 
@@ -1061,8 +1196,16 @@ function scheduleParts() {
   partsTimer = window.setTimeout(renderParts, 150);
 }
 
+/** Rings around masks, worked out once per mask and width (they're redrawn whenever a part is pointed at). */
+const outlines = new WeakMap<HTMLCanvasElement, Map<string, HTMLCanvasElement>>();
+
 /** A ring around the mask, width px wide, so the part shows up whatever colour it is. */
 function outline(mask: HTMLCanvasElement, width: number, color: string) {
+  const key = `${width}:${color}`;
+  let cached = outlines.get(mask);
+  if (!cached) outlines.set(mask, (cached = new Map()));
+  const known = cached.get(key);
+  if (known) return known;
   const ring = Object.assign(document.createElement('canvas'), { width: mask.width, height: mask.height });
   const r = ring.getContext('2d')!;
   for (let a = 0; a < 16; a++) r.drawImage(mask, Math.cos((a / 16) * Math.PI * 2) * width, Math.sin((a / 16) * Math.PI * 2) * width);
@@ -1071,28 +1214,44 @@ function outline(mask: HTMLCanvasElement, width: number, color: string) {
   r.fillRect(0, 0, ring.width, ring.height);
   r.globalCompositeOperation = 'destination-out';
   r.drawImage(mask, 0, 0);
+  cached.set(key, ring);
   return ring;
 }
 
-/** Shows each part tinted and outlined with its icon, plus the hinge it pops out or flaps from. */
-function renderParts() {
-  const parts = placedParts();
+/** The parts as last shown on the paper. */
+let shownParts: ReturnType<typeof placedParts> = [];
+
+/** The part to pick out on the paper: the one being worked on, pointed at or tapped in the list. */
+const focusedPart = () => behindFor ?? hingeFor ?? hoverPart ?? pickedPart;
+
+/**
+ * Shows each part tinted and outlined with its icon, plus the hinge it pops out or flaps from. A
+ * picked-out part is shown brighter and the others faded.
+ */
+function drawPartsOverlay() {
   partsOverlay.clearRect(0, 0, paper.width, paper.height);
-  for (const part of parts) {
-    const tint = document.createElement('canvas');
-    tint.width = paper.width;
-    tint.height = paper.height;
-    const t = tint.getContext('2d')!;
-    t.drawImage(part.mask, 0, 0);
-    t.globalCompositeOperation = 'source-in';
-    t.fillStyle = 'rgba(255, 140, 26, 0.22)';
-    t.fillRect(0, 0, paper.width, paper.height);
-    partsOverlay.drawImage(tint, 0, 0);
+  const focus = focusedPart();
+  for (const part of shownParts) {
+    const picked = part.source === focus;
+    // While painting behind a part, only its outline shows.
+    if (behindFor && !picked) continue;
+    partsOverlay.globalAlpha = focus && !picked ? 0.3 : 1;
+    if (!behindFor) {
+      const tint = document.createElement('canvas');
+      tint.width = paper.width;
+      tint.height = paper.height;
+      const t = tint.getContext('2d')!;
+      t.drawImage(part.mask, 0, 0);
+      t.globalCompositeOperation = 'source-in';
+      t.fillStyle = picked ? 'rgba(255, 214, 0, 0.5)' : 'rgba(255, 140, 26, 0.22)';
+      t.fillRect(0, 0, paper.width, paper.height);
+      partsOverlay.drawImage(tint, 0, 0);
+    }
     // Dark outside, white inside: visible on orange, white and black parts alike.
-    partsOverlay.drawImage(outline(part.mask, 5, 'rgba(20, 30, 60, 0.85)'), 0, 0);
-    partsOverlay.drawImage(outline(part.mask, 2.5, 'rgba(255, 255, 255, 0.95)'), 0, 0);
+    partsOverlay.drawImage(outline(part.mask, picked ? 8 : 5, 'rgba(20, 30, 60, 0.85)'), 0, 0);
+    partsOverlay.drawImage(outline(part.mask, picked ? 4 : 2.5, picked ? 'rgba(255, 230, 0, 1)' : 'rgba(255, 255, 255, 0.95)'), 0, 0);
     const [x1, y1, x2, y2] = part.hinge;
-    if (isHinged(part.motion)) {
+    if (isHinged(part.motion) && part.source !== hingeFor) {
       partsOverlay.save();
       partsOverlay.lineWidth = 6;
       partsOverlay.lineCap = 'round';
@@ -1105,13 +1264,14 @@ function renderParts() {
       partsOverlay.restore();
     }
     const b = inkBounds(part.mask);
-    if (b) {
+    if (b && !behindFor) {
       partsOverlay.font = '36px sans-serif';
       partsOverlay.textAlign = 'center';
       partsOverlay.textBaseline = 'middle';
       partsOverlay.fillText(PART_INFO[part.motion].icon, (b.left + b.right) / 2, (b.top + b.bottom) / 2);
     }
   }
+  partsOverlay.globalAlpha = 1;
   if (hingeLine) {
     partsOverlay.save();
     partsOverlay.lineWidth = 8;
@@ -1123,13 +1283,49 @@ function renderParts() {
     partsOverlay.stroke();
     partsOverlay.restore();
   }
+  for (const chip of partsList.querySelectorAll<HTMLElement>('.chip')) {
+    chip.classList.toggle('picked', chipParts.get(chip) === focus);
+  }
+}
+
+const chipParts = new WeakMap<HTMLElement, EditorPart>();
+
+/** Shows the parts on the paper and lists them, each with buttons to change how it moves. */
+function renderParts() {
+  shownParts = placedParts();
+  const parts = currentParts();
+  if (pickedPart && !parts.includes(pickedPart)) pickedPart = null;
+  if (hoverPart && !parts.includes(hoverPart)) hoverPart = null;
   partsList.hidden = parts.length === 0;
+  const help = document.createElement('p');
+  help.className = 'parts-help';
+  help.textContent =
+    'Tap a part to see which it is on the drawing. ' +
+    (parts.some((p) => isHinged(p.motion)) ? "The orange dashed line is where it's joined on, and stays still while the rest moves: 📍 draws it again. " : '') +
+    '🖼️ paints what shows where it was as it moves.';
   partsList.replaceChildren(
     document.createTextNode('Moving parts:'),
-    ...currentParts().map((part) => {
+    ...parts.map((part) => {
       const chip = document.createElement('span');
       chip.className = 'chip';
-      chip.textContent = `${PART_INFO[part.motion].icon} ${PART_INFO[part.motion].label}`;
+      chipParts.set(chip, part);
+      const label = document.createElement('span');
+      label.className = 'label';
+      label.textContent = `${PART_INFO[part.motion].icon} ${PART_INFO[part.motion].label}`;
+      label.title = 'Tap to see which part this is';
+      label.onclick = () => {
+        pickedPart = pickedPart === part ? null : part;
+        drawPartsOverlay();
+      };
+      chip.onpointerenter = () => {
+        hoverPart = part;
+        drawPartsOverlay();
+      };
+      chip.onpointerleave = () => {
+        hoverPart = null;
+        drawPartsOverlay();
+      };
+      chip.append(label);
       const remove = document.createElement('button');
       remove.textContent = '✕';
       remove.title = 'Stop this part moving';
@@ -1173,17 +1369,28 @@ function renderParts() {
       if (isHinged(part.motion)) {
         const pin = document.createElement('button');
         pin.textContent = '📍';
-        pin.title = 'Draw where it is attached';
+        pin.title = `Draw where it's joined on. ${PART_INFO[part.motion].attach}`;
         pin.onclick = () => {
+          if (behindFor) finishBehind();
           hingeFor = part;
           renderHint();
+          drawPartsOverlay();
         };
         chip.append(pin);
       }
-      chip.append(remove);
+      const behind = document.createElement('button');
+      behind.textContent = '🖼️';
+      behind.title = part.behind
+        ? 'Paint more of what shows where it was, as it moves'
+        : 'Paint what shows where it was, as it moves (otherwise a shadow of it is left there)';
+      behind.setAttribute('aria-pressed', String(part === behindFor));
+      behind.onclick = () => (part === behindFor ? finishBehind() : startBehind(part));
+      chip.append(behind, remove);
       return chip;
     }),
+    help,
   );
+  drawPartsOverlay();
 }
 
 /** The drawing as it would be sent, with its parts. */
@@ -1195,6 +1402,7 @@ function exportCurrent() {
     glow: glowCanvases,
     attachments: currentAttachments(),
     parts: placedParts(),
+    behind: behindWithin(currentParts().filter((p) => p.behind)),
   });
 }
 
@@ -1348,7 +1556,7 @@ async function refreshPreview() {
     await image.decode();
     return image;
   };
-  const [{ Texture }, { splitParts, toCutout }, { glowTextures }, view, image, partsImage, glowImage] = await Promise.all([
+  const [{ Texture }, { splitParts, toCutout }, { glowTextures }, view, image, partsImage, glowImage, behindImage] = await Promise.all([
     import('pixi.js'),
     import('../tank/parts.ts'),
     import('../tank/glow.ts'),
@@ -1356,8 +1564,9 @@ async function refreshPreview() {
     load(exported.dataUrl),
     load(exported.partsImage),
     load(exported.glowImage),
+    load(exported.behindImage),
   ]);
-  const cutout = partsImage ? toCutout(splitParts(image!, partsImage, exported.parts)) : null;
+  const cutout = partsImage ? toCutout(splitParts(image!, partsImage, exported.parts, behindImage ?? undefined)) : null;
   const glow = glowImage ? glowTextures(image!, glowImage, partsImage ?? undefined) : null;
   // The preview shows where it'll live: its home, or the first place picked.
   view.setBiome(placeById(homeSelect.value)?.biome ?? habitats[0] ?? 'lake');
@@ -1416,6 +1625,7 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
     parts: exported.parts,
     partsImage: exported.partsImage,
     glowImage: exported.glowImage,
+    behindImage: exported.behindImage,
     ...wherePayload(),
   };
 
@@ -1472,6 +1682,15 @@ async function loadGlowMasks(drawing: Drawing) {
   return { glow: mask(0), uv: mask(1) };
 }
 
+async function loadBehind(drawing: Drawing) {
+  const image = new Image();
+  image.src = behindUrl(drawing);
+  return image.decode().then(
+    () => image,
+    () => undefined,
+  );
+}
+
 async function loadForEditing(id: string) {
   const drawing = (await fetchDrawings()).find((d) => d.id === id);
   if (!drawing) {
@@ -1490,6 +1709,7 @@ async function loadForEditing(id: string) {
     y: Math.round((paper.height - image.height) / 2),
     holes: enclosedHoles(image),
     glow: drawing.glow ? await loadGlowMasks(drawing) : undefined,
+    behind: drawing.parts?.some((p) => p.behind) ? await loadBehind(drawing) : undefined,
   };
   baseAttachments = (drawing.attachments ?? []).map((a) => ({
     ...a,
@@ -1518,7 +1738,7 @@ async function loadForEditing(id: string) {
   banner.hidden = false;
   banner.textContent =
     hasFacing(motionOf(drawing))
-      ? `Editing ${drawing.name}. Swimming backwards? Tap “Facing” so the arrow points the way its head does, then save.`
+      ? `Editing ${drawing.name}. ${LAND_MOTIONS.includes(motionOf(drawing)) ? 'Going' : 'Swimming'} backwards? Tap “Facing” so the arrow points the way its head does, then save.`
       : `Editing ${drawing.name}.`;
   redraw();
 }

@@ -13,6 +13,8 @@ export interface EditorPart {
   amount?: number;
   flip?: boolean;
   lift?: boolean;
+  /** What shows behind it is painted (in the paper's behind layer, within its area). */
+  behind?: boolean;
 }
 
 /** Moves a hand-drawn hinge along with its part. */
@@ -23,17 +25,55 @@ const moveHinge = (hinge: EditorPart['hinge'], matrix: DOMMatrix): EditorPart['h
   return [a.x, a.y, b.x, b.y];
 };
 
-export const PART_INFO: Record<PartMotion, { icon: string; label: string; hint: string }> = {
-  popout: { icon: '🪽', label: 'Pop-out', hint: "Lifts up out of the paper where it's attached, like a cut-out fin" },
-  flap: { icon: '🦋', label: 'Flap', hint: "Swings back and forth where it's attached (tails, flippers)" },
-  chomp: { icon: '🦪', label: 'Open & close', hint: "Opens and shuts where it's attached (clams, mouths, lids). Its chip has a button for which way it opens" },
+/**
+ * What each kind of part does, and for the ones that move from a hinge (the orange dashed line: where
+ * it's joined on, which stays still while the rest moves), where to draw that line.
+ */
+export const PART_INFO: Record<PartMotion, { icon: string; label: string; hint: string; attach?: string }> = {
+  popout: {
+    icon: '🪽',
+    label: 'Pop-out',
+    hint: "Lifts up out of the paper where it's attached, like a cut-out fin",
+    attach: "Draw a line along the edge where it's stuck on to the body. That edge stays put and the rest lifts up off the paper.",
+  },
+  flap: {
+    icon: '🦋',
+    label: 'Flap',
+    hint: "Swings back and forth where it's attached (tails, flippers, wings)",
+    attach: "Draw a line across where it joins the body: the base of a tail, or a wing's shoulder. That end stays put and the far end swings.",
+  },
+  chomp: {
+    icon: '🦪',
+    label: 'Open & close',
+    hint: "Opens and shuts where it's attached (clams, mouths, lids). Its chip has a button for which way it opens",
+    attach: 'Draw a short line where the two halves stay joined: the corner of a mouth, or the back of a clam shell. It opens from there.',
+  },
   spin: { icon: '🌀', label: 'Spin', hint: 'Spins around its middle (propellers, wheels)' },
   pulse: { icon: '💓', label: 'Pulse', hint: 'Grows and shrinks (hearts, lights)' },
   blink: { icon: '😉', label: 'Blink', hint: 'Blinks every few seconds (eyes)' },
-  leg: { icon: '🦵', label: 'Leg', hint: 'Swings from where it joins the body as the animal walks (mark each leg on its own)' },
+  leg: {
+    icon: '🦵',
+    label: 'Leg',
+    hint: 'Swings from where it joins the body as the animal walks (mark each leg on its own)',
+    attach: 'Draw a short line across the top of the leg, where it joins the body (the hip or shoulder). The foot swings from there.',
+  },
 };
 
 const newCanvas = (width: number, height: number) => Object.assign(document.createElement('canvas'), { width, height });
+
+/** A part's mask grown a few pixels: where what's painted behind it is kept, so it tucks under its edge. */
+const behindAreas = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
+export function behindArea(mask: HTMLCanvasElement) {
+  let area = behindAreas.get(mask);
+  if (!area) {
+    area = newCanvas(mask.width, mask.height);
+    const c = area.getContext('2d')!;
+    for (let a = 0; a < 8; a++) c.drawImage(mask, Math.cos((a / 8) * Math.PI * 2) * 3, Math.sin((a / 8) * Math.PI * 2) * 3);
+    c.drawImage(mask, 0, 0);
+    behindAreas.set(mask, area);
+  }
+  return area;
+}
 
 /** Part masks never change once made, so their bounds are worked out once. */
 const boundsCache = new WeakMap<HTMLCanvasElement, ReturnType<typeof inkBounds>>();
@@ -185,7 +225,7 @@ function lineThrough(points: { x: number; y: number }[]): [number, number, numbe
   return [c.x + d.x * lo, c.y + d.y * lo, c.x + d.x * hi, c.y + d.y * hi];
 }
 
-/** Rebuilds part masks from a saved drawing's part image, placed where the drawing sits on the paper. */
+/** Rebuilds part masks (and their hinges) from a saved drawing's part image, placed where the drawing sits on the paper. */
 export function partsFromImage(
   partsImage: HTMLImageElement,
   saved: Part[],
@@ -195,7 +235,8 @@ export function partsFromImage(
   const placed = newCanvas(paper.width, paper.height).getContext('2d', { willReadFrequently: true })!;
   placed.drawImage(partsImage, at.x, at.y);
   const marks = placed.getImageData(0, 0, paper.width, paper.height);
-  return saved.map(({ motion, speed, amount, flip, lift }, index) => {
+  const onPaper = (fx: number, fy: number) => [at.x + fx * partsImage.width, at.y + fy * partsImage.height];
+  return saved.map(({ motion, hinge, speed, amount, flip, lift, behind }, index) => {
     const mask = newCanvas(paper.width, paper.height);
     const c = mask.getContext('2d')!;
     const out = c.createImageData(paper.width, paper.height);
@@ -204,6 +245,9 @@ export function partsFromImage(
       if (marks.data[i + 3] >= 128 && Math.abs(marks.data[i] - value) <= 10) out.data[i + 3] = 255;
     }
     c.putImageData(out, 0, 0);
-    return { mask, motion, speed, amount, flip, lift };
+    // The hinge it was saved with stays where it was, whether it was drawn by hand or found by itself.
+    const [x1, y1] = onPaper(hinge[0], hinge[1]);
+    const [x2, y2] = onPaper(hinge[2], hinge[3]);
+    return { mask, motion, hinge: [x1, y1, x2, y2], speed, amount, flip, lift, behind };
   });
 }
