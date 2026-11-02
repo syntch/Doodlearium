@@ -114,4 +114,4 @@ const vessel: BodyStyle = {
   deform: () => none,
 };
 
-export const BODY_STYLES: Partial<Record<Motion, BodyStyle>> = { fish, puffer, eel, jelly, seahorse, flapper, vessel };
+export const BODY_STYLES: Partial<Record<Motion, BodyStyle>> = { fish, puffer, eel, jelly, seahorse, flapper, vessel, slitherer: eel };

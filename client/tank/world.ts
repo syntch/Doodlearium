@@ -50,12 +50,18 @@ export interface Creature {
 /** Negative z means pressed up against the glass, in front of everything. */
 export const depthOrder = (z: number) => Math.round((1 - z) * 1000);
 
-const WATER = { r: 0x5f, g: 0x9f, b: 0xc4 };
-/** Far things are washed toward the water colour. */
+const WATER = { r: 0x5f, g: 0x9f, b: 0xc4, amount: 0.3 };
+const AIR = { r: 0xc4, g: 0xd8, b: 0xe6, amount: 0.25 };
+let haze = WATER;
+/** Under water, far things fade toward the water's blue; on land, toward a pale haze. Set when the place changes. */
+export function setHaze(land: boolean) {
+  haze = land ? AIR : WATER;
+}
+/** Far things are washed toward the water colour (or the haze on land). */
 export function depthTint(z: number) {
-  const t = Math.max(0, z) * 0.3;
-  const r = Math.round(lerp(255, WATER.r, t));
-  const g = Math.round(lerp(255, WATER.g, t));
-  const b = Math.round(lerp(255, WATER.b, t));
+  const t = Math.max(0, z) * haze.amount;
+  const r = Math.round(lerp(255, haze.r, t));
+  const g = Math.round(lerp(255, haze.g, t));
+  const b = Math.round(lerp(255, haze.b, t));
   return (r << 16) | (g << 8) | b;
 }

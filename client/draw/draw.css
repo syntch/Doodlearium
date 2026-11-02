@@ -173,6 +173,8 @@ svg.icon { width: 1.05em; height: 1.05em; vertical-align: -0.18em; }
 }
 
 .kinds button { padding: 8px 12px; }
+/* Land and air styles start a row of their own. */
+.kinds-break { flex-basis: 100%; height: 0; }
 .suggest {
   margin: 0;
   display: flex;

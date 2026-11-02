@@ -1,7 +1,7 @@
 import type { Drawing } from '../types.ts';
 import type { World } from './world.ts';
 
-export type Kind = 'swimmer' | 'crawler' | 'plant' | 'decor' | 'egg';
+export type Kind = 'swimmer' | 'crawler' | 'plant' | 'decor' | 'egg' | 'walker' | 'flier';
 export type Personality = 'curious' | 'shy' | 'easygoing' | 'hunter';
 
 /**
@@ -21,7 +21,7 @@ export interface Pose {
   effort: number;
   /** 0 awake .. 1 fast asleep. */
   drowsy: number;
-  /** Puffers: how blown up (0..1). */
+  /** Puffers: how blown up (0..1). Land animals: how high off the ground (a hopper mid-hop), in tank units. */
   puff: number;
   /** Out and about (night creatures hide by day). */
   out: boolean;

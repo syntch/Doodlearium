@@ -38,6 +38,9 @@ export interface World {
   waterTop: number;
   waterLeft: number;
   floorAt(x: number): number;
+  /** A land place (see shared/world/biomes.ts). */
+  land?: boolean;
+  groundDepth?: number;
   /** Seconds since the world began. */
   time: number;
   food: SimFood;
@@ -51,6 +54,8 @@ export interface World {
   hideouts: Hideout[];
   /** A gentle sideways current, in units per second (negative flows left). */
   current: number;
+  /** How hard it's raining (0..1): land animals run for shelter when it pours. */
+  rain: number;
   effects: Effect[];
   notes: Note[];
 }
@@ -88,6 +93,7 @@ export function newWorld(food: SimFood, biome: Biome = 'lake'): World {
   sleepiness: 0,
   hideouts: [],
     current: 0,
+    rain: 0,
     effects: [],
     notes: [],
   };
@@ -96,9 +102,12 @@ export function newWorld(food: SimFood, biome: Biome = 'lake'): World {
 /** Halfway (f = 0.5) down through the water, or any other fraction of the way from the top to the bottom. */
 export const waterY = (world: Pick<World, 'waterTop' | 'floorY'>, f: number) => world.waterTop + (world.floorY - world.waterTop) * f;
 
-/** Things resting on the sand at x: far ones sit at the back edge, near ones toward the front of the tank. */
-export const sandY = (world: Pick<World, 'floorAt' | 'height'>, z: number, x: number) =>
-  world.floorAt(x) + (1 - z) * world.height * 0.105 + 4;
+/** How far the ground runs from its back edge to the front (much further on land than on the sand). */
+export const groundBand = (world: Pick<World, 'height' | 'groundDepth'>) => world.height * (world.groundDepth ?? 0.105);
+
+/** Things resting on the sand (or the ground) at x: far ones sit at the back edge, near ones toward the front. */
+export const sandY = (world: Pick<World, 'floorAt' | 'height' | 'groundDepth'>, z: number, x: number) =>
+  world.floorAt(x) + (1 - z) * groundBand(world) + 4;
 
 /** Too many effects at once (nobody is collecting them, say) just get dropped. */
 const MAX_EFFECTS = 400;

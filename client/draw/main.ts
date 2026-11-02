@@ -12,9 +12,10 @@ import {
   type Motion,
   type PartMotion,
   type SpeciesSize,
+  LAND_MOTIONS,
 } from '../../shared/types.ts';
 import { fetchDrawings, setupFeedButton, submitDrawing, updateDrawing } from '../shared/api.ts';
-import { BIOME_NAMES, WATER_BIOMES, defaultGroup, defaultHabitats, type Biome } from '../../shared/world/biomes.ts';
+import { BIOMES, BIOME_NAMES, defaultGroup, defaultHabitats, type Biome } from '../../shared/world/biomes.ts';
 import { LIVE_PLACES, placeById } from '../../shared/world/places.ts';
 import { enclosedHoles, exportDrawing, inkBounds, type PlacedAttachment, type PlacedPart } from './export.ts';
 import { MATERIALS, MATERIAL_LABELS, MATERIAL_TURNS, floodFill, floodRegion, materialPreview, type Material } from './fill.ts';
@@ -329,6 +330,10 @@ const MOTION_LABELS: Record<Motion, string> = {
   crawler: '🦀 Crawler',
   plant: '🌿 Plant',
   decor: '🏰 Decoration',
+  walker: '🐕 Walker',
+  hopper: '🐇 Hopper',
+  slitherer: '🐍 Slitherer',
+  flier: '🐦 Flier',
 };
 
 const PLACEHOLDERS: Record<Motion, string> = {
@@ -342,6 +347,10 @@ const PLACEHOLDERS: Record<Motion, string> = {
   crawler: 'Name it (e.g. Pinchy)',
   plant: 'Name it (e.g. Swirly Weed)',
   decor: 'Name it (e.g. Castle)',
+  walker: 'Name it (e.g. Woolly)',
+  hopper: 'Name it (e.g. Thumper)',
+  slitherer: 'Name it (e.g. Wiggles)',
+  flier: 'Name it (e.g. Tweety)',
 };
 
 /** Styles that have a head, so the Facing button matters. */
@@ -364,8 +373,11 @@ let habitats: Biome[] = [];
 /** Roughly how big its kind grows (undefined: medium). */
 let speciesSize: SpeciesSize | undefined;
 
+/** The kinds of place that are open (the chips to pick from). */
+const OPEN_BIOMES = BIOMES.filter((b) => LIVE_PLACES.some((p) => p.biome === b));
+
 function setWhere(list: Biome[], group: boolean, home = '', size?: SpeciesSize) {
-  habitats = WATER_BIOMES.filter((b) => list.includes(b)).sort((a, b) => list.indexOf(a) - list.indexOf(b));
+  habitats = OPEN_BIOMES.filter((b) => list.includes(b)).sort((a, b) => list.indexOf(a) - list.indexOf(b));
   groupInput.checked = group;
   speciesSize = size;
   renderWhere(home);
@@ -375,7 +387,7 @@ const SPECIES_SIZES: [SpeciesSize | undefined, string][] = [['small', 'Small'], 
 
 function renderWhere(home = homeSelect.value) {
   habitatsEl.replaceChildren(
-    ...WATER_BIOMES.map((biome) => {
+    ...OPEN_BIOMES.map((biome) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.textContent = BIOME_NAMES[biome];
@@ -411,7 +423,7 @@ function renderWhere(home = homeSelect.value) {
 
 /** What to send: nothing where it's just the style's usual, so it keeps following the style. */
 function wherePayload() {
-  const usual = defaultHabitats(state.motion).filter((b) => WATER_BIOMES.includes(b));
+  const usual = defaultHabitats(state.motion).filter((b) => OPEN_BIOMES.includes(b));
   const same = usual.length === habitats.length && usual.every((b) => habitats.includes(b));
   return {
     habitats: same ? undefined : habitats,
@@ -442,8 +454,12 @@ function renderGuide() {
     seahorse: top(way('head at the top, facing')),
     jelly: top('bell on top, tentacles hanging down'),
     crawler: top(way('walks this way')) + ground('walks on the sand'),
-    plant: ground('grows up from the sand'),
-    decor: ground('sits on the sand'),
+    plant: ground('grows up from the ground'),
+    decor: ground('sits on the ground'),
+    walker: top(way('head this way')) + ground('feet on the ground'),
+    hopper: top(way('head this way')) + ground('feet on the ground'),
+    slitherer: top(way('head this way')) + ground('slides along the ground'),
+    flier: top(way('head this way')),
   };
   guide.innerHTML = mirrorLine + guides[m];
 }
@@ -470,7 +486,7 @@ function suggestMotion() {
   if (b && Math.max(w, h) > 80) {
     if (w >= h * 3.2) {
       text = 'Looks long and skinny! Try';
-      options = ['eel'];
+      options = LAND_MOTIONS.includes(state.motion) ? ['slitherer'] : ['eel'];
     } else if (h >= w * 1.4) {
       text = 'Tall and thin! Try';
       options = ['seahorse', 'jelly'];

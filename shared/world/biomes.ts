@@ -5,6 +5,8 @@ import { motionOf } from '../types.ts';
 export const BIOMES = ['lake', 'pond', 'ocean', 'seashore', 'meadow', 'hills', 'forest', 'farm'] as const;
 export type Biome = (typeof BIOMES)[number];
 export const WATER_BIOMES: Biome[] = ['lake', 'pond', 'ocean', 'seashore'];
+export const LAND_BIOMES: Biome[] = ['meadow', 'farm', 'hills', 'forest'];
+export const isLand = (biome: Biome) => LAND_BIOMES.includes(biome);
 
 export const BIOME_NAMES: Record<Biome, string> = {
   lake: '🏞️ Lake',
@@ -27,8 +29,13 @@ const DEFAULT_HABITATS: Record<Motion, Biome[]> = {
   flapper: ['lake', 'ocean'],
   vessel: ['lake', 'ocean'],
   crawler: ['seashore', 'pond', 'lake', 'ocean'],
+  walker: ['farm', 'meadow', 'hills'],
+  hopper: ['meadow', 'hills', 'forest'],
+  slitherer: ['forest', 'meadow'],
+  flier: ['meadow', 'farm', 'hills', 'forest', 'pond', 'seashore'],
+  // Plants and decorations drawn before the land opened were made for the water; on land, tick the places.
   plant: [...WATER_BIOMES],
-  decor: [...BIOMES],
+  decor: [...WATER_BIOMES],
 };
 
 export const defaultHabitats = (motion: Motion) => DEFAULT_HABITATS[motion];
@@ -48,6 +55,10 @@ export interface Shape {
   floorAt(x: number): number;
   /** Swimmers stay right of this, where the water is deep enough. */
   waterLeft: number;
+  /** A land place: no water at all (waterTop is the bottom of the tank), sky above the ground. */
+  land?: boolean;
+  /** How deep the ground runs from back to front, as a share of the height (the sand's is shallower). */
+  groundDepth?: number;
 }
 
 export function shapeOf(biome: Biome, width: number, height: number): Shape {
@@ -72,6 +83,19 @@ export function shapeOf(biome: Biome, width: number, height: number): Shape {
         },
         waterLeft: width * 0.34,
       };
+    }
+    case 'meadow':
+    case 'farm':
+    case 'hills':
+    case 'forest': {
+      // The ground's back edge: the far side of the field. Things nearer the front stand lower down.
+      const back = (u: number) => {
+        if (biome === 'meadow') return 0.56 + Math.sin(u * 8.2 + 0.6) * 0.018 + Math.sin(u * 3.1) * 0.012;
+        if (biome === 'hills') return 0.6 - 0.11 * Math.exp(-(((u - 0.55) / 0.22) ** 2)) + Math.sin(u * 5) * 0.01;
+        if (biome === 'forest') return 0.57 + Math.sin(u * 4.4 + 1) * 0.012;
+        return 0.57;
+      };
+      return { waterTop: height, floorAt: (x) => height * back(x / width), waterLeft: 0, land: true, groundDepth: 0.3 };
     }
     default:
       return flat(0.86);

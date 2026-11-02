@@ -2,7 +2,7 @@ import { Application, Assets, Container, Graphics, RenderLayer, Text, type Textu
 import { imageUrl, motionOf, type Drawing, type Motion, type TankCommand, type TankCommandValue } from '../../shared/types.ts';
 import { newPose, type Kind, type Personality, type Pose } from '../../shared/sim/creature.ts';
 import { unpackPose, type MapSummary, type RosterEntry, type Settings, type Upcoming } from '../../shared/sim/protocol.ts';
-import { WORLD_H, WORLD_W, sandY } from '../../shared/sim/world.ts';
+import { WORLD_H, WORLD_W, groundBand, sandY } from '../../shared/sim/world.ts';
 import { depthScale } from '../../shared/sim/math.ts';
 import { MAP_H, MAP_W, placeById } from '../../shared/world/places.ts';
 import { arrangeStill, connectLive, feedFish, fetchDrawings, layEgg, scheduleTankCommand, sendTankCommand, showEverywhere } from '../shared/api.ts';
@@ -18,7 +18,7 @@ import { Food } from './food.ts';
 import { loadCutout, type Cutout } from './parts.ts';
 import { Scene } from './scene.ts';
 import { Timeline } from './timeline.ts';
-import { shapeFor, type Creature, type World } from './world.ts';
+import { setHaze, shapeFor, type Creature, type World } from './world.ts';
 
 /**
  * A place in the world (the Lake, the Pond...), drawn from the server's world: the server decides where
@@ -443,6 +443,7 @@ app.ticker.add((ticker) => {
   if (frame) {
     scene.darkness = frame.darkness;
     scene.blacklight = frame.blacklight;
+    scene.weather = frame.weather ?? [0, 0, 0];
     world.current = frame.current;
     seasons.set(frame.season, world);
     showSettings(frame.settings);
@@ -596,7 +597,8 @@ function watch(id: string | null) {
   roster = [];
   timeline.clear();
   if (id) {
-    Object.assign(world, shapeFor(placeById(id)!.biome));
+    Object.assign(world, { land: false, groundDepth: undefined }, shapeFor(placeById(id)!.biome));
+    setHaze(Boolean(world.land));
     screenSize.width = 0;
     relayoutIfResized();
   }
@@ -760,7 +762,7 @@ const clock = (d: Date) => d.toLocaleTimeString([], { hour: 'numeric', minute: '
 
 /** A menu button: done in the tank now (every screen sees it), or at the time picked. */
 /** Commands that happen in one place (the rest are for the whole world). */
-const LOCAL: string[] = ['film', 'visit', 'current', 'school', 'puff', 'egg', 'show'];
+const LOCAL: string[] = ['film', 'visit', 'current', 'school', 'puff', 'egg', 'show', 'rain', 'snow', 'rainbow'];
 
 async function command(cmd: TankCommand, value: TankCommandValue = null) {
   const here = zoomTo === 1 ? (place ?? undefined) : undefined;
@@ -880,6 +882,10 @@ const STYLE_NAMES: Record<Motion, string> = {
   crawler: '🦀 Crawler',
   plant: '🌿 Plant',
   decor: '🏰 Decoration',
+  walker: '🐕 Walker',
+  hopper: '🐇 Hopper',
+  slitherer: '🐍 Slitherer',
+  flier: '🐦 Flier',
 };
 
 const info = document.querySelector<HTMLDivElement>('#info')!;
@@ -1079,7 +1085,7 @@ app.canvas.addEventListener('pointermove', (e) => {
   const at = camera.toLocal({ x: e.clientX, y: e.clientY });
   const x = Math.min(world.width, Math.max(0, at.x - dragging.dx));
   // Up and down is how far back it sits on the sand.
-  const z = Math.min(1, Math.max(0, 1 - (at.y - dragging.dy - world.floorAt(x) - 4) / (world.height * 0.105)));
+  const z = Math.min(1, Math.max(0, 1 - (at.y - dragging.dy - world.floorAt(x) - 4) / groundBand(world)));
   placeAt(picked, x, z, backScale(picked));
 });
 for (const type of ['pointerup', 'pointercancel'] as const) {

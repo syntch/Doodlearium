@@ -26,7 +26,7 @@ Every page has a **🍤 Feed** button that drops food everywhere (clicking a pla
 
 ## Who lives where
 
-Each place is filled to a set number of swimmers, crawlers, plants and decorations (the Lake holds about 26 swimmers, 6 crawlers, 18 plants and 5 decorations) from the kinds of creature that suit it:
+Each place is filled to a set number of swimmers, crawlers, land animals, fliers, plants and decorations (the Lake holds about 26 swimmers, 6 crawlers, 18 plants and 5 decorations; the Meadow about 8 land animals, 6 fliers, 16 plants and 4 decorations) from the kinds of creature that suit it:
 
 | Style | Lives in, unless the artist picks otherwise |
 | --- | --- |
@@ -35,8 +35,13 @@ Each place is filled to a set number of swimmers, crawlers, plants and decoratio
 | 🪼 Jellyfish | ocean |
 | 🐍 Eel, 🐢 Glider, 🚢 Vessel | lake, ocean |
 | 🦀 Crawler | seashore, pond, lake, ocean |
-| 🌿 Plant | every water place |
-| 🏰 Decoration | anywhere |
+| 🐕 Walker | farm, meadow, hills |
+| 🐇 Hopper | meadow, hills, woods |
+| 🐍 Slitherer | woods, meadow |
+| 🐦 Flier | every land place, and the skies over the pond and the beach |
+| 🌿 Plant, 🏰 Decoration | every water place (tick land places on the draw page for trees, flowers, fences...) |
+
+A drawing can live both on land and in water (a frog ticked for the Pond and the Meadow): it hops about in the Meadow and crawls along the bottom of the Pond (a slitherer swims like an eel in water).
 
 - The map has regions (Green Valley, Sunny Coast, Misty Highlands), and each kind of creature keeps to one or two of them, so the places don't all look the same. If a place would have too few kinds to choose from, it borrows from everywhere.
 - Kinds with fewer of them about are picked more often. One kind fills at most half a place's swimmers, decorations come at most two of a kind per place (no five castles), and plants can repeat as much as they like.
@@ -51,14 +56,24 @@ Each place is filled to a set number of swimmers, crawlers, plants and decoratio
 - **Sleepy nights.** After dark, day creatures drift down beside the plants (or to the bottom) and doze, swimming slowly with their blinking eyes closed, while night creatures come out. Food still wakes them up.
 - **Eggs and babies.** When two 🐟 Fish of the same kind pair off, they sometimes lay an egg that hatches into another of their kind (at most one every hour and a half in each place). When two different kinds have schooled together, they sometimes lay a rarer egg: a whole new kind of creature. It sinks to the sand, and you can see the baby curled up inside. It wobbles more and more, then hatches after about 3 minutes. The baby takes after both parents: the front half from one, the tail from the other, their colours blending in the middle. It gets both parents' extras (googly eyes, flags, sparkles...), moving parts and glowing paint too. Its name is a mix of theirs, for example Bubbles + Nemo = Bubbmo. Babies hatch small and grow over their first week. New kinds are rare, at most one every 6 hours. Change that with the `EGG_GAP_MINUTES` setting (and the hatching time with `HATCH_SECONDS`) when starting the server, for example `EGG_GAP_MINUTES=120 npm start`. A new kind is one of a kind: there's only ever the baby itself.
 - **Documentary mode.** Every 6 to 14 minutes in each place the camera slowly zooms in on one creature and follows it for half a minute, with a name card: who drew it, how long it's been in the world and what it's like. The named originals are filmed more often than the crowd. The star swims up to the front, the rest of the tank dims around it like a spotlight, and it shows off: loop-the-loops, dashes, happy wiggles and streams of bubbles (puffers puff up, crawlers hop).
-- **Visitors**, each to the places that suit it: a whale far off in the ocean, a diver at the lake or ocean, a mother duck and her ducklings paddling across the pond, a heron fishing at the pond, seagulls (one dives in) at the beach, and around Halloween a friendly ghost anywhere.
+- **Visitors**, each to the places that suit it: a whale far off in the ocean, a diver at the lake or ocean, a mother duck and her ducklings paddling across the pond, a heron fishing at the pond, seagulls (one dives in) at the beach, the farmer's tractor chugging across the Farm, someone's kite over the Meadow, and around Halloween a friendly ghost anywhere.
 - **Places.** Each looks different: the Lake is the old tank with its bubbling aerators, the Pond is green and shallow with reeds and lily pads, the Ocean is deep and dark with far-off coral and rocks, and at the Beach the sand slopes up out of the sea under the sky, with waves lapping the shore. Crawlers walk up and down the slope.
 - **Currents.** Now and then a gentle current sweeps through. Plants lean, bubbles and food drift, and fish get carried along a little.
 - **Seasons**, by the date: snow in winter, glowing jack-o'-lanterns and spooky light around Halloween, twinkling lights in December, and hearts for Valentine's.
+- **Weather.** Every 20 to 45 minutes a shower passes over each place with a sky (the land places, the Pond and the Beach): the sky clouds over and rain streaks down, ringing the water's surface and leaving puddles in the grass that dry up slowly afterwards. A rainbow comes out after the rain. In winter it snows instead, settling white on the ground. Land animals run for shelter by the nearest tree or decoration, and fliers land and wait it out.
+
+### On land
+
+The Meadow (long grass, wildflowers and a little pond at one side) and the Farm (a red barn, a fence, hay bales and a ploughed field) are open; the Hills and the Woods are next.
+
+- **Walkers** trot about the field, nearer and further, and stop to look around, graze or sit. **Hoppers** go in hops, with a squash on landing and a shadow on the grass below. **Slitherers** slide along in S-curves. **Fliers** flap and glide about the sky, swoop, and land on the ground or on top of a tree, fence or flower. Kinds that come in a group follow a leader as a herd or a flock.
+- **Feeding** on land scatters seeds over the grass: animals run over and fliers swoop down to peck.
+- **Night.** Stars and the moon come out, fireflies drift over the Meadow, day animals settle down to sleep and night animals come out.
+- **Babies.** Two grown-ups of a kind that spend time together (two of a herd, or two resting side by side) sometimes have a baby: a bird lays an egg in the grass that hatches into a chick, and other animals have their baby right away, beside them, small, growing up over its first week. Very rarely two different kinds resting side by side lay an egg of a whole new kind, as in the water.
 
 ### Controls (⚙️)
 
-The ⚙️ button on the world page opens a menu that works with a mouse or a finger, so a phone or tablet can run it too. It changes the **time of day**, the **holiday** decorations, turns the **blacklight** on or off (for the whole world), and makes things happen in the place on screen: a documentary, feeding, a school of fish, a current, puffers puffing, an egg (any time, skipping the usual wait) and visitors. Every screen showing that place sees it: open the same place on your phone and control the TV. **📺 Show this place on every screen** sends every screen (the TV too) to the place yours is showing. **✋ Move & resize plants and decorations** lets you tidy up the place on screen: tap a plant or decoration and drag it (left and right, or up and down to set it further back or nearer the front), and make it **➕ Bigger** or **➖ Smaller** (or scroll). It stays just there, on every screen and after a restart, and isn't swapped out when the place's residents change; **↺ Put back** returns it to where (and how big) it grew by itself. The menu shows what's on, and the time, holiday and blacklight stay as set (even after a restart) until changed back to 🕒 Real time, 📅 By the date and 💡 Off.
+The ⚙️ button on the world page opens a menu that works with a mouse or a finger, so a phone or tablet can run it too. It changes the **time of day**, the **holiday** decorations, turns the **blacklight** on or off (for the whole world), and makes things happen in the place on screen: a documentary, feeding, a school of fish, a current, puffers puffing, an egg or a baby (any time, skipping the usual wait), ☔ rain, ❄️ snow, a 🌈 rainbow and visitors. Every screen showing that place sees it: open the same place on your phone and control the TV. **📺 Show this place on every screen** sends every screen (the TV too) to the place yours is showing. **✋ Move & resize plants and decorations** lets you tidy up the place on screen: tap a plant or decoration and drag it (left and right, or up and down to set it further back or nearer the front), and make it **➕ Bigger** or **➖ Smaller** (or scroll). It stays just there, on every screen and after a restart, and isn't swapped out when the place's residents change; **↺ Put back** returns it to where (and how big) it grew by itself. The menu shows what's on, and the time, holiday and blacklight stay as set (even after a restart) until changed back to 🕒 Real time, 📅 By the date and 💡 Off.
 
 **⏰ Do it later** plans the next thing you pick for a time instead of now, say the whale at 7:30 pm or nightfall at bedtime. It shows in the **Coming up** card and the server does it on time, whether or not a screen is open.
 
@@ -101,6 +116,10 @@ The style picked on the draw page decides how a drawing moves and where it lives
 | 🦀 Crawler | crabs, snails, starfish | walks along the sand with a bouncy step and eats food that lands there |
 | 🌿 Plant | seaweed, coral | grows from the sand and sways |
 | 🏰 Decoration | castles, chests, rocks | sits still on the sand |
+| 🐕 Walker | dogs, sheep, horses, cats | walks about on land with a bob in its step (mark its legs as 🦵 Leg parts and they swing as it walks), grazes, sits and naps |
+| 🐇 Hopper | bunnies, frogs, kangaroos | hops about on land |
+| 🐍 Slitherer | snakes, worms, caterpillars | slides along the ground in S-curves (swims like an eel in water) |
+| 🐦 Flier | birds, butterflies, bees | flies about the sky and lands to rest. Make wings 🦋 Flap parts and they beat as it flies |
 
 Drawings made before motion styles existed keep working: fish become 🐟 Fish. To change a drawing's style, open it from the gallery with **Edit**.
 
@@ -116,6 +135,7 @@ Any part of a drawing can move on its own, on top of the whole-body motion. With
 | 🌀 Spin | propellers, wheels |
 | 💓 Pulse | hearts, lights |
 | 😉 Blink | eyes |
+| 🦵 Leg | legs: swings from the hip as the animal walks, every other leg in step, and stands still when it stops |
 
 Each part's chip under the drawing has **▶** for its speed (normal, ⏩ fast, 🐢 slow) and **◐** for how far it moves (normal, ⬤ big, · small). Pop-out, Flap and Open & close show an orange line where the part is attached. It's found automatically, but if it's in the wrong place, tap **📍** on the part's chip under the drawing and draw a new line. Moving parts are saved with the drawing (as `<id>.parts.png` beside it) and come back when it's edited.
 

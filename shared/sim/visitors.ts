@@ -28,12 +28,16 @@ export const VISITOR_PACKS: Record<string, VisitorInfo[]> = {
     { name: 'ducks', icon: '🦆', text: 'some ducks', weight: 1, seconds: 36, biomes: ['pond'] },
     { name: 'gulls', icon: '🐦', text: 'some seagulls', weight: 1, seconds: 26, biomes: ['seashore'] },
   ],
+  land: [
+    { name: 'tractor', icon: '🚜', text: 'the tractor', weight: 1, seconds: 40, biomes: ['farm'] },
+    { name: 'kite', icon: '🪁', text: 'a kite', weight: 1, seconds: 36, biomes: ['meadow'] },
+  ],
   spooky: [{ name: 'ghost', icon: '👻', text: 'a friendly ghost', weight: 1.5, seconds: 22 }],
 };
 
 export const ALL_VISITORS = Object.values(VISITOR_PACKS).flat();
 
-export const visitorPacks = (season: Season) => ['water', ...(season.halloween ? ['spooky'] : [])];
+export const visitorPacks = (season: Season) => ['water', 'land', ...(season.halloween ? ['spooky'] : [])];
 
 /** A random visitor from the packs in play that suits the biome, or a named one. */
 export function pickVisitor(season: Season, name?: string, biome?: Biome): VisitorInfo | undefined {

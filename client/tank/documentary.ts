@@ -11,11 +11,16 @@ const ABOUT: Record<string, string> = {
   easygoing: 'Easygoing: just goes with the flow',
   hunter: 'A hunter: little fish hide when it prowls',
   crawler: 'Walks the sand, looking for crumbs',
+  walker: 'Trots about, grazing and snoozing in the sun',
+  hopper: 'Hops about, keeping an eye on everything',
+  slitherer: 'Slides through the grass, curling up for naps',
+  flier: 'Flies about, landing to rest now and then',
 };
 
 /** A line about what the creature is like, if there's something to say. */
 export function aboutOf(drawing: Drawing, personality?: Personality) {
-  return ABOUT[motionOf(drawing) === 'crawler' ? 'crawler' : (personality ?? '')] ?? '';
+  const motion = motionOf(drawing);
+  return ABOUT[motion in ABOUT ? motion : (personality ?? '')] ?? '';
 }
 
 /** A screen's size in pixels. */

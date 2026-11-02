@@ -9,6 +9,8 @@ const FILTERS: { label: string; type: CreatureType | 'baby' | null }[] = [
   { label: 'Everything', type: null },
   { label: '🐟 Swimmers', type: 'swimmer' },
   { label: '🦀 Crawlers', type: 'crawler' },
+  { label: '🐕 Land animals', type: 'walker' },
+  { label: '🐦 Fliers', type: 'flier' },
   { label: '🌿 Plants', type: 'plant' },
   { label: '🪨 Decorations', type: 'decor' },
   { label: '🐣 Babies', type: 'baby' },

@@ -15,7 +15,7 @@ import {
 } from '../shared/sim/protocol.ts';
 import { Tank } from '../shared/sim/tank.ts';
 import { FILM_SECONDS, pickVisitor } from '../shared/sim/visitors.ts';
-import type { Drawing, SpeciesWhere, TankCommand, TankCommandValue } from '../shared/types.ts';
+import { motionOf, type Drawing, type SpeciesWhere, type TankCommand, type TankCommandValue } from '../shared/types.ts';
 import { LIVE_PLACES, placeName, type Place } from '../shared/world/places.ts';
 import { populate, turnover, type Individual } from '../shared/world/population.ts';
 import { record } from './history.ts';
@@ -88,9 +88,16 @@ class Spot {
   fresh = new Set<string>();
   rosterSent = '';
   feeding: { until: number; eaten: Map<string, number> } | null = null;
+  /** The next rain (or snow) shower, for places with a sky. */
+  nextShower = Date.now() + rand(20, 45) * MINUTE;
 
   constructor(readonly place: Place) {
     this.tank = new Tank(place.biome);
+  }
+
+  /** Land places, and water places with sky above the water. */
+  get hasSky() {
+    return this.tank.world.land === true || this.tank.world.waterTop > 0;
   }
 
   get id() {
@@ -262,6 +269,7 @@ function tick() {
   for (const spot of spots.values()) {
     updateDoc(spot, now);
     updateVisit(spot, now);
+    updateWeather(spot, now);
     readNotes(spot, now);
     if (now >= spot.nextTurnover) {
       spot.nextTurnover = now + rand(20, 40) * MINUTE;
@@ -329,18 +337,21 @@ function frame(spot: Spot): Frame {
     settings,
     doc: spot.doc,
     visit: spot.visit,
+    weather: [round3(tank.weather.rain), round3(tank.weather.snow), round3(tank.weather.rainbow)],
     poses: [...tank.creatures.values()].filter((c) => c.kind !== 'plant' && c.kind !== 'decor').map((c) => packPose(c.id, c.pose)),
     flakes: tank.food.flakes.map(packFlake),
     effects: tank.world.effects,
   };
 }
 
+const round3 = (v: number) => Math.round(v * 1000) / 1000;
+
 /** Every place at a glance, for the map: how many live there, and a few of its swimmers' species. */
 function mapSummary(): MapSummary {
   const summary: MapSummary = {};
   for (const spot of spots.values()) {
     const creatures = [...spot.tank.creatures.values()];
-    const species = new Set(creatures.filter((c) => c.kind === 'swimmer' || c.kind === 'crawler').map((c) => c.drawing.id));
+    const species = new Set(creatures.filter((c) => c.kind === 'swimmer' || c.kind === 'crawler' || c.kind === 'walker' || c.kind === 'flier').map((c) => c.drawing.id));
     summary[spot.id] = { count: creatures.length, species: [...species].slice(0, 6) };
   }
   return summary;
@@ -394,7 +405,7 @@ function applySettings() {
 }
 
 /** Commands for one place; the rest (time, season, blacklight) are for the whole world. */
-const LOCAL: TankCommand[] = ['film', 'visit', 'current', 'school', 'puff', 'egg'];
+const LOCAL: TankCommand[] = ['film', 'visit', 'current', 'school', 'puff', 'egg', 'rain', 'snow', 'rainbow'];
 
 /** Does a ⚙️ menu command (in place, for the ones that happen somewhere); returns a line to show the person who asked. */
 export function runCommand(command: TankCommand, value: TankCommandValue, place?: string): string {
@@ -426,6 +437,12 @@ export function runCommand(command: TankCommand, value: TankCommandValue, place?
       break;
     case 'egg':
       return askForEgg(spot, true);
+    case 'rain':
+    case 'snow':
+    case 'rainbow':
+      if (!spot.hasSky) return `☁️ There's no sky to see ${at(spot)}: try a place with sky above it.`;
+      startShower(spot, command);
+      break;
   }
   applySettings();
   return '';
@@ -458,13 +475,33 @@ function describe(command: TankCommand, value: TankCommandValue, place?: string)
       return `The puffers puff up${where}`;
     case 'egg':
       return `An egg is laid${where}`;
+    case 'rain':
+      return `A rain shower${where}`;
+    case 'snow':
+      return `Snow${where}`;
+    case 'rainbow':
+      return `A rainbow${where}`;
   }
 }
 
 // --- happenings -------------------------------------------------------------------------------------
 
+/** Now and then a shower passes over the places with a sky: snow in winter, rain the rest of the year. */
+function updateWeather(spot: Spot, now: number) {
+  if (now < spot.nextShower) return;
+  spot.nextShower = now + rand(20, 45) * MINUTE;
+  if (spot.hasSky) startShower(spot, season().snow ? 'snow' : 'rain');
+}
+
+function startShower(spot: Spot, kind: 'rain' | 'snow' | 'rainbow') {
+  spot.tank.startWeather(kind, rand(90, 180));
+  if (!now_ok(`weather:${spot.id}`, 15)) return;
+  const text = { rain: `🌧️ A rain shower passed over ${at(spot)}.`, snow: `❄️ It snowed ${at(spot)}.`, rainbow: `🌈 A rainbow came out ${at(spot)}.` }[kind];
+  record('weather', [], text, spot.id);
+}
+
 /** Who documentary mode can film: anything out and about that moves. */
-const filmable = (spot: Spot) => [...spot.tank.creatures.values()].filter((c) => (c.kind === 'swimmer' || c.kind === 'crawler') && c.pose.out);
+const filmable = (spot: Spot) => [...spot.tank.creatures.values()].filter((c) => (c.kind === 'swimmer' || c.kind === 'crawler' || c.kind === 'walker' || c.kind === 'flier') && c.pose.out);
 
 function startDoc(spot: Spot) {
   const candidates = filmable(spot);
@@ -523,8 +560,13 @@ export function feed(x: number, place?: string) {
  */
 function askForEgg(spot: Spot, force: boolean, pair?: [string, string]): string {
   const { tank } = spot;
-  let ids = pair ?? tank.world.fish.filter((f) => tank.canParent(f.drawing)).sort(() => Math.random() - 0.5).map((f) => f.id);
-  if (ids.length < 2) return '🥚 It takes two 🐟 Fish (not babies) to lay an egg.';
+  let ids =
+    pair ??
+    [...tank.creatures.values()]
+      .filter((c) => c.kind !== 'egg' && c.pose.out && tank.canParent(c.drawing))
+      .sort(() => Math.random() - 0.5)
+      .map((c) => c.id);
+  if (ids.length < 2) return '🥚 It takes two grown-up animals (fish, or animals on land) to have a baby.';
   // The ⚙️ menu's egg is the exciting kind, a new species, when there are two to pick from.
   if (!pair) {
     const other = ids.find((id) => tank.specOf(id)!.drawing.id !== tank.specOf(ids[0])!.drawing.id);
@@ -541,8 +583,14 @@ function askForEgg(spot: Spot, force: boolean, pair?: [string, string]): string 
     spot.lastEgg = now;
     const species = a.drawing;
     const id = `${species.id}~${Math.random().toString(36).slice(2, 8)}`;
-    individuals.push({ id, species: species.id, place: spot.id, hatchAt: now + HATCH_TIME, nest });
+    // On land, only fliers lay eggs: everyone else has their baby right away, and it grows up over a week.
+    const born = tank.world.land && motionOf(species) !== 'flier';
+    individuals.push({ id, species: species.id, place: spot.id, hatchAt: born ? now : now + HATCH_TIME, nest });
     resync();
+    if (born) {
+      record('hatch', who(mum, dad), `🍼 Two ${species.name}s had a baby ${at(spot)}!`, spot.id);
+      return `🍼 Two ${species.name}s are having a baby!`;
+    }
     record('egg', who(mum), `🥚 Two ${species.name}s laid an egg ${at(spot)}.`, spot.id);
     return `🥚 Two ${species.name}s are laying an egg!`;
   }
@@ -610,7 +658,7 @@ function readNotes(spot: Spot, now: number) {
   if (spot.feeding && now > spot.feeding.until) {
     const [top] = [...spot.feeding.eaten].sort((a, b) => b[1] - a[1]);
     if (top && now_ok(k('feed'), 20)) {
-      record('feed', who(top[0]), `🍤 Dinner time ${at(spot)}! ${nameOf(top[0], true)} gobbled up the most, ${top[1]} flake${top[1] === 1 ? '' : 's'}.`, spot.id);
+      record('feed', who(top[0]), `🍤 Dinner time ${at(spot)}! ${nameOf(top[0], true)} gobbled up the most, ${top[1]} ${spot.tank.world.land ? 'seed' : 'flake'}${top[1] === 1 ? '' : 's'}.`, spot.id);
     }
     spot.feeding = null;
   }

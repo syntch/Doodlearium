@@ -180,10 +180,10 @@ export class Parts {
   }
 
   /** effort: how hard the creature is swimming (1 = normal), so fins work harder when it hurries. */
-  /** sleepy (0..1) slowly closes blinking eyes. */
-  update(dt: number, effort = 1, deform?: Deform, sleepy = 0) {
+  /** sleepy (0..1) slowly closes blinking eyes. walk keeps 🦵 legs in step with a land animal's stride. */
+  update(dt: number, effort = 1, deform?: Deform, sleepy = 0, walk?: { phase: number; stride: number }) {
     for (const l of this.live) {
-      const m = this.motion(l, dt * (l.piece.part.speed ?? 1), effort, sleepy);
+      const m = this.motion(l, dt * (l.piece.part.speed ?? 1), effort, sleepy, walk);
       // Pieces follow the body's bend at the point they're attached.
       const at = isHinged(l.piece.part.motion) ? l.mid : l.centre;
       const bend = deform?.(at.x / this.texW, at.y / this.texH) ?? { dx: 0, dy: 0 };
@@ -193,7 +193,7 @@ export class Parts {
   }
 
   /** The piece's own motion, as a matrix in texture pixels. */
-  private motion(l: Live, dt: number, effort: number, sleepy: number) {
+  private motion(l: Live, dt: number, effort: number, sleepy: number, walk?: { phase: number; stride: number }) {
     const m = new Matrix();
     const amount = l.piece.part.amount ?? 1;
     switch (l.piece.part.motion) {
@@ -207,8 +207,18 @@ export class Parts {
         return aroundPoint(l.mid, m.rotate(-angle).scale(1 + Math.sin(lift) * 0.12, Math.cos(lift)).rotate(angle));
       }
       case 'flap':
+        // On a land animal or a flier, it beats in time with its stride or wingbeat, and rests when it does.
+        if (walk) return aroundPoint(l.mid, m.rotate(Math.sin(walk.phase) * 0.55 * amount * (0.1 + 0.9 * walk.stride)));
         l.phase += dt * (3 + effort);
         return aroundPoint(l.mid, m.rotate(Math.sin(l.phase) * 0.45 * amount));
+      case 'leg': {
+        // Swings from the hip in step with the walk, every other leg the opposite way; still when standing.
+        // (Off land, it just paddles gently.)
+        const opposite = l.piece.index % 2 ? Math.PI : 0;
+        if (!walk) l.phase += dt * (2 + effort);
+        const swing = walk ? Math.sin(walk.phase + opposite) * 0.5 * walk.stride : Math.sin(l.phase + opposite) * 0.25;
+        return aroundPoint(l.mid, m.rotate(swing * amount));
+      }
       case 'chomp': {
         // Opens away from the rest of the body, holds, snaps shut, and rests a moment before the next.
         l.phase += dt * (1.6 + effort * 0.6);

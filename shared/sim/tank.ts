@@ -7,7 +7,9 @@ import { SimFood } from './food.ts';
 import { growScale, nightDarkness } from './math.ts';
 import { SimStill } from './still.ts';
 import { SimSwimmer } from './swimmer.ts';
-import { burst, newWorld, type Hideout, type School, type World } from './world.ts';
+import { SimWalker } from './walker.ts';
+import { SimFlier } from './flier.ts';
+import { burst, heart, newWorld, sandY, type Hideout, type School, type World } from './world.ts';
 
 /** Night creatures come out once it's getting properly dark. */
 const NIGHT = 0.25;
@@ -32,9 +34,15 @@ export class Tank {
   blacklightOn = false;
   blacklight = 0;
   private nextSchoolAt = 40 + Math.random() * 40;
+  private pairIn = 60 + Math.random() * 60;
   private currentIn = 150 + Math.random() * 150;
   private currentFor = 0;
   private currentDir = 1;
+  /** The weather: how hard it's raining and snowing, and how bright a rainbow is (each 0..1, easing in and out). */
+  readonly weather = { rain: 0, snow: 0, rainbow: 0 };
+  private showerFor = 0;
+  private showerKind: 'rain' | 'snow' = 'rain';
+  private rainbowFor = 0;
 
   constructor(readonly biome: Biome = 'lake') {
     this.world = newWorld(this.food, biome);
@@ -55,8 +63,24 @@ export class Tank {
 
   private make({ id, drawing, hatchAt, nest, grownFrom, placement }: Spec, dropIn: boolean, saved?: Saved): SimCreature {
     if ((hatchAt ?? 0) > Date.now()) return new SimEgg(id, drawing, this.world, dropIn, hatchAt!, nest ?? 0.5);
-    switch (motionOf(drawing)) {
+    // A land baby born just now (no egg) starts out beside its parents.
+    if (this.world.land && !saved && nest !== undefined && grownFrom !== undefined && Date.now() - grownFrom < 60_000) {
+      const z = 0.3 + Math.random() * 0.4;
+      saved = { x: nest * this.world.width, y: sandY(this.world, z, nest * this.world.width), z };
+      heart(this.world, saved.x, saved.y - 60, 14);
+    }
+    const motion = motionOf(drawing);
+    switch (motion) {
       case 'crawler':
+        return new SimCrawler(id, drawing, this.world, dropIn, saved);
+      case 'flier':
+        return new SimFlier(id, drawing, this.world, dropIn, saved, grownFrom);
+      case 'walker':
+      case 'hopper':
+      case 'slitherer':
+        // Pond-side animals live in the water too: there they crawl along the bottom (snakes swim like eels).
+        if (this.world.land) return new SimWalker(id, drawing, this.world, dropIn, saved, grownFrom);
+        if (motion === 'slitherer') return new SimSwimmer(id, drawing, this.world, dropIn, saved, grownFrom);
         return new SimCrawler(id, drawing, this.world, dropIn, saved);
       case 'plant':
         return new SimStill(id, drawing, 'plant', this.world, placement);
@@ -136,7 +160,10 @@ export class Tank {
       if (c instanceof SimSwimmer) world.fish.push(c);
       else if (c instanceof SimStill) hideouts.push(c.hideout());
     }
-    world.hideouts = hideouts;
+    this.updateCurrent(dt);
+    this.updateWeather(dt);
+    this.updateHerds();
+    this.updatePairs(dt);
     this.updateGroups();
     this.updateSchool();
     this.updateCurrent(dt);
@@ -151,11 +178,50 @@ export class Tank {
       const at = c.pose;
       const spec = this.specs.get(id)!;
       const baby = this.make({ ...spec, hatchAt: undefined }, false);
-      if (baby instanceof SimSwimmer) baby.placeAt(at);
+      if (baby instanceof SimSwimmer || baby instanceof SimFlier) baby.placeAt(at);
+      else if (baby instanceof SimWalker) baby.placeAt(at);
       this.creatures.set(id, baby);
       burst(this.world, at.x, at.y, 16);
       this.world.notes.push({ kind: 'hatch', who: id });
     }
+  }
+
+  /** Land animals and fliers whose kind lives in a herd (or flock) follow the first of them about. */
+  private updateHerds() {
+    const herds = new Map<string, (SimWalker | SimFlier)[]>();
+    for (const c of this.creatures.values()) {
+      if (!(c instanceof SimWalker || c instanceof SimFlier) || !c.pose.out) continue;
+      c.leader = null;
+      if (isGroup(c.drawing)) herds.set(c.drawing.id, [...(herds.get(c.drawing.id) ?? []), c]);
+    }
+    for (const herd of herds.values()) {
+      herd.sort((a, b) => (a.id < b.id ? -1 : 1));
+      const [first, ...rest] = herd;
+      rest.forEach((c, i) => {
+        // (A species is all walkers or all fliers, so the leader is always the same kind.)
+        c.leader = first as never;
+        c.rank = i;
+      });
+    }
+  }
+
+  /**
+   * Now and then two land animals that spend time together (two of a herd, or two resting side by side)
+   * might have a baby: the server decides (see askForEgg), the same way as for two fish leaving a school.
+   */
+  private updatePairs(dt: number) {
+    this.pairIn -= dt;
+    if (this.pairIn > 0) return;
+    this.pairIn = 90 + Math.random() * 90;
+    const animals = [...this.creatures.values()].filter((c) => (c instanceof SimWalker || c instanceof SimFlier) && c.pose.out && this.canParent(c.drawing));
+    const herd = animals.find((c) => (c as SimWalker | SimFlier).leader);
+    if (herd && Math.random() < 0.6) {
+      this.world.notes.push({ kind: 'school-end', leader: (herd as SimWalker).leader!.id, first: herd.id });
+      return;
+    }
+    const a = animals[Math.floor(Math.random() * animals.length)];
+    const b = a && animals.filter((c) => c !== a && Math.abs(c.pose.x - a.pose.x) < 200).sort(() => Math.random() - 0.5)[0];
+    if (a && b) this.world.notes.push({ kind: 'school-end', leader: a.id, first: b.id });
   }
 
   /** Species that live in groups swim as schools of their own kind, for good. */
@@ -220,6 +286,35 @@ export class Tank {
     world.notes.push({ kind: 'school', leader: leader.id, members: members.map((m) => m.id) });
   }
 
+  /** A rain or snow shower for a while (a rainbow comes out after rain), or just a rainbow. */
+  startWeather(kind: 'rain' | 'snow' | 'rainbow', seconds = 120) {
+    if (kind === 'rainbow') {
+      this.rainbowFor = 45;
+      return;
+    }
+    this.showerKind = kind;
+    this.showerFor = seconds;
+    this.rainbowFor = 0;
+  }
+
+  /** Is a shower on right now? */
+  get showering() {
+    return this.showerFor > 0;
+  }
+
+  private updateWeather(dt: number) {
+    const wasRaining = this.showerFor > 0 && this.showerKind === 'rain';
+    this.showerFor = Math.max(0, this.showerFor - dt);
+    if (wasRaining && this.showerFor === 0) this.rainbowFor = 45;
+    this.rainbowFor = Math.max(0, this.rainbowFor - dt);
+    const ease = (now: number, want: number) => now + (want - now) * Math.min(1, dt * 0.25);
+    const w = this.weather;
+    w.rain = ease(w.rain, this.showerFor > 0 && this.showerKind === 'rain' ? 1 : 0);
+    w.snow = ease(w.snow, this.showerFor > 0 && this.showerKind === 'snow' ? 1 : 0);
+    w.rainbow = ease(w.rainbow, this.rainbowFor > 0 && w.rain < 0.3 ? 1 : 0);
+    this.world.rain = w.rain;
+  }
+
   /** Every few minutes a gentle current sweeps through for a little while. */
   private updateCurrent(dt: number) {
     this.currentIn -= dt;
@@ -231,7 +326,7 @@ export class Tank {
 
   /** A grown-up fish that could have a baby. */
   canParent(d: Drawing) {
-    return !d.parents && motionOf(d) === 'fish';
+    return !d.parents && ['fish', 'walker', 'hopper', 'slitherer', 'flier'].includes(motionOf(d));
   }
 
   /** Whether a baby (hatched at grownFrom) has grown up: a week old. */

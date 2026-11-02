@@ -2,15 +2,25 @@ import type { Frame, MapSummary, RosterEntry, Upcoming } from './sim/protocol.ts
 import type { Biome } from './world/biomes.ts';
 
 /** Where a drawing lives: open water, walking on the sand, growing from the sand, or sitting on it. */
-export const CREATURE_TYPES = ['swimmer', 'crawler', 'plant', 'decor'] as const;
+export const CREATURE_TYPES = ['swimmer', 'crawler', 'plant', 'decor', 'walker', 'flier'] as const;
 export type CreatureType = (typeof CREATURE_TYPES)[number];
 
 /** How a drawing moves. Picking a motion style also decides where it lives. */
-export const MOTIONS = ['fish', 'puffer', 'eel', 'jelly', 'seahorse', 'flapper', 'vessel', 'crawler', 'plant', 'decor'] as const;
+export const MOTIONS = [
+  'fish', 'puffer', 'eel', 'jelly', 'seahorse', 'flapper', 'vessel', 'crawler', 'plant', 'decor',
+  'walker', 'hopper', 'slitherer', 'flier',
+] as const;
 export type Motion = (typeof MOTIONS)[number];
 
+/** Land animals that get about on the ground (walking, hopping or slithering). */
+export const LAND_MOTIONS: Motion[] = ['walker', 'hopper', 'slitherer'];
+
 export const habitatOf = (motion: Motion): CreatureType =>
-  motion === 'crawler' || motion === 'plant' || motion === 'decor' ? motion : 'swimmer';
+  motion === 'crawler' || motion === 'plant' || motion === 'decor' || motion === 'flier'
+    ? motion
+    : LAND_MOTIONS.includes(motion)
+      ? 'walker'
+      : 'swimmer';
 
 /** Drawings made before motion styles existed only have a type. */
 export const motionOf = (d: { motion?: Motion; type: CreatureType }): Motion =>
@@ -33,10 +43,10 @@ export interface Attachment {
 }
 
 /** How a selected part of a drawing moves on its own, on top of the whole-body motion. */
-export const PART_MOTIONS = ['popout', 'flap', 'chomp', 'spin', 'pulse', 'blink'] as const;
+export const PART_MOTIONS = ['popout', 'flap', 'chomp', 'spin', 'pulse', 'blink', 'leg'] as const;
 export type PartMotion = (typeof PART_MOTIONS)[number];
 /** Motions that move around the line where the part is attached (rather than around its middle). */
-export const isHinged = (m: PartMotion) => m === 'popout' || m === 'flap' || m === 'chomp';
+export const isHinged = (m: PartMotion) => m === 'popout' || m === 'flap' || m === 'chomp' || m === 'leg';
 export const MAX_PARTS = 8;
 
 /**
@@ -125,7 +135,7 @@ export interface NewEgg extends NewDrawing {
 }
 
 /** Things the tank's ⚙️ menu can do (to the one shared tank), now or at a set time. */
-export const TANK_COMMANDS = ['time', 'season', 'blacklight', 'film', 'visit', 'current', 'school', 'egg', 'puff'] as const;
+export const TANK_COMMANDS = ['time', 'season', 'blacklight', 'film', 'visit', 'current', 'school', 'egg', 'puff', 'rain', 'snow', 'rainbow'] as const;
 export type TankCommand = (typeof TANK_COMMANDS)[number];
 export type TankCommandValue = string | number | boolean | null;
 

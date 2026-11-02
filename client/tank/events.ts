@@ -309,7 +309,116 @@ const gulls: TankEvent = {
   },
 };
 
-const EVENTS: Record<string, TankEvent> = { whale, diver, ghost, ducks, heron, gulls };
+const tractor: TankEvent = {
+  name: 'tractor',
+  start(world, layers, rand, seconds) {
+    // The farmer's little tractor chugs across the back of the field, puffing smoke.
+    const node = new Container();
+    const s = world.height * 0.11;
+    const smoke = new Graphics();
+    const body = new Graphics()
+      // The bonnet and the cab.
+      .roundRect(-s * 0.1, -s * 0.75, s * 0.85, s * 0.42, s * 0.08).fill(0x3e9b3a)
+      .roundRect(-s * 0.7, -s * 1.25, s * 0.65, s * 0.92, s * 0.06).fill(0x3e9b3a)
+      .roundRect(-s * 0.6, -s * 1.15, s * 0.45, s * 0.38, s * 0.04).fill(0xcfe9f5)
+      .rect(-s * 0.78, -s * 1.32, s * 0.82, s * 0.1).fill(0x2f7a2c)
+      // The exhaust pipe and a headlight.
+      .rect(s * 0.42, -s * 1.05, s * 0.07, s * 0.32).fill(0x444444)
+      .circle(s * 0.74, -s * 0.6, s * 0.06).fill(0xfff2a8);
+    const wheel = (r: number, x: number) => {
+      const w = new Graphics().circle(0, 0, r).fill(0x2b2b2b).circle(0, 0, r * 0.55).fill(0xf2c230);
+      w.rect(-r * 0.08, -r * 0.55, r * 0.16, r * 1.1).rect(-r * 0.55, -r * 0.08, r * 1.1, r * 0.16).fill(0xd9a91f);
+      w.position.set(x, -r);
+      return w;
+    };
+    const back = wheel(s * 0.42, -s * 0.38);
+    const front = wheel(s * 0.24, s * 0.55);
+    node.addChild(smoke, body, back, front);
+    // Far back in the field, behind everyone.
+    const z = 0.85;
+    node.scale.set(0.8);
+    layers.back.addChild(node);
+    const groundY = world.floorAt(world.width / 2) + (1 - z) * world.height * (world.groundDepth ?? 0.1) + 4;
+    const move = crossing(node, world, seconds, groundY, 0, rand);
+    const puffs: { x: number; y: number; age: number }[] = [];
+    let puffIn = 0;
+    return {
+      update(dt, _world, t) {
+        // Chug, chug: a little bounce, wheels turning, and puffs of smoke drifting up and back.
+        body.y = Math.abs(Math.sin(t * 9)) * -s * 0.03;
+        back.rotation = front.rotation = t * 4;
+        front.rotation *= 0.42 / 0.24;
+        puffIn -= dt;
+        if (puffIn <= 0) {
+          puffIn = 0.5;
+          puffs.push({ x: s * 0.45, y: -s * 1.1, age: 0 });
+        }
+        smoke.clear();
+        for (const p of puffs) {
+          p.age += dt;
+          p.x -= dt * s * 0.5;
+          p.y -= dt * s * 0.6;
+          smoke.circle(p.x, p.y, s * (0.08 + p.age * 0.12)).fill({ color: 0xdddddd, alpha: Math.max(0, 0.6 - p.age * 0.25) });
+        }
+        while (puffs.length && puffs[0].age > 2.4) puffs.shift();
+        return move(t);
+      },
+      destroy: () => node.destroy({ children: true }),
+    };
+  },
+};
+
+const kite: TankEvent = {
+  name: 'kite',
+  start(world, layers, rand, seconds) {
+    // Someone's kite dances across the sky over the meadow, its tail of bows fluttering and its string
+    // running down to whoever's flying it, just out of sight.
+    const node = new Container();
+    const s = world.height * 0.09;
+    const colors = [[0xff5a5a, 0xffd34d], [0x4da6ff, 0xffe066], [0xb36bff, 0x6bff9e]][Math.floor(rand(0, 3))];
+    const string = new Graphics();
+    const tail = new Graphics();
+    const kite = new Graphics()
+      .poly([0, -s, s * 0.6, -s * 0.15, 0, s * 0.9, -s * 0.6, -s * 0.15]).fill(colors[0])
+      .poly([0, -s, s * 0.6, -s * 0.15, 0, -s * 0.15]).fill(colors[1])
+      .poly([0, s * 0.9, -s * 0.6, -s * 0.15, 0, -s * 0.15]).fill(colors[1])
+      .moveTo(0, -s).lineTo(0, s * 0.9).moveTo(-s * 0.6, -s * 0.15).lineTo(s * 0.6, -s * 0.15)
+      .stroke({ width: 2, color: 0x5a3b1e, alpha: 0.7 });
+    node.addChild(string, tail, kite);
+    layers.front.addChild(node);
+    const y = world.height * rand(0.16, 0.26);
+    const move = crossing(node, world, seconds, y, s * 0.4, rand);
+    return {
+      update(_dt, _world, t) {
+        // Tugging and swaying in the wind.
+        kite.rotation = Math.sin(t * 1.7) * 0.25 + Math.sin(t * 4.1) * 0.06;
+        kite.y = Math.sin(t * 2.3) * s * 0.25;
+        const tip = { x: kite.x + Math.sin(-kite.rotation) * s * 0.9, y: kite.y + Math.cos(kite.rotation) * s * 0.9 };
+        tail.clear().moveTo(tip.x, tip.y);
+        const pts: { x: number; y: number }[] = [];
+        for (let i = 1; i <= 6; i++) {
+          const p = { x: tip.x - i * s * 0.18 + Math.sin(t * 6 - i) * s * 0.12, y: tip.y + i * s * 0.25 };
+          tail.lineTo(p.x, p.y);
+          pts.push(p);
+        }
+        tail.stroke({ width: 2, color: 0x5a3b1e, alpha: 0.8 });
+        pts.forEach((p, i) => {
+          if (i % 2) return;
+          tail.poly([p.x - s * 0.13, p.y - s * 0.07, p.x, p.y, p.x - s * 0.13, p.y + s * 0.07]).fill(colors[i % 4 ? 1 : 0]);
+          tail.poly([p.x + s * 0.13, p.y - s * 0.07, p.x, p.y, p.x + s * 0.13, p.y + s * 0.07]).fill(colors[i % 4 ? 1 : 0]);
+        });
+        // The string sags down and back to the flyer, off the bottom of the screen.
+        const end = { x: -world.width * 0.35, y: world.height - y + 80 };
+        string.clear().moveTo(0, kite.y + s * 0.1).quadraticCurveTo(end.x * 0.3, end.y * 0.75, end.x, end.y).stroke({ width: 1.5, color: 0xf7f2e6, alpha: 0.85 });
+        node.alpha = Math.min(1, t / 2, (seconds - t) / 2);
+        return move(t);
+      },
+      destroy: () => node.destroy({ children: true }),
+    };
+  },
+};
+
+const EVENTS: Record<string, TankEvent> = { whale, diver, ghost, ducks, heron, gulls, tractor, kite };
 
 /** Shows the visit the simulation says is happening (if any), from where it's got to. */
 export class Events {

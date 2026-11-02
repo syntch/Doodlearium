@@ -65,6 +65,8 @@ export interface Frame {
   settings: Settings;
   doc: { id: string; until: number } | null;
   visit: Visit | null;
+  /** [rain, snow, rainbow], each 0..1. */
+  weather?: [number, number, number];
   poses: PackedPose[];
   /** [id, x, y, size, color, landedFor] */
   flakes: number[][];

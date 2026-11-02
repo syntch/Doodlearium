@@ -27,7 +27,7 @@ interface Heart {
   age: number;
 }
 
-/** How a biome looks: its water from the surface down, its sky (if the water doesn't fill the screen) and its ground. */
+/** How a biome looks: its water from the surface down, its sky (if the water doesn't fill the screen) and its ground (on land, sand is the grass). */
 interface Look {
   water: [string, string, string];
   sky: [string, string];
@@ -77,7 +77,51 @@ const LOOKS: Partial<Record<Biome, Look>> = {
     aerators: [],
     seeps: 0,
   },
+  meadow: {
+    water: ['#6fb7d6', '#3f8fb5', '#2a6d8f'],
+    sky: ['#6fbcec', '#e6f6ff'],
+    sand: [0x8cc54f, 0x6fa83c],
+    specks: [0x5e9a34, 0xb6e07a],
+    rays: 0,
+    aerators: [],
+    seeps: 0,
+  },
+  farm: {
+    water: ['#6fb7d6', '#3f8fb5', '#2a6d8f'],
+    sky: ['#7cc5ef', '#f6f1d8'],
+    sand: [0x9ccb55, 0x7cae40],
+    specks: [0x6a9a36, 0xc7e27f],
+    rays: 0,
+    aerators: [],
+    seeps: 0,
+  },
+  hills: {
+    water: ['#6fb7d6', '#3f8fb5', '#2a6d8f'],
+    sky: ['#86c6e8', '#eaf4f2'],
+    sand: [0x7fb85a, 0x5f9a44],
+    specks: [0x4f8236, 0xa9d58a],
+    rays: 0,
+    aerators: [],
+    seeps: 0,
+  },
+  forest: {
+    water: ['#6fb7d6', '#3f8fb5', '#2a6d8f'],
+    sky: ['#9cc7d9', '#e2eee4'],
+    sand: [0x6a9a45, 0x4d7a32],
+    specks: [0x3f6a2a, 0x93b86a],
+    rays: 0,
+    aerators: [],
+    seeps: 0,
+  },
 };
+
+/** Puffy clouds drifting over the land places. */
+const CLOUDS = Array.from({ length: 6 }, (_, i) => ({
+  x: (i / 6) * 1.2,
+  y: 0.06 + ((i * 37) % 23) / 80,
+  size: 0.7 + ((i * 53) % 7) / 10,
+  speed: 0.004 + ((i * 29) % 5) / 1000,
+}));
 
 const RAY_COUNT = 6;
 
@@ -95,6 +139,18 @@ export class Scene {
   private surface = new Graphics();
   private bubbleGfx = new Graphics();
   private night = new Graphics();
+  /** On land: clouds in the sky, and long grass swaying in front of everyone. */
+  private clouds = new Graphics();
+  private foreground = new Graphics();
+  /** On land at night: stars, the moon and fireflies, bright above the night's tint. */
+  private nightLights = new Graphics();
+  /** The weather: a greyer sky and a rainbow behind, puddles and snow on the ground, rain and snow falling in front. */
+  private skyWeather = new Graphics();
+  private groundWeather = new Graphics();
+  private falling = new Graphics();
+  /** How wet and how snowy the ground is: slow to come, slower to go. */
+  private wet = 0;
+  private snowCover = 0;
   private bubbles: Bubble[] = [];
   private hearts: Heart[] = [];
   private look: Look = LOOKS.lake!;
@@ -114,8 +170,8 @@ export class Scene {
 
   constructor() {
     this.rays.blendMode = 'add';
-    this.back.addChild(this.background, this.rays, this.props, this.sand, this.surface);
-    this.front.addChild(this.bubbleGfx, this.night);
+    this.back.addChild(this.background, this.clouds, this.skyWeather, this.rays, this.props, this.sand, this.groundWeather, this.surface);
+    this.front.addChild(this.bubbleGfx, this.foreground, this.falling, this.night, this.nightLights);
   }
 
   private visible: Visible = { left: 0, top: 0, right: 0, bottom: 0 };
@@ -133,7 +189,8 @@ export class Scene {
     if (this.background.texture !== Texture.EMPTY) this.background.texture.destroy(true);
     const top = Math.min(0, visible.top);
     const height = Math.max(world.height, visible.bottom) - top;
-    this.background.texture = backdrop(look, height, world.waterTop - top, world.floorY - top);
+    // On land the sky runs all the way down (behind the ground).
+    this.background.texture = backdrop(look, height, world.land ? height : world.waterTop - top, world.floorY - top);
     this.background.position.set(visible.left, top);
     this.background.width = visible.right - visible.left;
     this.background.height = height;
@@ -155,6 +212,10 @@ export class Scene {
   update(dt: number, world: World) {
     this.drawRays(world);
     this.drawSurface(world);
+    this.drawSky(world);
+    this.drawGrass(world);
+    this.drawNightLights(world);
+    this.drawWeather(dt, world);
 
     const { aerators, seeps } = this.look;
     this.aeratorTimers.forEach((timer, i) => {
@@ -215,6 +276,8 @@ export class Scene {
 
   /** 0 in daylight, 0.5 at full night (set from the simulation). */
   darkness = 0;
+  /** [rain, snow, rainbow], each 0..1 (set from the simulation). */
+  weather: [number, number, number] = [0, 0, 0];
   /** How far the blacklight has faded in (0..1). */
   blacklight = 0;
 
@@ -242,6 +305,7 @@ export class Scene {
 
   private drawRays(world: World) {
     const g = this.rays.clear();
+    if (!this.look.rays) return;
     const top = world.waterTop;
     for (const ray of this.rayShape) {
       const alpha = (0.035 + 0.03 * Math.sin(world.time * 0.4 + ray.phase)) * this.look.rays;
@@ -267,9 +331,185 @@ export class Scene {
     return x;
   }
 
+  /** Clouds drifting slowly across a land place's sky. */
+  private drawSky(world: World) {
+    const g = this.clouds.clear();
+    if (!world.land) return;
+    const left = Math.min(0, this.visible.left);
+    const span = Math.max(world.width, this.visible.right) - left + 400;
+    for (const c of CLOUDS) {
+      const x = left - 200 + ((((c.x + world.time * c.speed) % 1.2) + 1.2) % 1.2) / 1.2 * span;
+      const y = c.y * world.height;
+      const s = 70 * c.size;
+      for (const [dx, dy, r] of [[-0.9, 0.15, 0.55], [-0.35, -0.2, 0.75], [0.3, -0.1, 0.65], [0.85, 0.15, 0.5], [0, 0.2, 0.7]]) {
+        g.circle(x + dx * s, y + dy * s, r * s).fill({ color: 0xffffff, alpha: 0.9 });
+      }
+    }
+  }
+
+  /** Rain and snow showers, and the rainbow after, wherever there's sky to see. */
+  private drawWeather(dt: number, world: World) {
+    const [rain, snow, rainbow] = this.weather;
+    const sky = this.skyWeather.clear();
+    const ground = this.groundWeather.clear();
+    const g = this.falling.clear();
+    this.wet = Math.max(0, Math.min(1, this.wet + (rain > 0.4 ? dt * 0.05 : -dt * 0.015)));
+    this.snowCover = Math.max(0, Math.min(1, this.snowCover + (snow > 0.4 ? dt * 0.03 : -dt * 0.01)));
+    const land = world.land === true;
+    if (!land && world.waterTop <= 0) return;
+    const left = Math.min(0, this.visible.left);
+    const right = Math.max(world.width, this.visible.right);
+    const top = Math.min(0, this.visible.top);
+    const t = world.time;
+    // Where things stop falling: the grass (somewhere front to back) on land, the water's surface elsewhere.
+    const landing = (x: number, k: number) => (land ? world.floorAt(Math.min(world.width, Math.max(0, x))) + k * world.height * (world.groundDepth ?? 0) : world.waterTop);
+    const span = right - left;
+
+    // The sky clouds over.
+    const grey = Math.max(rain, snow * 0.6);
+    if (grey > 0.01) {
+      const bottom = land ? Math.max(world.height, this.visible.bottom) : world.waterTop;
+      sky.rect(left, top, span, bottom - top).fill({ color: 0x5d6b78, alpha: grey * 0.35 });
+    }
+
+    if (rainbow > 0.01) {
+      // An arc over the far hills (or out over the water), the seven colours from the outside in.
+      const cx = world.width * 0.38;
+      const cy = land ? world.floorAt(cx) + 30 : world.waterTop;
+      const r = land ? world.height * 0.48 : Math.max(80, (world.waterTop - top) * 0.92);
+      const band = Math.max(5, r * 0.035);
+      [0xff4b4b, 0xff9d3b, 0xffe53b, 0x5fd35a, 0x47a8ff, 0x5b5bd6, 0xa45bd6].forEach((color, i) => {
+        sky.arc(cx, cy, r - i * band, Math.PI, TAU).stroke({ width: band + 0.5, color, alpha: rainbow * 0.45 });
+      });
+    }
+
+    if (land && this.wet > 0.01) {
+      // Puddles in the grass, shining with the sky.
+      const rand = seededRandom(`puddles${world.biome}`);
+      for (let i = 0; i < 7; i++) {
+        const x = rand(0.05, 0.95) * world.width;
+        const k = rand(0.15, 0.95);
+        const y = world.floorAt(x) + k * world.height * (world.groundDepth ?? 0) + 6;
+        const w = rand(40, 90) * (0.5 + k * 0.7) * Math.min(1, this.wet * 1.5);
+        ground.ellipse(x, y, w, w * 0.18).fill({ color: 0x9cc1d6, alpha: 0.7 * Math.min(1, this.wet * 2) });
+        ground.ellipse(x - w * 0.25, y - w * 0.04, w * 0.4, w * 0.05).fill({ color: 0xffffff, alpha: 0.4 * this.wet });
+        if (rain > 0.2) {
+          // Rain plinking into it.
+          const p = (t * 1.3 + i * 0.37) % 1;
+          ground.ellipse(x + Math.sin(i * 9.1 + Math.floor(t * 1.3 + i * 0.37)) * w * 0.5, y, 4 + p * 14, (4 + p * 14) * 0.3).stroke({ width: 1.5, color: 0xffffff, alpha: (1 - p) * rain * 0.7 });
+        }
+      }
+    }
+    if (land && this.snowCover > 0.01) {
+      // A white dusting over the ground, thickest at the back where it's settled longest.
+      const pts: number[] = [];
+      for (let x = left; x <= right + 20; x += 20) pts.push(x, world.floorAt(Math.min(world.width, Math.max(0, x))) - 3 + Math.sin(x * 0.05) * 2);
+      const bottom = Math.max(world.height, this.visible.bottom);
+      ground.poly([...pts, right + 20, bottom, left, bottom]).fill({ color: 0xf4f8ff, alpha: this.snowCover * 0.55 });
+      ground.poly(pts, false).stroke({ width: 6, color: 0xffffff, alpha: this.snowCover * 0.85 });
+    }
+
+    if (rain > 0.01) {
+      // Slanting streaks, falling fast.
+      const drops = Math.round(180 * rain);
+      for (let i = 0; i < drops; i++) {
+        const seed = ((i * 7919) % 1000) / 1000;
+        const k = ((i * 104729) % 997) / 997;
+        const speed = 1.4 + k * 0.6;
+        const x0 = left + ((seed * span + i * 37) % span);
+        const stop = landing(x0, k);
+        const fall = stop - top + 40;
+        const y = top - 40 + ((((t * speed * 600) / fall + seed) % 1) * fall);
+        const x = x0 - (y - top) * 0.18;
+        g.moveTo(x, y).lineTo(x - 5, y + 26).stroke({ width: 2, color: 0xe4f1ff, alpha: 0.75 * rain });
+      }
+      if (!land) {
+        // Rings spreading where it lands on the water.
+        const from = Math.max(left, this.shoreX(world));
+        for (let i = 0; i < 14; i++) {
+          const cycle = t * 0.9 + i / 14;
+          const p = cycle % 1;
+          const x = from + ((Math.sin(Math.floor(cycle) * 12.9898 + i * 78.233) * 43758.5453) % 1 + 1) % 1 * (right - from);
+          g.ellipse(x, world.waterTop + 2, 3 + p * 20, (3 + p * 20) * 0.22).stroke({ width: 1.5, color: 0xffffff, alpha: (1 - p) * 0.7 * rain });
+        }
+      }
+    }
+    if (snow > 0.01) {
+      // Big soft flakes drifting down and sideways.
+      const flakes = Math.round(150 * snow);
+      for (let i = 0; i < flakes; i++) {
+        const seed = ((i * 7919) % 1000) / 1000;
+        const k = ((i * 104729) % 997) / 997;
+        const x0 = left + ((seed * span + i * 53) % span);
+        const stop = landing(x0, k);
+        const fall = stop - top + 20;
+        const y = top - 20 + ((((t * (40 + k * 30)) / fall + seed) % 1) * fall);
+        const x = x0 + Math.sin(t * 0.8 + i) * 18;
+        g.circle(x, y, 2 + k * 3).fill({ color: 0xffffff, alpha: 0.85 * snow });
+      }
+    }
+  }
+
+  /** After dark on land: twinkling stars and the moon over the hills, and fireflies drifting over the grass. */
+  private drawNightLights(world: World) {
+    const g = this.nightLights.clear();
+    const n = Math.min(1, Math.max(0, (this.darkness - 0.12) / 0.3));
+    if (!world.land || n === 0) return;
+    const left = Math.min(0, this.visible.left);
+    const right = Math.max(world.width, this.visible.right);
+    const top = Math.min(0, this.visible.top);
+    const t = world.time;
+    const rand = seededRandom('stars');
+    for (let i = 0; i < 90; i++) {
+      const x = rand(left, right);
+      const y = rand(top, world.floorAt(Math.min(world.width, Math.max(0, x))) - 140);
+      const twinkle = 0.55 + 0.45 * Math.sin(t * rand(1, 3) + i);
+      g.circle(x, y, rand(1, 2.6)).fill({ color: 0xfffbe6, alpha: n * twinkle * 0.9 });
+    }
+    const mx = world.width * 0.82;
+    const my = world.height * 0.12;
+    g.circle(mx, my, 70).fill({ color: 0xfff6d5, alpha: n * 0.08 });
+    g.circle(mx, my, 34).fill({ color: 0xfff6d5, alpha: n * 0.95 });
+    g.circle(mx - 9, my - 6, 7).fill({ color: 0xe8dcb5, alpha: n * 0.8 });
+    g.circle(mx + 10, my + 9, 5).fill({ color: 0xe8dcb5, alpha: n * 0.8 });
+    if (world.biome !== 'meadow' && world.biome !== 'forest') return;
+    const flies = seededRandom('fireflies');
+    for (let i = 0; i < 28; i++) {
+      const bx = flies(left, right);
+      const by = flies(world.floorAt(world.width / 2) + 10, world.height - 20);
+      const x = bx + Math.sin(t * flies(0.2, 0.5) + i) * 60;
+      const y = by + Math.sin(t * flies(0.3, 0.7) + i * 2) * 30;
+      const blink = Math.max(0, Math.sin(t * flies(0.8, 1.6) + i * 1.3));
+      g.circle(x, y, 9).fill({ color: 0xd9ff6b, alpha: n * blink * 0.25 });
+      g.circle(x, y, 2.5).fill({ color: 0xf4ffb0, alpha: n * blink });
+    }
+  }
+
+  /** Tufts of long grass along the front edge of a land place, swaying in the breeze. */
+  private drawGrass(world: World) {
+    const g = this.foreground.clear();
+    if (!world.land) return;
+    const left = Math.min(0, this.visible.left);
+    const right = Math.max(world.width, this.visible.right);
+    const bottom = Math.max(world.height, this.visible.bottom);
+    const [light, dark] = this.look.sand;
+    const t = world.time;
+    let i = 0;
+    for (let x = left; x <= right; x += 38) {
+      i++;
+      const base = bottom + 4;
+      const tall = 36 + ((i * 47) % 30);
+      const sway = Math.sin(t * 1.3 + i * 0.7) * 6 + world.current * 0.4;
+      for (const k of [-1, 0, 1]) {
+        const bx = x + k * 7 + ((i * 13) % 11);
+        g.moveTo(bx - 3, base).quadraticCurveTo(bx + k * 4, base - tall * 0.6, bx + k * 10 + sway, base - tall + Math.abs(k) * 8).lineTo(bx + 3, base).fill(k ? dark : light);
+      }
+    }
+  }
+
   private drawSurface(world: World) {
     const g = this.surface.clear();
-    if (world.waterTop <= 0) return;
+    if (world.waterTop <= 0 || world.land) return;
     const t = world.time;
     const y0 = world.waterTop;
     const from = Math.max(Math.min(0, this.visible.left), this.shoreX(world));
@@ -333,11 +573,12 @@ export class Scene {
     }
   }
 
-  /** Reeds at the pond, rocks and coral in the ocean: drawn once per layout. */
+  /** Reeds at the pond, rocks and coral in the ocean, the far hills and the barn on land: drawn once per layout. */
   private drawProps(world: World) {
     const g = this.props.clear();
     const rand = seededRandom(`props:${world.biome}`);
-    if (world.biome === 'pond') {
+    if (world.land) this.drawLandBack(world, g, rand);
+    else if (world.biome === 'pond') {
       for (const cx of [0.02, 0.07, 0.31, 0.92, 0.97]) {
         for (let i = 0; i < 6; i++) {
           const x = (cx + rand(-0.025, 0.025)) * world.width;
@@ -373,13 +614,140 @@ export class Scene {
     }
   }
 
+  /** Behind the ground: far-off hills and trees, and the farm's barn, silo and fence. */
+  private drawLandBack(world: World, g: Graphics, rand: (lo?: number, hi?: number) => number) {
+    const left = Math.min(0, this.visible.left) - 40;
+    const right = Math.max(world.width, this.visible.right) + 40;
+    // Two rows of far hills, paler the further away they are.
+    for (const [lift, color, wave] of [[110, 0xb4d6c0, 0.004], [55, 0x9cc98a, 0.007]] as const) {
+      const pts: number[] = [left, world.floorAt(0) + 30];
+      for (let x = left; x <= right; x += 20) {
+        pts.push(x, world.floorAt(Math.min(world.width, Math.max(0, x))) - lift * (0.55 + 0.45 * Math.sin(x * wave + lift)));
+      }
+      pts.push(right, world.floorAt(world.width) + 30);
+      g.poly(pts).fill(color);
+    }
+    // A line of round trees along the far edge.
+    const trees = world.biome === 'farm' ? 7 : 12;
+    for (let i = 0; i < trees; i++) {
+      const x = rand(left, right);
+      if (world.biome === 'farm' && x > world.width * 0.68 && x < world.width * 0.95) continue; // the barn's there
+      const base = world.floorAt(Math.min(world.width, Math.max(0, x))) + 4;
+      const r = rand(16, 30);
+      g.rect(x - 3, base - r * 1.2, 6, r * 1.2).fill(0x6b4f35);
+      g.circle(x, base - r * 1.5, r).fill(rand() < 0.5 ? 0x5f9a44 : 0x4f8a3c);
+      g.circle(x - r * 0.3, base - r * 1.75, r * 0.5).fill({ color: 0x8cc06a, alpha: 0.6 });
+    }
+    if (world.biome !== 'farm') return;
+    // The barn, with a silo beside it.
+    const bx = world.width * 0.8;
+    const base = world.floorAt(bx) + 10;
+    const w = 220;
+    const h = 140;
+    g.rect(bx + w / 2 + 6, base - h * 1.35, 56, h * 1.35).fill(0xb9c2c9);
+    g.ellipse(bx + w / 2 + 34, base - h * 1.35, 28, 18).fill(0x8d98a1);
+    g.rect(bx - w / 2, base - h, w, h).fill(0xc0392b);
+    g.poly([bx - w / 2 - 14, base - h, bx, base - h - 80, bx + w / 2 + 14, base - h]).fill(0x7b241c);
+    g.rect(bx - 40, base - 86, 80, 86).fill(0x922b21).stroke({ width: 5, color: 0xf4f1ea });
+    g.moveTo(bx - 40, base - 86).lineTo(bx + 40, base).moveTo(bx + 40, base - 86).lineTo(bx - 40, base).stroke({ width: 5, color: 0xf4f1ea });
+    g.rect(bx - 20, base - h - 40, 40, 30).fill(0xf4f1ea);
+    // A fence along the back of the field.
+    for (let x = left; x <= right; x += 56) {
+      const y = world.floorAt(Math.min(world.width, Math.max(0, x))) + 26;
+      g.rect(x - 4, y - 46, 8, 50).fill(0xe8dcc3);
+    }
+    for (const lift of [18, 36]) {
+      const pts: number[] = [];
+      for (let x = left; x <= right; x += 28) pts.push(x, world.floorAt(Math.min(world.width, Math.max(0, x))) + 26 - lift);
+      g.poly(pts, false).stroke({ width: 6, color: 0xe8dcc3 });
+    }
+  }
+
+  /** On land, the ground: grass that's lighter at the back, tufts and flowers, a pond's edge or a ploughed field. */
+  private drawGround(world: World) {
+    const { sand, specks } = this.look;
+    const left = Math.floor(Math.min(0, this.visible.left) / 20) * 20;
+    const right = Math.max(world.width, this.visible.right);
+    const height = Math.max(world.height, this.visible.bottom);
+    const g = this.sand;
+    const rand = seededRandom(`ground:${world.biome}`);
+    const floor = (x: number) => world.floorAt(Math.min(world.width, Math.max(0, x)));
+    const band = (lift: number, color: number, alpha = 1) => {
+      const pts: number[] = [left, height + 10];
+      for (let x = left; x <= right + 20; x += 20) pts.push(x, floor(x) + lift);
+      pts.push(right + 20, height + 10);
+      g.poly(pts).fill({ color, alpha });
+    };
+    band(0, sand[0]);
+    // Nearer is a richer green.
+    for (const [lift, alpha] of [[60, 0.25], [140, 0.35], [230, 0.45]] as const) band(lift, sand[1], alpha);
+    band(0, 0xffffff, 0.12);
+    band(10, sand[0], 0.9);
+    if (world.biome === 'meadow') {
+      // The edge of a pond at the back, with reeds.
+      const px = world.width * 0.14;
+      const py = floor(px) + 34;
+      g.ellipse(px, py, 190, 26).fill(0x4f9fc4).ellipse(px, py - 4, 176, 18).fill(0x7cc2e0);
+      for (let i = 0; i < 14; i++) {
+        const x = px + rand(-200, 200);
+        const top = py - rand(30, 70);
+        g.moveTo(x, py + rand(0, 12)).lineTo(x + rand(-6, 6), top).stroke({ width: 3, color: 0x4f7d2f });
+        if (rand() < 0.4) g.roundRect(x - 4, top - 4, 8, 22, 4).fill(0x6b4426);
+      }
+    } else if (world.biome === 'farm') {
+      // A ploughed field on the left, with rows of young crops, and a dirt track to the barn.
+      const fx = world.width * 0.42;
+      const pts: number[] = [left, floor(left) + 8];
+      for (let x = left; x <= fx; x += 20) pts.push(x, floor(x) + 8);
+      pts.push(fx + 60, floor(fx) + 150, left, floor(left) + 150);
+      g.poly(pts).fill(0x9b7650);
+      for (let r = 0; r < 7; r++) {
+        const y0 = 18 + r * 19;
+        const row: number[] = [];
+        for (let x = left; x <= fx + (y0 / 150) * 60; x += 12) row.push(x, floor(x) + y0);
+        g.poly(row, false).stroke({ width: 4, color: 0x5e8f32 });
+      }
+      const bx = world.width * 0.8;
+      g.poly([bx - 30, floor(bx) + 8, bx + 30, floor(bx) + 8, bx + 150, height + 10, bx - 10, height + 10]).fill({ color: 0xc9a46c, alpha: 0.85 });
+      // Hay bales.
+      for (const [x, y, s] of [[0.56, 120, 1], [0.6, 150, 1.15], [0.95, 210, 1.3]] as const) {
+        const cx = world.width * x;
+        const cy = floor(cx) + y;
+        g.roundRect(cx - 40 * s, cy - 50 * s, 80 * s, 50 * s, 8).fill(0xe0b84f);
+        g.ellipse(cx - 40 * s, cy - 25 * s, 14 * s, 25 * s).fill(0xcfa13d);
+        g.ellipse(cx - 40 * s, cy - 25 * s, 8 * s, 15 * s).stroke({ width: 2, color: 0xa87f2a });
+      }
+    }
+    // Tufts of grass, and flowers in the meadow (bigger nearer the front).
+    for (let i = 0; i < (right - left) / 5; i++) {
+      const x = rand(left, right);
+      const y = rand(floor(x) + 14, height);
+      const near = (y - floor(x)) / (height - floor(x));
+      const s = 3 + near * 6;
+      if (world.biome === 'farm' && x < world.width * 0.42 + 60 && y < floor(x) + 150) continue;
+      if (world.biome === 'meadow' && rand() < 0.35) {
+        const color = [0xffe14d, 0xffe14d, 0xffffff, 0xf6a8c8][Math.floor(rand(0, 4))];
+        for (let k = 0; k < 5; k++) g.circle(x + Math.cos(k * 1.26) * s * 0.6, y + Math.sin(k * 1.26) * s * 0.6, s * 0.5).fill(color);
+        g.circle(x, y, s * 0.35).fill(color === 0xffe14d ? 0xf0a020 : 0xffd84d);
+      } else {
+        const color = rand() > 0.5 ? specks[0] : specks[1];
+        g.moveTo(x - s, y).lineTo(x - s * 0.6, y - s * 1.6).lineTo(x, y).lineTo(x + s * 0.5, y - s * 1.9).lineTo(x + s, y).fill(color);
+      }
+    }
+  }
+
   private drawSand(world: World) {
+    this.sand.clear();
+    if (world.land) {
+      this.drawGround(world);
+      return;
+    }
     const { sand, specks } = this.look;
     const left = Math.floor(Math.min(0, this.visible.left) / 20) * 20;
     const right = Math.max(world.width, this.visible.right);
     const height = Math.max(world.height, this.visible.bottom);
     const rand = seededRandom('sand');
-    const g = this.sand.clear();
+    const g = this.sand;
     const floor = (x: number) => world.floorAt(Math.min(world.width, Math.max(0, x)));
     const points: number[] = [left, height];
     for (let x = left; x <= right + 20; x += 20) points.push(x, this.sandTop(world, x));
@@ -433,6 +801,15 @@ function backdrop(look: Look, height: number, waterTop: number, floor: number) {
   const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
   const f = (y: number) => Math.min(1, Math.max(0, y / height));
   const surface = f(waterTop);
+  if (surface >= 1) {
+    // A land place: all sky, paling toward the far side of the field.
+    grad.addColorStop(0, look.sky[0]);
+    grad.addColorStop(Math.max(0.01, f(floor)), look.sky[1]);
+    grad.addColorStop(1, look.sky[1]);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    return Texture.from(canvas);
+  }
   if (surface > 0) {
     grad.addColorStop(0, look.sky[0]);
     grad.addColorStop(Math.max(0, surface - 0.001), look.sky[1]);

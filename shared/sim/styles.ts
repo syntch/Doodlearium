@@ -151,4 +151,5 @@ const vessel: SwimStyle = {
   thrust: fixed,
 };
 
-export const SWIM_STYLES: Partial<Record<Motion, SwimStyle>> = { fish, puffer, eel, jelly, seahorse, flapper, vessel };
+// Slitherers that also live in the water (water snakes) swim like eels there.
+export const SWIM_STYLES: Partial<Record<Motion, SwimStyle>> = { fish, puffer, eel, jelly, seahorse, flapper, vessel, slitherer: eel };

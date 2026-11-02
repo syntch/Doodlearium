@@ -9,7 +9,7 @@ import { createCreature } from './creatures.ts';
 import { Food } from './food.ts';
 import type { Cutout } from './parts.ts';
 import { Scene } from './scene.ts';
-import { shapeFor, type Creature, type World } from './world.ts';
+import { setHaze, shapeFor, type Creature, type World } from './world.ts';
 
 /** The camera shows part of the tank, close up, so the creature is big enough to watch. */
 const ZOOM = 2;
@@ -164,7 +164,8 @@ export async function createPreview(container: HTMLElement): Promise<Preview> {
       tank.blacklightOn = blacklight;
       if (spec) tank.add(spec, false);
       centre();
-      Object.assign(world, shapeFor(biome));
+      Object.assign(world, { land: false, groundDepth: undefined }, shapeFor(biome));
+      setHaze(Boolean(world.land));
       size.width = 0;
       relayoutIfResized();
     },

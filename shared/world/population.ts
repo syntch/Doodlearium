@@ -22,11 +22,13 @@ export interface Individual {
 }
 
 /** How many of each kind a place holds. */
-const TARGETS: Partial<Record<Biome, Record<CreatureType, number>>> = {
+const TARGETS: Partial<Record<Biome, Partial<Record<CreatureType, number>>>> = {
   lake: { swimmer: 26, crawler: 6, plant: 18, decor: 5 },
-  pond: { swimmer: 14, crawler: 5, plant: 16, decor: 3 },
+  pond: { swimmer: 14, crawler: 5, plant: 16, decor: 3, walker: 2, flier: 3 },
   ocean: { swimmer: 28, crawler: 6, plant: 14, decor: 5 },
-  seashore: { swimmer: 14, crawler: 8, plant: 8, decor: 4 },
+  seashore: { swimmer: 14, crawler: 8, plant: 8, decor: 4, walker: 2, flier: 4 },
+  meadow: { walker: 8, flier: 6, plant: 16, decor: 4 },
+  farm: { walker: 10, flier: 4, plant: 10, decor: 5 },
 };
 /** Fewer than this many species to choose from, and a place borrows from other regions. */
 const MIN_CHOICE = 4;
@@ -111,7 +113,7 @@ export function populate(drawings: Drawing[], individuals: Individual[], fresh =
     const targets = TARGETS[place.biome];
     if (!targets) continue;
     for (const bucket of Object.keys(targets) as CreatureType[]) {
-      const target = targets[bucket];
+      const target = targets[bucket] ?? 0;
       const kinds = drawings.filter((d) => bucketOf(d) === bucket && !isUnique(d) && fits(d, place));
       const local = kinds.filter((d) => ranges.get(d.id)!.includes(place));
       const pool = local.length >= Math.min(MIN_CHOICE, kinds.length) ? local : kinds;

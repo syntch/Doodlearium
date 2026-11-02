@@ -30,6 +30,7 @@ export const PART_INFO: Record<PartMotion, { icon: string; label: string; hint: 
   spin: { icon: '🌀', label: 'Spin', hint: 'Spins around its middle (propellers, wheels)' },
   pulse: { icon: '💓', label: 'Pulse', hint: 'Grows and shrinks (hearts, lights)' },
   blink: { icon: '😉', label: 'Blink', hint: 'Blinks every few seconds (eyes)' },
+  leg: { icon: '🦵', label: 'Leg', hint: 'Swings from where it joins the body as the animal walks (mark each leg on its own)' },
 };
 
 const newCanvas = (width: number, height: number) => Object.assign(document.createElement('canvas'), { width, height });

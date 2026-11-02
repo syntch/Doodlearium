@@ -22,8 +22,8 @@ export class SimEgg implements SimCreature {
     nest: number,
   ) {
     this.r = world.height * 0.03 * depthScale(EGG_Z);
-    // Laid in the water, never up on a dry beach.
-    const x = Math.max(nest * world.width, world.waterLeft + this.r * 4);
+    // Laid in the water, never up on a dry beach (on land, anywhere in the field).
+    const x = world.land ? nest * world.width : Math.max(nest * world.width, world.waterLeft + this.r * 4);
     Object.assign(this.pose, {
       x,
       y: sinking ? waterY(world, 0.52) : 0,
@@ -31,7 +31,8 @@ export class SimEgg implements SimCreature {
       sy: this.r,
       z: EGG_Z,
     });
-    if (!sinking) this.pose.y = this.rest(world);
+    // On land, eggs are laid straight into the grass.
+    if (!sinking || world.land) this.pose.y = this.rest(world);
   }
 
   private rest(world: World) {

@@ -106,7 +106,11 @@ const STYLES: Record<Motion, string> = {
   vessel: 'a little submarine or boat (tidies up food from the sand)',
   crawler: 'a crawler that walks the sand (a crab, snail, starfish...)',
   plant: 'a plant',
-  decor: 'a decoration on the sand',
+  decor: 'a decoration',
+  walker: 'an animal that walks about on land',
+  hopper: 'an animal that hops about on land',
+  slitherer: 'an animal that slithers along the ground',
+  flier: 'a flying animal',
 };
 
 function describe(d: Drawing) {
@@ -131,6 +135,10 @@ const BIOME_WORDS: Record<string, string> = {
   pond: 'a small, green lily pond with reeds',
   ocean: 'the big, deep ocean',
   seashore: 'the shallow sea by a sandy beach',
+  meadow: 'a sunny meadow of long grass and wildflowers, with a little pond at one side',
+  farm: 'a farm with a red barn, a fence, hay bales and a ploughed field',
+  hills: 'green rolling hills',
+  forest: 'quiet woods full of tall trees, ferns and toadstools',
 };
 
 /** The places a story happens in. */
@@ -152,7 +160,7 @@ function storyPrompt() {
   return [
     `Please write a short story for a young reader about what happened in our family's aquarium, Doodlearium, ${span}.`,
     '',
-    "Doodlearium is a little underwater world on our TV, with a lake, a pond, the ocean and a beach. Every creature in it was drawn by someone in our family (the artist's name is given), so they'll love seeing their creatures as characters.",
+    "Doodlearium is a little world on our TV: a lake, a pond, the ocean and a beach underwater, and meadows and a farm up on land. Every creature in it was drawn by someone in our family (the artist's name is given), so they'll love seeing their creatures as characters.",
     'Each drawing is a kind of creature: the one that was drawn has its own name, and there can be more of its kind around the world, called things like "a Clowny".',
     star ? `The story is about ${star.name}.` : '',
     '',
@@ -160,7 +168,7 @@ function storyPrompt() {
     '- Make it about 600 to 900 words, in short paragraphs, with words a young reader can mostly read on their own.',
     '- Use the real events below in order, and fill in the gaps with gentle, funny, curious moments. It is fine to imagine what the creatures were thinking.',
     '- Give each creature a bit of personality that matches what it did.',
-    '- Keep it kind: chases end with everyone safe, nobody gets eaten except fish food.',
+    '- Keep it kind: chases end with everyone safe, nobody gets eaten except fish food and seeds.',
     '- Put the title on the first line.',
     '',
     'The places:',
