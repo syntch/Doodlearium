@@ -40,7 +40,7 @@ Each place is filled to a set number of swimmers, crawlers, land animals, fliers
 | 🐕 Walker | farm, meadow, hills |
 | 🐇 Hopper | meadow, hills, woods |
 | 🐍 Slitherer | woods, meadow |
-| 🐦 Flier | every land place, and the skies over the pond and the beach |
+| 🐦 Flier | every land place, and the skies over the pond and the beach (the Lake and the Ocean are all underwater, so fliers can't live there) |
 | 🌿 Plant, 🏰 Decoration | every water place (tick land places on the draw page for trees, flowers, fences...) |
 
 A drawing can live both on land and in water (a frog ticked for the Pond and the Meadow): it hops about in the Meadow and crawls along the bottom of the Pond (a slitherer swims like an eel in water).

@@ -39,7 +39,16 @@ const DEFAULT_HABITATS: Record<Motion, Biome[]> = {
 };
 
 export const defaultHabitats = (motion: Motion) => DEFAULT_HABITATS[motion];
-export const habitatsOf = (d: Drawing): Biome[] => (d.habitats?.length ? d.habitats : DEFAULT_HABITATS[motionOf(d)]);
+/** Places with open sky above the water or the ground. The Lake and the Ocean are all underwater. */
+export const hasSky = (biome: Biome) => isLand(biome) || biome === 'pond' || biome === 'seashore';
+/** Whether a style can live in a kind of place: fliers need a sky to fly in. */
+export const suits = (motion: Motion, biome: Biome) => motion !== 'flier' || hasSky(biome);
+/** Where it lives: the places its artist ticked that suit its style (its style's usual if none do). */
+export function habitatsOf(d: Drawing): Biome[] {
+  const motion = motionOf(d);
+  const picked = (d.habitats ?? []).filter((b) => suits(motion, b));
+  return picked.length ? picked : DEFAULT_HABITATS[motion];
+}
 /** Fish come in schools unless their artist says otherwise. */
 export const defaultGroup = (motion: Motion) => motion === 'fish';
 export const isGroup = (d: Drawing) => d.group ?? defaultGroup(motionOf(d));

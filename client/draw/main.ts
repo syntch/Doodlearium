@@ -16,7 +16,7 @@ import {
   LAND_MOTIONS,
 } from '../../shared/types.ts';
 import { fetchDrawings, setupFeedButton, submitDrawing, updateDrawing } from '../shared/api.ts';
-import { BIOMES, BIOME_NAMES, defaultGroup, defaultHabitats, type Biome } from '../../shared/world/biomes.ts';
+import { BIOMES, BIOME_NAMES, defaultGroup, defaultHabitats, suits, type Biome } from '../../shared/world/biomes.ts';
 import { LIVE_PLACES, placeById } from '../../shared/world/places.ts';
 import { enclosedHoles, exportDrawing, inkBounds, type PlacedAttachment, type PlacedPart } from './export.ts';
 import { MATERIALS, MATERIAL_LABELS, MATERIAL_TURNS, floodFill, floodRegion, materialPreview, type Material } from './fill.ts';
@@ -406,9 +406,13 @@ let speciesSize: SpeciesSize | undefined;
 
 /** The kinds of place that are open (the chips to pick from). */
 const OPEN_BIOMES = BIOMES.filter((b) => LIVE_PLACES.some((p) => p.biome === b));
+/** The ones that suit the style: no Lake or Ocean for fliers, which have no sky to fly in there. */
+const choices = () => OPEN_BIOMES.filter((b) => suits(state.motion, b));
 
 function setWhere(list: Biome[], group: boolean, home = '', size?: SpeciesSize) {
-  habitats = OPEN_BIOMES.filter((b) => list.includes(b)).sort((a, b) => list.indexOf(a) - list.indexOf(b));
+  const picked = choices().filter((b) => list.includes(b));
+  if (!picked.length) list = defaultHabitats(state.motion);
+  habitats = choices().filter((b) => list.includes(b)).sort((a, b) => list.indexOf(a) - list.indexOf(b));
   groupInput.checked = group;
   speciesSize = size;
   renderWhere(home);
@@ -418,7 +422,7 @@ const SPECIES_SIZES: [SpeciesSize | undefined, string][] = [['small', 'Small'], 
 
 function renderWhere(home = homeSelect.value) {
   habitatsEl.replaceChildren(
-    ...OPEN_BIOMES.map((biome) => {
+    ...choices().map((biome) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.textContent = BIOME_NAMES[biome];
