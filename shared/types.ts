@@ -8,7 +8,7 @@ export type CreatureType = (typeof CREATURE_TYPES)[number];
 /** How a drawing moves. Picking a motion style also decides where it lives. */
 export const MOTIONS = [
   'fish', 'puffer', 'eel', 'jelly', 'seahorse', 'flapper', 'vessel', 'crawler', 'plant', 'decor',
-  'walker', 'hopper', 'slitherer', 'flier',
+  'walker', 'hopper', 'slitherer', 'flier', 'waterfowl',
 ] as const;
 export type Motion = (typeof MOTIONS)[number];
 
@@ -18,6 +18,8 @@ export const LAND_MOTIONS: Motion[] = ['walker', 'hopper', 'slitherer'];
 export const habitatOf = (motion: Motion): CreatureType =>
   motion === 'crawler' || motion === 'plant' || motion === 'decor' || motion === 'flier'
     ? motion
+    : motion === 'waterfowl'
+      ? 'flier'
     : LAND_MOTIONS.includes(motion)
       ? 'walker'
       : 'swimmer';
@@ -171,7 +173,35 @@ export type ServerMessage =
   /** The server would like a screen to blend two parents into a baby and lay its egg (see babies.ts). */
   | { type: 'egg:make'; parents: [string, string]; nest: number; place: string; now: boolean }
   | { type: 'upcoming'; items: Upcoming[] }
-  | { type: 'history'; entry: HistoryEntry };
+  | { type: 'history'; entry: HistoryEntry }
+  /** Sent on connecting: which run of the server this is. A different one after a restart means new pages. */
+  | { type: 'hello'; version: string }
+  /** The server is stopping to update itself (it'll be back in a minute or so). */
+  | { type: 'updating' };
+
+/** What happened the last time the server updated itself (data/update.json, written by scripts/start.mjs). */
+export interface UpdateResult {
+  at: number;
+  ok: boolean;
+  message: string;
+  from?: string;
+  to?: string;
+  /** What's new: the changes' one-line descriptions. */
+  changes?: string[];
+  announced?: boolean;
+}
+
+/** The ⚙️ menu's 🔄 Update: whether it can, the version running, and what's new on GitHub (when checked). */
+export interface UpdateInfo {
+  can: boolean;
+  why?: string;
+  version?: { hash: string; date: string; subject: string };
+  changes?: string[];
+  /** Files changed by hand on the server, which might get in the way. */
+  dirty?: boolean;
+  error?: string;
+  last?: UpdateResult;
+}
 
 /** Something that happened in the world, written down for the history page (and stories). */
 export interface HistoryEntry {

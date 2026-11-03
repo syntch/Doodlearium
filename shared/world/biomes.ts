@@ -33,6 +33,7 @@ const DEFAULT_HABITATS: Record<Motion, Biome[]> = {
   hopper: ['meadow', 'hills', 'forest'],
   slitherer: ['forest', 'meadow'],
   flier: ['meadow', 'farm', 'hills', 'forest', 'pond', 'seashore'],
+  waterfowl: ['pond', 'seashore', 'meadow', 'farm'],
   // Plants and decorations drawn before the land opened were made for the water; on land, tick the places.
   plant: [...WATER_BIOMES],
   decor: [...WATER_BIOMES],
@@ -41,8 +42,8 @@ const DEFAULT_HABITATS: Record<Motion, Biome[]> = {
 export const defaultHabitats = (motion: Motion) => DEFAULT_HABITATS[motion];
 /** Places with open sky above the water or the ground. The Lake and the Ocean are all underwater. */
 export const hasSky = (biome: Biome) => isLand(biome) || biome === 'pond' || biome === 'seashore';
-/** Whether a style can live in a kind of place: fliers need a sky to fly in. */
-export const suits = (motion: Motion, biome: Biome) => motion !== 'flier' || hasSky(biome);
+/** Whether a style can live in a kind of place: fliers (and waterfowl) need a sky to fly in. */
+export const suits = (motion: Motion, biome: Biome) => (motion !== 'flier' && motion !== 'waterfowl') || hasSky(biome);
 /** Where it lives: the places its artist ticked that suit its style (its style's usual if none do). */
 export function habitatsOf(d: Drawing): Biome[] {
   const motion = motionOf(d);

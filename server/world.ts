@@ -15,11 +15,12 @@ import {
 } from '../shared/sim/protocol.ts';
 import { Tank } from '../shared/sim/tank.ts';
 import { FILM_SECONDS, pickVisitor } from '../shared/sim/visitors.ts';
-import { motionOf, type Drawing, type SpeciesWhere, type TankCommand, type TankCommandValue } from '../shared/types.ts';
+import { habitatOf, motionOf, type Drawing, type SpeciesWhere, type TankCommand, type TankCommandValue } from '../shared/types.ts';
 import { LIVE_PLACES, placeName, type Place } from '../shared/world/places.ts';
 import { populate, turnover, type Individual } from '../shared/world/population.ts';
 import { record } from './history.ts';
 import { DATA_DIR, listDrawings } from './store.ts';
+import { UPDATE_EXIT, freshUpdate } from './update.ts';
 import { broadcast, broadcastTo, clientCount, sendToOne, watchers, type Screen } from './ws.ts';
 
 /**
@@ -178,6 +179,8 @@ export async function startWorld() {
 
   setInterval(tick, TICK_MS);
   setInterval(() => void saveWorld(), SAVE_MS);
+  const updated = await freshUpdate().catch(() => undefined);
+  if (updated?.ok && updated.changes?.length) record('update', [], `🔄 Doodlearium was updated: ${updated.message}`);
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.once(signal, () => {
       void saveWorld().finally(() => process.exit(0));
@@ -242,6 +245,12 @@ export function onWatch(screen: Screen) {
   if (!spot) return;
   screen.send({ type: 'roster', place: spot.id, creatures: roster(spot, false) });
   screen.send({ type: 'frame', frame: frame(spot) });
+}
+
+/** The ⚙️ menu's 🔄 Update: every screen is told, the world saved, and the launcher takes over (see update.ts). */
+export function stopForUpdate() {
+  broadcast({ type: 'updating' });
+  void saveWorld().finally(() => setTimeout(() => process.exit(UPDATE_EXIT), 300));
 }
 
 let saving = Promise.resolve();
@@ -586,7 +595,7 @@ function askForEgg(spot: Spot, force: boolean, pair?: [string, string]): string 
     const species = a.drawing;
     const id = `${species.id}~${Math.random().toString(36).slice(2, 8)}`;
     // On land, only fliers lay eggs: everyone else has their baby right away, and it grows up over a week.
-    const born = tank.world.land && motionOf(species) !== 'flier';
+    const born = tank.world.land && habitatOf(motionOf(species)) !== 'flier';
     individuals.push({ id, species: species.id, place: spot.id, hatchAt: born ? now : now + HATCH_TIME, nest });
     resync();
     if (born) {

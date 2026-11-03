@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import express from 'express';
 import { loadHistory } from './history.ts';
 import { api } from './routes.ts';
+import { accessNote, guard, securityHeaders } from './security.ts';
 import { DRAWINGS_DIR, loadStore } from './store.ts';
 import { onConnect, onWatch, startWorld } from './world.ts';
 import { attachWebSocket } from './ws.ts';
@@ -17,6 +18,8 @@ await loadHistory();
 await startWorld();
 
 const app = express();
+app.disable('x-powered-by');
+app.use(securityHeaders, guard);
 app.use('/api', api);
 app.use('/drawings', express.static(DRAWINGS_DIR, { maxAge: '1y', immutable: true }));
 if (existsSync(DIST_DIR)) app.use(express.static(DIST_DIR));
@@ -30,6 +33,7 @@ server.listen(PORT, '0.0.0.0', () => {
     .filter((net) => net && net.family === 'IPv4' && !net.internal)
     .map((net) => `http://${net!.address}:${PORT}`);
   console.log(`Doodlearium server on http://localhost:${PORT}`);
+  console.log(accessNote());
   if (existsSync(DIST_DIR)) {
     for (const url of lan) console.log(`  on your network: ${url}`);
   } else {

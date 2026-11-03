@@ -111,6 +111,7 @@ const STYLES: Record<Motion, string> = {
   hopper: 'an animal that hops about on land',
   slitherer: 'an animal that slithers along the ground',
   flier: 'a flying animal',
+  waterfowl: 'a water bird that flies and paddles about on the water (a duck, goose or swan)',
 };
 
 function describe(d: Drawing) {

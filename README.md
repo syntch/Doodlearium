@@ -17,6 +17,8 @@ npm start          # builds the client and serves everything on http://localhost
 
 The server prints its address on your network, for example `http://192.168.1.20:3000`. Open that address on other devices.
 
+`npm start` keeps it running: if the server stops unexpectedly it starts again, and the ⚙️ menu's **🔄 Check for updates** can update it (see **Updating** below). Stop it with Ctrl+C.
+
 | Page | What it's for |
 | --- | --- |
 | `/tank/` | The aquarium. It opens on a storybook **map** of the world, with a brass porthole for each place showing a few of the creatures that live there (places that aren't open yet are greyed out, "coming soon"). Tap a porthole and the screen dives through it into that place; **🗺️ Map** (or M, or pinching out) zooms back out. Each screen comes back to the place it showed last; `/tank/?place=pond` always opens the Pond, handy for a TV bookmark. Double-click for full screen; click to drop food. Move the mouse (or tap) and buttons appear: **✏️ Draw**, **🖼️ Gallery** and **📖 History** to get around, **⚙️** for the tank controls (see below) and **🔇/🔊** (or the S key) for soft sounds. They hide again, with the cursor, when left alone. A **Coming up** card under the buttons lists what's about to happen anywhere in the world (the next visitor, documentary, egg hatching or planned event, and where; tap one to go there); it stays on screen by itself in the last couple of minutes, so you know to gather round the TV. Point at a creature (or tap it) to see its name, who drew it and what it's like (or, for one of a kind, how many there are in the world). The tank dims at night. The whole tank fits on any screen; a screen of a different shape sees more water above or sand below (a tall phone zooms in a little). See **Life in the tank** below for what goes on. |
@@ -41,6 +43,7 @@ Each place is filled to a set number of swimmers, crawlers, land animals, fliers
 | 🐇 Hopper | meadow, hills, woods |
 | 🐍 Slitherer | woods, meadow |
 | 🐦 Flier | every land place, and the skies over the pond and the beach (the Lake and the Ocean are all underwater, so fliers can't live there) |
+| 🦆 Waterfowl | pond, beach, meadow, farm (not the Lake or the Ocean either) |
 | 🌿 Plant, 🏰 Decoration | every water place (tick land places on the draw page for trees, flowers, fences...) |
 
 A drawing can live both on land and in water (a frog ticked for the Pond and the Meadow): it hops about in the Meadow and crawls along the bottom of the Pond (a slitherer swims like an eel in water).
@@ -68,7 +71,7 @@ A drawing can live both on land and in water (a frog ticked for the Pond and the
 
 Four land places: the Meadow (long grass, wildflowers and a little pond at one side), the Farm (a red barn, a fence, hay bales and a ploughed field), the Hills (snowy mountains far off in the mist, rocks and a winding path) and the Woods (tall trees meeting overhead, sunbeams, ferns and toadstools).
 
-- **Walkers** trot about the field, nearer and further, and stop to look around, graze or sit. **Hoppers** go in hops, with a squash on landing and a shadow on the grass below. **Slitherers** slide along in S-curves. **Fliers** flap and glide about the sky, swoop, and land on the ground or on top of a tree, fence or flower. Kinds that come in a group follow a leader as a herd or a flock.
+- **Walkers** trot about the field, nearer and further, and stop to look around, graze or sit. **Hoppers** go in hops, with a squash on landing and a shadow on the grass below. **Slitherers** slide along in S-curves. **Fliers** flap and glide about the sky, swoop, and land on the ground or on top of a tree, fence or flower. **Waterfowl** fly like fliers and land on the ground on land, but at the Pond and the Beach they come down on the water: they float low, the part under the waterline showing faintly through it, paddle about (legs marked as 🦵 parts kick), now and then dabble head-down with their tail up, and paddle over to food floating near the top. Kinds that come in a group follow a leader as a herd or a flock.
 - **Feeding** on land scatters seeds over the grass: animals run over and fliers swoop down to peck.
 - **Night.** Stars and the moon come out, fireflies drift over the Meadow and through the Woods, day animals settle down to sleep and night animals come out.
 - **Babies.** Two grown-ups of a kind that spend time together (two of a herd, or two resting side by side) sometimes have a baby: a bird lays an egg in the grass that hatches into a chick, and other animals have their baby right away, beside them, small, growing up over its first week. Very rarely two different kinds resting side by side lay an egg of a whole new kind, as in the water.
@@ -100,7 +103,32 @@ It restarts on its own after reboots and crashes. Then open `http://<server-ip>:
 - **Back up the drawings**: `docker run --rm -v doodlearium_doodlearium-data:/data -v "$PWD":/backup alpine tar czf /backup/doodlearium-backup.tgz -C /data .`
 - **Use a different port**: change the left side of `"3000:3000"` in `compose.yaml`.
 
-Without Docker, install Node 24 and run `npm ci && npm start` as a service (for example a systemd unit with `Restart=always`).
+Without Docker, install Node 24, `git clone` the repository and run `npm ci && npm start` (in a window that stays open, or as a service, for example a systemd unit).
+
+### Updating
+
+Where it was set up with `git clone` and runs with `npm start`, the ⚙️ menu's **🔄 Check for updates** shows what's new on GitHub, and **⬇️ Update now** gets it: the server saves the world and stops, `scripts/start.mjs` (what `npm start` runs) gets the new version with `git pull`, installs any new packages, builds the pages and starts it again. Every screen shows that it's updating and reloads when it's back, in a minute or so, and the history notes it. If the new version won't build, it goes back to the one before and keeps running, and the menu says what went wrong. Under Docker, update with `docker compose up -d --build` instead.
+
+## Keeping it to the family
+
+Doodlearium is made for a home network, and it's open on it: anyone in the house can draw and play without signing in. To keep it that way:
+
+- **Home network only.** It only answers devices on private home-network addresses (`10.x`, `192.168.x`, `172.16-31.x`, the PC itself, and Tailscale's `100.64-127.x`), so if a router port ever gets forwarded to it, the internet still gets nothing (and the server window says who it turned away).
+- **Only its own pages can change things.** Web pages on other sites, open on a family phone, can't send it requests in the background, including "DNS rebinding" tricks that dress another site up as this server. It answers to addresses, single names (`http://doodlearium:3000`) and home-network names (`.local`, `.lan`, `.home`...); add any other name you use for it to `hosts`.
+- **A grown-up PIN** (optional) is asked for before **⬇️ Update now** and **Remove** in the gallery, and remembered on each device once it's right. Drawing, feeding and the rest of the ⚙️ menu stay open. Five wrong tries mean a five-minute wait.
+- **Limits** on how many requests and drawings each device can send a minute, and headers that stop other sites showing the pages inside theirs.
+
+Set it up in `data/config.json` (written with the defaults the first time it starts), then restart the server:
+
+```json
+{
+  "access": "home",
+  "pin": "4321",
+  "hosts": []
+}
+```
+
+`access` is `"home"` (the default), `"subnet"` (only devices on the same network as one of the PC's own connections: stricter, if the home network has a guest network on another range), or `"anywhere"` (only behind something else that checks who's visiting). The `DOODLEARIUM_ACCESS` and `DOODLEARIUM_PIN` settings override the file (handy for Docker, in `compose.yaml`'s `environment`).
 
 ## Motion styles
 
@@ -122,6 +150,7 @@ The style picked on the draw page decides how a drawing moves and where it lives
 | 🐇 Hopper | bunnies, frogs, kangaroos | hops about on land |
 | 🐍 Slitherer | snakes, worms, caterpillars | slides along the ground in S-curves (swims like an eel in water) |
 | 🐦 Flier | birds, butterflies, bees | flies about the sky and lands to rest. Make wings 🦋 Flap parts and they beat as it flies |
+| 🦆 Waterfowl | ducks, geese, swans | flies like a flier, then lands on the water to paddle about and dabble (on land it lands on the ground). Draw it floating, belly at the bottom |
 
 Drawings made before motion styles existed keep working: fish become 🐟 Fish. To change a drawing's style, open it from the gallery with **Edit**.
 
@@ -162,6 +191,7 @@ The motion style picks the brain (`shared/sim/tank.ts`) and the look (`client/ta
 - **Puffers** are swimmers whose mesh can round out into a disc (`shape` in `behaviors/swimmer.ts`), with spikes drawn behind it.
 - **Eggs** (`babies.ts`, `behaviors/egg.ts`): the tank blends the parents' pictures and asks the server for an egg (`POST /api/eggs`). The server saves the baby as a drawing with `parents` and `hatchAt`, and the tank shows it as an egg until then.
 - **Glowing paint** (`glow.ts`): the draw page saves which pixels glow in a second image (`<id>.glow.png`: red for glow paint, green for blacklight paint). The tank lays a sharp and a blurred copy of those pixels over the creature, sharing its mesh so they bend with it, drawn above the night tint so they shine in the dark. Glowing paint on a moving part is cut out with the part and rides along with it.
+- **Fliers and waterfowl** (`shared/sim/flier.ts`, drawn by `behaviors/walker.ts`): a waterfowl afloat is clipped at the waterline, with a faint copy below it.
 - **The rest of tank life**: `documentary.ts`, `seasons.ts`, `events.ts` and `sounds.ts` (made on the fly, no sound files). The ⚙️ menu sends its commands to the server (`POST /api/tank`, or `POST /api/schedule` for later).
 - **Moving parts** (`parts.ts`): drawings with parts are split when loaded into a body and one piece per part. Each piece animates around its hinge or middle and rides the body's bend, like extras do.
 

@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "concurrently -k -n server,client -c cyan,magenta \"tsx watch server/index.ts\" \"vite\"",
     "build": "vite build",
-    "start": "vite build && tsx server/index.ts",
+    "start": "node scripts/start.mjs",
     "serve": "tsx server/index.ts",
     "typecheck": "tsc --noEmit"
   },

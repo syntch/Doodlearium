@@ -365,6 +365,7 @@ const MOTION_LABELS: Record<Motion, string> = {
   hopper: '🐇 Hopper',
   slitherer: '🐍 Slitherer',
   flier: '🐦 Flier',
+  waterfowl: '🦆 Waterfowl',
 };
 
 const PLACEHOLDERS: Record<Motion, string> = {
@@ -382,6 +383,7 @@ const PLACEHOLDERS: Record<Motion, string> = {
   hopper: 'Name it (e.g. Thumper)',
   slitherer: 'Name it (e.g. Wiggles)',
   flier: 'Name it (e.g. Tweety)',
+  waterfowl: 'Name it (e.g. Quackers)',
 };
 
 /** Styles that have a head, so the Facing button matters. */
@@ -406,7 +408,7 @@ let speciesSize: SpeciesSize | undefined;
 
 /** The kinds of place that are open (the chips to pick from). */
 const OPEN_BIOMES = BIOMES.filter((b) => LIVE_PLACES.some((p) => p.biome === b));
-/** The ones that suit the style: no Lake or Ocean for fliers, which have no sky to fly in there. */
+/** The ones that suit the style: no Lake or Ocean for fliers and waterfowl, which have no sky to fly in there. */
 const choices = () => OPEN_BIOMES.filter((b) => suits(state.motion, b));
 
 function setWhere(list: Biome[], group: boolean, home = '', size?: SpeciesSize) {
@@ -495,6 +497,7 @@ function renderGuide() {
     hopper: top(way('head this way')) + ground('feet on the ground'),
     slitherer: top(way('head this way')) + ground('slides along the ground'),
     flier: top(way('head this way')),
+    waterfowl: top(way('head this way')) + ground('floats on its belly'),
   };
   guide.innerHTML = mirrorLine + guides[m];
 }

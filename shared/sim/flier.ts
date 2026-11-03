@@ -1,15 +1,17 @@
-import type { Drawing } from '../types.ts';
+import { motionOf, type Drawing } from '../types.ts';
 import { newPose, type Saved, type SimCreature } from './creature.ts';
 import { LANDED_SECONDS, type Flake } from './food.ts';
 import { TAU, clamp, depthScale, growScale, seededRandom } from './math.ts';
 import { sizeFactor } from './styles.ts';
-import { heart, sandY, type World } from './world.ts';
+import { burst, heart, sandY, type World } from './world.ts';
 
 /** A place to land: the ground (at a depth) or the top of a plant or decoration. */
 interface Perch {
   x: number;
   y: number;
   z: number;
+  /** On the water's surface (waterfowl), where it paddles about. */
+  water?: boolean;
 }
 
 /**
@@ -18,6 +20,10 @@ interface Perch {
  * the sky above it and only land on dry ground. They swoop down for seeds, roost at night, and (if their
  * kind comes in a flock) follow a leader. The pose's puff is how high it is above the ground under it
  * (-1 over water, where there's no shadow to cast).
+ *
+ * Waterfowl (ducks, geese, swans) do all that too, but at a water place they come down on the water instead:
+ * they paddle about, bob, now and then dabble head-down under the surface, and paddle over to food floating
+ * near the top.
  */
 export class SimFlier implements SimCreature {
   readonly kind = 'flier';
@@ -43,6 +49,12 @@ export class SimFlier implements SimCreature {
   private meal: Flake | null = null;
   private starring = false;
   private dozing = 0;
+  /** Waterfowl: lands on the water to paddle about. */
+  private swims: boolean;
+  private paddleTo = 0;
+  /** Seconds left of a dabble (tipped head-down under the water), and how long it is. */
+  private dabble = 0;
+  private dabbleFor = 1;
 
   constructor(
     readonly id: string,
@@ -53,6 +65,7 @@ export class SimFlier implements SimCreature {
     grownFrom?: number,
   ) {
     const rand = seededRandom(id);
+    this.swims = motionOf(drawing) === 'waterfowl';
     this.z = saved?.z ?? rand(0.1, 0.9);
     this.size = rand(0.8, 1.2) * sizeFactor(drawing) * growScale(grownFrom);
     this.pace = rand(0.8, 1.25);
@@ -66,6 +79,13 @@ export class SimFlier implements SimCreature {
       this.y = rand(sky.top, (sky.top + sky.bottom) / 2);
     }
     this.flyFor = rand(8, 20);
+    // Back on the water where it was paddling before a restart.
+    if (this.swims && saved && saved.y >= world.waterTop - 1 && this.onWater(world, this.x)) {
+      this.y = world.waterTop;
+      this.perch = { x: this.x, y: this.y, z: this.z, water: true };
+      this.sitting = rand(5, 25);
+      this.paddleTo = this.x;
+    }
     this.pickGoal(world);
     this.update(0, world);
   }
@@ -124,6 +144,13 @@ export class SimFlier implements SimCreature {
 
   /** Somewhere to land: on dry ground, or on top of a tree, fence or flower. */
   private findPerch(world: World): Perch | null {
+    // Waterfowl mostly come down on the water.
+    if (this.swims && !world.land && Math.random() < 0.85) {
+      const water = Array.from({ length: 6 }, () => Math.random() * world.width).filter((x) => this.onWater(world, x));
+      water.sort((a, b) => Math.abs(a - this.x) - Math.abs(b - this.x));
+      const x = water[Math.floor(Math.random() * Math.min(3, water.length))];
+      if (x !== undefined) return { x, y: world.waterTop, z: 0.1 + Math.random() * 0.8, water: true };
+    }
     const options: Perch[] = [];
     for (const h of world.hideouts) {
       const top = h.bottom - h.height;
@@ -142,9 +169,27 @@ export class SimFlier implements SimCreature {
     return options[Math.floor(Math.random() * Math.min(3, options.length))];
   }
 
+  /** Open water to sit on, away from the shore and the edges. */
+  private onWater(world: World, x: number) {
+    return !world.land && x > 30 && x < world.width - 30 && x >= world.waterLeft && world.floorAt(x) > world.waterTop + world.height * 0.08;
+  }
+
+  /** How far down a floating bird can reach for food. */
+  private reach(world: World) {
+    return world.waterTop + world.height * 0.12;
+  }
+
   private findMeal(world: World) {
-    if (!world.land) return null;
     let best: Flake | null = null;
+    if (!world.land) {
+      // Waterfowl paddle over to food floating near the top.
+      if (!this.swims) return null;
+      for (const f of world.food.flakes) {
+        if (f.eaten || f.y > this.reach(world) || !this.onWater(world, f.x)) continue;
+        if (!best || Math.abs(f.x - this.x) < Math.abs(best.x - this.x)) best = f;
+      }
+      return best;
+    }
     for (const f of world.food.flakes) {
       if (f.eaten || f.landedFor <= 0 || f.landedFor > LANDED_SECONDS - 1) continue;
       if (!best || Math.abs(f.x - this.x) < Math.abs(best.x - this.x)) best = f;
@@ -157,11 +202,17 @@ export class SimFlier implements SimCreature {
     this.dozing += ((asleep && this.sitting > 0 ? 1 : 0) - this.dozing) * Math.min(1, dt * 0.5);
 
     if (this.meal?.eaten || (this.meal && this.meal.landedFor > LANDED_SECONDS - 1)) this.meal = null;
+    // Food in the water sinks out of reach.
+    if (this.meal && !world.land && this.meal.y > this.reach(world)) this.meal = null;
     if (!asleep && !this.meal && Math.random() < dt * 0.5) {
       this.meal = this.findMeal(world);
-      if (this.meal) {
+      if (this.meal && world.land) {
         const z = this.meal.z ?? 0.5;
         this.perch = { x: this.meal.x, y: sandY(world, z, this.meal.x), z };
+        this.sitting = 0;
+      } else if (this.meal && !(this.perch?.water && this.sitting > 0)) {
+        // Down onto the water by it (already afloat, it just paddles over).
+        this.perch = { x: this.meal.x, y: world.waterTop, z: this.z, water: true };
         this.sitting = 0;
       }
     }
@@ -169,8 +220,11 @@ export class SimFlier implements SimCreature {
     if (this.sitting > 0 && this.perch) {
       // Sitting: a little hop now and then, and off again when it's had its rest (not while it's asleep).
       this.sitting -= asleep || world.rain > 0.5 ? 0 : dt;
-      this.x = this.perch.x;
-      this.y = this.perch.y;
+      if (this.perch.water) this.paddle(dt, world, asleep);
+      else {
+        this.x = this.perch.x;
+        this.y = this.perch.y;
+      }
       this.vx = this.vy = 0;
       this.effort += (0.05 - this.effort) * Math.min(1, dt * 4);
       if (this.meal && Math.abs(this.meal.x - this.x) < 20) {
@@ -180,6 +234,7 @@ export class SimFlier implements SimCreature {
         heart(world, this.x, this.y - 30, 8);
       }
       if (this.sitting <= 0) {
+        if (this.perch.water) burst(world, this.x, world.waterTop, 8);
         this.perch = null;
         this.flyFor = 8 + Math.random() * 20;
         this.vy = -world.height * 0.25;
@@ -189,6 +244,31 @@ export class SimFlier implements SimCreature {
       this.fly(dt, world, asleep);
     }
     this.setPose(world);
+  }
+
+  /** Afloat: paddling about the surface (over to food if there is some), bobbing, and dabbling now and then. */
+  private paddle(dt: number, world: World, asleep: boolean) {
+    if (this.meal) this.paddleTo = this.meal.x;
+    else if (!asleep && Math.abs(this.paddleTo - this.x) < 8 && Math.random() < dt * 0.4) {
+      const to = this.x + (Math.random() - 0.5) * world.width * 0.4;
+      if (this.onWater(world, to)) this.paddleTo = to;
+    }
+    const dx = asleep && !this.meal ? 0 : this.paddleTo - this.x;
+    if (Math.abs(dx) > 2 && this.dabble <= 0) {
+      const speed = world.height * 0.035 * this.pace * (this.meal ? 2.5 : 1);
+      const step = Math.sign(dx) * Math.min(Math.abs(dx), speed * dt);
+      if (this.onWater(world, this.x + step)) this.x += step;
+      else this.paddleTo = this.x;
+      this.facing += (Math.sign(dx) - this.facing) * Math.min(1, dt * 3);
+      // Its feet paddle (legs marked as 🦵 parts kick).
+      this.flap += dt * 6;
+    }
+    this.dabble -= dt;
+    if (!asleep && !this.meal && this.dabble < -4 && Math.random() < dt * 0.06) {
+      this.dabble = this.dabbleFor = 1.5 + Math.random() * 1.5;
+    }
+    this.perch!.x = this.x;
+    this.y = world.waterTop;
   }
 
   private fly(dt: number, world: World, asleep: boolean) {
@@ -202,7 +282,8 @@ export class SimFlier implements SimCreature {
       // The flock lands together, near its leader.
       const p = this.leader.perch;
       const x = clamp(p.x + (this.rank + 1) * 40 * (this.rank % 2 ? 1 : -1), 20, world.width - 20);
-      this.perch = world.land || world.floorAt(x) < world.waterTop - 8 ? { x, y: sandY(world, p.z, x), z: p.z } : null;
+      if (p.water) this.perch = this.onWater(world, x) ? { x, y: world.waterTop, z: p.z, water: true } : null;
+      else this.perch = world.land || world.floorAt(x) < world.waterTop - 8 ? { x, y: sandY(world, p.z, x), z: p.z } : null;
     }
 
     let tx = this.goal.x;
@@ -230,7 +311,12 @@ export class SimFlier implements SimCreature {
     this.x += this.vx * dt;
     this.y += (this.vy + wobble) * dt;
     if (this.perch && dist < 8) {
-      this.sitting = this.meal ? 2 : asleep ? 30 : 4 + Math.random() * 14;
+      if (this.perch.water) {
+        // A splash down, then a good long paddle.
+        burst(world, this.x, world.waterTop, 10);
+        this.paddleTo = this.x;
+        this.sitting = this.meal ? 4 : asleep ? 30 : 15 + Math.random() * 30;
+      } else this.sitting = this.meal ? 2 : asleep ? 30 : 4 + Math.random() * 14;
       return;
     }
     if (Math.abs(this.vx) > 10) this.facing += (Math.sign(this.vx) - this.facing) * Math.min(1, dt * 4);
@@ -251,6 +337,12 @@ export class SimFlier implements SimCreature {
     p.sx = this.facing * s;
     p.sy = s * (flying ? 1 : 1 + Math.sin(world.time * 2) * 0.015);
     p.rot = flying ? clamp(Math.atan2(this.vy, Math.abs(this.vx) + 1) * 0.5, -0.5, 0.5) * Math.sign(this.facing || 1) : 0;
+    if (!flying && this.perch?.water) {
+      // Afloat: sitting low in the water and bobbing. A dabble tips it head-down, tail up.
+      p.y += this.drawing.height * s * 0.3 + Math.sin(world.time * 1.6 + this.pace * 9) * 1.5;
+      const tip = clamp(Math.min(this.dabble, this.dabbleFor - this.dabble) * 2.5, 0, 1);
+      p.rot = tip * 1.1 * Math.sign(this.facing || 1);
+    }
     p.z = this.z;
     p.phase = this.flap;
     p.effort = 1 + Math.min(1, this.effort);

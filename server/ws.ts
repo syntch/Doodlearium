@@ -1,6 +1,10 @@
-import type { Server } from 'node:http';
+import type { IncomingMessage, Server } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { ClientMessage, ServerMessage } from '../shared/types.ts';
+import { allowedSocket } from './security.ts';
+
+/** This run of the server: screens that see it change reload, to pick up new pages after an update. */
+const VERSION = String(Date.now());
 
 /** A connected screen, and the place it's showing (null: the map, or not said yet). */
 export interface Screen {
@@ -15,7 +19,8 @@ export function attachWebSocket(
   server: Server,
   handlers: { onConnect(screen: Screen): void; onWatch(screen: Screen): void },
 ) {
-  const wss = new WebSocketServer({ server, path: '/ws' });
+  // Screens only ever say which place they're watching, so messages are kept small.
+  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 16 * 1024, verifyClient: ({ req }: { req: IncomingMessage }) => allowedSocket(req) });
   wss.on('connection', (socket) => {
     const screen: Screen = { send: (message) => socket.send(JSON.stringify(message)), place: null };
     screens.set(socket, screen);
@@ -32,6 +37,7 @@ export function attachWebSocket(
         handlers.onWatch(screen);
       }
     });
+    screen.send({ type: 'hello', version: VERSION });
     handlers.onConnect(screen);
   });
 }

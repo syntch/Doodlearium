@@ -18,8 +18,10 @@ import { addStory, historyBetween, listStories, record } from './history.ts';
 import { addDrawing, listDrawings, removeDrawing, updateDrawing } from './store.ts';
 import { BIOMES, type Biome } from '../shared/world/biomes.ts';
 import { placeById, placeName } from '../shared/world/places.ts';
-import { EGG_GAP, HATCH_TIME, arrange, drawingAdded, drawingRemoved, drawingUpdated, feed, runCommand, schedule, whereSpecies } from './world.ts';
+import { EGG_GAP, HATCH_TIME, arrange, drawingAdded, drawingRemoved, drawingUpdated, feed, runCommand, schedule, stopForUpdate, whereSpecies } from './world.ts';
 import { broadcast } from './ws.ts';
+import { rateLimit, requirePin } from './security.ts';
+import { updateInfo } from './update.ts';
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const MAX_DIMENSION = 1024;
@@ -28,6 +30,10 @@ const cleanText = (value: unknown, fallback: string) =>
   (typeof value === 'string' ? value.trim().slice(0, 40) : '') || fallback;
 
 export const api = Router();
+// Plenty for a family tapping away, not for a flood.
+const changes = rateLimit(300, 60);
+const uploads = rateLimit(30, 60, 'That\'s a lot of drawings at once: wait a minute, then try again.');
+api.use((req, res, next) => (req.method === 'GET' ? next() : changes(req, res, next)));
 api.use(express.json({ limit: '8mb' }));
 
 api.get('/drawings', (_req, res) => {
@@ -156,7 +162,7 @@ function parseAttachments(value: unknown): Attachment[] | null {
   return result;
 }
 
-api.post('/drawings', async (req, res) => {
+api.post('/drawings', uploads, async (req, res) => {
   const parsed = parseDrawing(req.body);
   if ('error' in parsed) {
     res.status(400).json({ error: parsed.error });
@@ -169,7 +175,7 @@ api.post('/drawings', async (req, res) => {
   res.status(201).json({ ...drawing, place });
 });
 
-api.put('/drawings/:id', async (req, res) => {
+api.put('/drawings/:id', uploads, async (req: express.Request<{ id: string }>, res) => {
   const parsed = parseDrawing(req.body);
   if ('error' in parsed) {
     res.status(400).json({ error: parsed.error });
@@ -322,7 +328,7 @@ api.post('/stories', async (req, res) => {
   res.status(201).json(await addStory({ title: clean, text: text.trim(), from, to }));
 });
 
-api.delete('/drawings/:id', async (req, res) => {
+api.delete('/drawings/:id', requirePin, async (req: express.Request<{ id: string }>, res) => {
   if (!(await removeDrawing(req.params.id))) {
     res.status(404).json({ error: 'not found' });
     return;
@@ -330,4 +336,20 @@ api.delete('/drawings/:id', async (req, res) => {
   broadcast({ type: 'drawing:removed', id: req.params.id });
   drawingRemoved();
   res.status(204).end();
+});
+
+/** The ⚙️ menu's 🔄 Update: the version running and (?check=1) what's new on GitHub. */
+api.get('/update', async (req, res) => {
+  res.json(await updateInfo(req.query.check === '1'));
+});
+
+/** Updates to the newest version and starts again (screens reload when it's back). */
+api.post('/update', requirePin, async (_req, res) => {
+  const info = await updateInfo(false);
+  if (!info.can) {
+    res.status(409).json({ error: info.why });
+    return;
+  }
+  res.json({ ok: true });
+  stopForUpdate();
 });

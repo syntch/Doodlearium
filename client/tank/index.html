@@ -55,6 +55,7 @@
       .menu .later { margin-top: 12px; padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.06); }
       .menu .later input[type='time'] { font: inherit; border-radius: 6px; border: 0; padding: 2px 4px; }
       .menu .note { margin: 4px 0 0; color: #9cc9e6; font-size: 13px; }
+      #update-note { white-space: pre-line; }
       /* What's coming up: shows with the buttons, and stays up on its own once something is about to happen. */
       .coming {
         position: fixed; left: 12px; top: 54px; max-width: min(320px, calc(100vw - 24px)); padding: 8px 12px;
@@ -168,6 +169,12 @@
         <button data-cmd="visit" data-value="deer">🦌 Deer</button>
         <button data-cmd="visit" data-value="owl">🦉 Owl</button>
       </div>
+      <h3>Doodlearium</h3>
+      <div class="row">
+        <button id="update-check" title="See if there's a newer version of Doodlearium on GitHub">🔄 Check for updates</button>
+        <button id="update-now" hidden>⬇️ Update now</button>
+      </div>
+      <p class="note" id="update-note"></p>
       <p class="status" id="menu-status" role="status"></p>
     </div>
     <div class="coming chrome" id="coming" hidden></div>

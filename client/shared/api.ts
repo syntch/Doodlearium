@@ -1,4 +1,43 @@
-import type { ClientMessage, Drawing, HistoryEntry, NewDrawing, NewEgg, ServerMessage, SpeciesWhere, Story, TankCommand, TankCommandValue } from '../../shared/types.ts';
+import type { ClientMessage, Drawing, HistoryEntry, NewDrawing, NewEgg, ServerMessage, SpeciesWhere, Story, TankCommand, TankCommandValue, UpdateInfo } from '../../shared/types.ts';
+
+const PIN_KEY = 'doodlearium-pin';
+
+function storedPin() {
+  try {
+    return localStorage.getItem(PIN_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Sends a request that may need the grown-up PIN: when the server asks for it, asks whoever's here, and
+ * remembers it on this device once it works.
+ */
+async function withPin(url: string, init: RequestInit): Promise<Response> {
+  let pin = storedPin();
+  let asked = false;
+  for (;;) {
+    const res = await fetch(url, { ...init, headers: { ...(init.headers as Record<string, string>), ...(pin ? { 'X-Doodlearium-Pin': pin } : {}) } });
+    if (res.status !== 401 || !(await res.clone().json().catch(() => null))?.pin) {
+      if (asked && res.ok) {
+        try {
+          localStorage.setItem(PIN_KEY, pin);
+        } catch {
+          // Not remembered: it'll be asked for again next time.
+        }
+      }
+      return res;
+    }
+    const answer = prompt(pin ? 'That PIN is not right. Grown-up PIN:' : 'This needs the grown-up PIN:');
+    if (!answer) return res;
+    pin = answer.trim();
+    asked = true;
+  }
+}
+
+/** The error a response carries, or a plain one. */
+const failure = async (res: Response, what: string) => new Error((await res.json().catch(() => null))?.error ?? `${what} (${res.status})`);
 
 export async function fetchDrawings(): Promise<Drawing[]> {
   const res = await fetch('/api/drawings');
@@ -134,25 +173,63 @@ export function setupFeedButton(button: HTMLButtonElement) {
 }
 
 export async function deleteDrawing(id: string) {
-  const res = await fetch(`/api/drawings/${id}`, { method: 'DELETE' });
-  if (!res.ok && res.status !== 404) throw new Error(`Delete failed (${res.status})`);
+  const res = await withPin(`/api/drawings/${id}`, { method: 'DELETE' });
+  if (!res.ok && res.status !== 404) throw await failure(res, 'Delete failed');
+}
+
+/** The version running, and (with check) what's new on GitHub. */
+export async function fetchUpdateInfo(check: boolean): Promise<UpdateInfo> {
+  const res = await fetch(`/api/update${check ? '?check=1' : ''}`);
+  if (!res.ok) throw await failure(res, 'Checking failed');
+  return res.json();
+}
+
+/** Has the server update itself and start again. */
+export async function startUpdate() {
+  const res = await withPin('/api/update', { method: 'POST' });
+  if (!res.ok) throw await failure(res, 'Update failed');
+}
+
+/** A note across the page while the server updates itself (the page reloads when it's back). */
+function showUpdating() {
+  if (document.getElementById('doodlearium-updating')) return;
+  const note = document.createElement('div');
+  note.id = 'doodlearium-updating';
+  note.textContent = '🔄 Updating Doodlearium… back in a minute or so';
+  Object.assign(note.style, {
+    position: 'fixed', left: '50%', top: '16px', transform: 'translateX(-50%)', zIndex: '100000', padding: '10px 20px',
+    borderRadius: '14px', background: 'rgba(12, 32, 56, 0.9)', color: '#fff', font: '600 18px system-ui, sans-serif',
+    boxShadow: '0 4px 18px rgba(0,0,0,0.3)', pointerEvents: 'none',
+  });
+  document.body.append(note);
 }
 
 /**
  * Connects to the live feed and reconnects forever; `onOpen` fires on every (re)connect so callers can resync.
- * Returns a way to tell the server things (dropped while disconnected: say them again in onOpen).
+ * Returns a way to tell the server things (dropped while disconnected: say them again in onOpen). When the
+ * server comes back as a new run (after an update or a restart), the page reloads to pick up any new pages.
  */
 export function connectLive(onMessage: (msg: ServerMessage) => void, onOpen?: () => void) {
   const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
   let retryMs = 1000;
   let ws: WebSocket;
+  let version: string | null = null;
   const open = () => {
     ws = new WebSocket(url);
     ws.onopen = () => {
       retryMs = 1000;
       onOpen?.();
     };
-    ws.onmessage = (event) => onMessage(JSON.parse(event.data));
+    ws.onmessage = (event) => {
+      const msg: ServerMessage = JSON.parse(event.data);
+      if (msg.type === 'hello') {
+        if (version && version !== msg.version) location.reload();
+        version = msg.version;
+        return;
+      }
+      if (msg.type === 'updating') showUpdating();
+      onMessage(msg);
+    };
     ws.onclose = () => {
       setTimeout(open, retryMs);
       retryMs = Math.min(retryMs * 2, 15000);

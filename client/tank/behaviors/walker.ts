@@ -1,4 +1,4 @@
-import { Container, Graphics, MeshPlane, type Texture } from 'pixi.js';
+import { Container, Graphics, MeshPlane, Sprite, type Texture } from 'pixi.js';
 import { motionOf, type Drawing } from '../../../shared/types.ts';
 import type { Pose } from '../../../shared/sim/creature.ts';
 import { Attachments } from '../attachments.ts';
@@ -8,7 +8,8 @@ import { TAU, clamp, depthOrder, depthTint, type Creature, type World } from '..
 /**
  * Animals on land. The simulation (shared/sim/walker.ts) moves them about; here the drawing stands on its
  * bottom edge with a soft shadow under it (which stays on the ground while a hopper is in the air), legs
- * marked as 🦵 parts swing in step, and a slitherer's body ripples along its length.
+ * marked as 🦵 parts swing in step, and a slitherer's body ripples along its length. Fliers use it too; a
+ * waterfowl afloat shows only faintly below the waterline, as if seen through the water.
  */
 export class Walker implements Creature {
   readonly view = new Container();
@@ -21,6 +22,10 @@ export class Walker implements Creature {
   private attachments: Attachments;
   private parts: Parts;
   private slither: boolean;
+  /** The drawing, its parts and extras, which the waterline cuts across when it's afloat. */
+  private whole = new Container();
+  /** Waterfowl: its faint underwater half, and where the waterline cuts. */
+  private float?: { below: Sprite; aboveMask: Graphics; belowMask: Graphics; afloat: boolean };
   private phase = 0;
   private stride = 0;
   private z = -1;
@@ -42,7 +47,15 @@ export class Walker implements Creature {
     this.attachments = new Attachments(drawing.attachments, this.texW, this.texH, origin);
     this.parts = new Parts(pieces, this.texW, this.texH, origin);
     this.shadow.ellipse(0, 0, this.texW * 0.42, Math.max(6, this.texH * 0.07)).fill({ color: 0x1d3310, alpha: 0.22 });
-    this.view.addChild(this.shadow, this.mesh, this.parts.container, this.attachments.container);
+    this.whole.addChild(this.mesh, this.parts.container, this.attachments.container);
+    this.view.addChild(this.shadow, this.whole);
+    if (motionOf(drawing) === 'waterfowl') {
+      const below = new Sprite({ texture, anchor: { x: 0.5, y: 1 }, tint: 0x8fc4bb, alpha: 0.4, visible: false });
+      this.float = { below, aboveMask: new Graphics(), belowMask: new Graphics(), afloat: false };
+      below.mask = this.float.belowMask;
+      this.view.addChildAt(below, 1);
+      this.view.addChild(this.float.aboveMask, this.float.belowMask);
+    }
   }
 
   labelAnchor() {
@@ -67,6 +80,7 @@ export class Walker implements Creature {
     this.view.position.set(pose.x, pose.y);
     this.view.scale.set(pose.sx, pose.sy);
     this.view.rotation = pose.rot;
+    if (this.float) this.waterline(world, pose);
     // The shadow stays on the ground, shrinking and fading as it rises (and over water there isn't one).
     const up = pose.puff / Math.max(0.001, Math.abs(pose.sy));
     this.shadow.visible = pose.puff >= 0 && pose.puff < 400;
@@ -80,6 +94,33 @@ export class Walker implements Creature {
     if (this.slither) this.bend();
     this.parts.update(dt, pose.effort, bend, pose.drowsy, { phase: pose.phase, stride: this.stride });
     this.attachments.update(dt, world, bend);
+  }
+
+  /** Afloat, the waterline cuts across it: clear above, faint and watery below. */
+  private waterline(world: World, pose: Pose) {
+    const f = this.float!;
+    const afloat = !world.land && pose.y > world.waterTop + 0.5;
+    if (afloat !== f.afloat) {
+      f.afloat = afloat;
+      f.below.visible = afloat;
+      this.whole.mask = afloat ? f.aboveMask : null;
+    }
+    if (!afloat) return;
+    // The view is moved, scaled and turned, so the waterline is drawn in its own (local) terms.
+    const cos = Math.cos(-pose.rot);
+    const sin = Math.sin(-pose.rot);
+    const local = (x: number, y: number) => {
+      const dx = x - pose.x;
+      const dy = y - pose.y;
+      return [(dx * cos - dy * sin) / pose.sx, (dx * sin + dy * cos) / pose.sy];
+    };
+    const r = Math.max(this.texW * Math.abs(pose.sx), this.texH * Math.abs(pose.sy)) * 2;
+    const line = world.waterTop;
+    const box = (top: number, bottom: number) => [
+      ...local(pose.x - r, top), ...local(pose.x + r, top), ...local(pose.x + r, bottom), ...local(pose.x - r, bottom),
+    ];
+    f.aboveMask.clear().poly(box(line - r, line)).fill(0xffffff);
+    f.belowMask.clear().poly(box(line, line + r)).fill(0xffffff);
   }
 
   /**

@@ -15,6 +15,7 @@ const ABOUT: Record<string, string> = {
   hopper: 'Hops about, keeping an eye on everything',
   slitherer: 'Slides through the grass, curling up for naps',
   flier: 'Flies about, landing to rest now and then',
+  waterfowl: 'Paddles about the water, dabbling for snacks',
 };
 
 /** A line about what the creature is like, if there's something to say. */

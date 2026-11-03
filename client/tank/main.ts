@@ -5,7 +5,7 @@ import { unpackPose, type MapSummary, type RosterEntry, type Settings, type Upco
 import { WORLD_H, WORLD_W, groundBand, sandY } from '../../shared/sim/world.ts';
 import { depthScale } from '../../shared/sim/math.ts';
 import { MAP_H, MAP_W, placeById } from '../../shared/world/places.ts';
-import { arrangeStill, connectLive, feedFish, fetchDrawings, layEgg, scheduleTankCommand, sendTankCommand, showEverywhere } from '../shared/api.ts';
+import { arrangeStill, connectLive, feedFish, fetchDrawings, fetchUpdateInfo, layEgg, scheduleTankCommand, sendTankCommand, showEverywhere, startUpdate } from '../shared/api.ts';
 import { Glow, loadGlow, type GlowTextures } from './glow.ts';
 import { PORTHOLE, WorldMap } from './map.ts';
 import { makeEgg } from './babies.ts';
@@ -846,6 +846,55 @@ function showSettings(settings: Settings) {
   }
 }
 
+// --- 🔄 updates: a newer version from GitHub, in one tap --------------------------------------------------
+
+const updateCheck = document.querySelector<HTMLButtonElement>('#update-check')!;
+const updateNow = document.querySelector<HTMLButtonElement>('#update-now')!;
+const updateNote = document.querySelector<HTMLParagraphElement>('#update-note')!;
+
+const day = (iso: string) => new Date(iso).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
+
+updateCheck.onclick = async () => {
+  updateCheck.disabled = true;
+  updateNow.hidden = true;
+  updateNote.textContent = 'Checking GitHub…';
+  try {
+    const info = await fetchUpdateInfo(true);
+    const lines: string[] = [];
+    const changes = info.changes ?? [];
+    if (!info.can) lines.push(info.why ?? "This server can't update itself.");
+    else if (info.error) lines.push(info.error);
+    else if (!changes.length) lines.push(`✓ Up to date${info.version ? ` (the version from ${day(info.version.date)})` : ''}.`);
+    else {
+      lines.push(`${changes.length} new change${changes.length === 1 ? '' : 's'}:`, ...changes.slice(0, 6).map((c) => `• ${c}`));
+      if (changes.length > 6) lines.push(`…and ${changes.length - 6} more`);
+      if (info.dirty) lines.push('(Some files were changed by hand on the server. If they get in the way, the update says so and nothing changes.)');
+      updateNow.hidden = false;
+    }
+    const last = info.last;
+    if (last && !last.ok && Date.now() - last.at < 7 * 24 * 3600_000) lines.push(`Last time: ${last.message}`);
+    updateNote.textContent = lines.join('\n');
+  } catch {
+    updateNote.textContent = "Couldn't reach the server.";
+  } finally {
+    updateCheck.disabled = false;
+  }
+};
+
+updateNow.onclick = async () => {
+  if (!confirm('Update Doodlearium now? Every screen reloads when it is back, in a minute or so.')) return;
+  updateNow.disabled = true;
+  try {
+    await startUpdate();
+    updateNow.hidden = true;
+    updateNote.textContent = '🔄 Updating… every screen reloads when it is back.';
+  } catch (err) {
+    updateNote.textContent = err instanceof Error ? err.message : 'Update failed.';
+  } finally {
+    updateNow.disabled = false;
+  }
+};
+
 // --- coming up: the next few happenings, so the family can tune in -----------------------------------------
 
 let upcoming: Upcoming[] = [];
@@ -905,6 +954,7 @@ const STYLE_NAMES: Record<Motion, string> = {
   hopper: '🐇 Hopper',
   slitherer: '🐍 Slitherer',
   flier: '🐦 Flier',
+  waterfowl: '🦆 Waterfowl',
 };
 
 const info = document.querySelector<HTMLDivElement>('#info')!;

@@ -74,6 +74,7 @@ export class Tank {
       case 'crawler':
         return new SimCrawler(id, drawing, this.world, dropIn, saved);
       case 'flier':
+      case 'waterfowl':
         return new SimFlier(id, drawing, this.world, dropIn, saved, grownFrom);
       case 'walker':
       case 'hopper':
@@ -326,7 +327,7 @@ export class Tank {
 
   /** A grown-up fish that could have a baby. */
   canParent(d: Drawing) {
-    return !d.parents && ['fish', 'walker', 'hopper', 'slitherer', 'flier'].includes(motionOf(d));
+    return !d.parents && ['fish', 'walker', 'hopper', 'slitherer', 'flier', 'waterfowl'].includes(motionOf(d));
   }
 
   /** Whether a baby (hatched at grownFrom) has grown up: a week old. */
