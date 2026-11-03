@@ -16,8 +16,10 @@ import {
 import { Tank } from '../shared/sim/tank.ts';
 import { FILM_SECONDS, pickVisitor } from '../shared/sim/visitors.ts';
 import { habitatOf, motionOf, type Drawing, type SpeciesWhere, type TankCommand, type TankCommandValue } from '../shared/types.ts';
-import { LIVE_PLACES, placeName, type Place } from '../shared/world/places.ts';
+import { hasWeather } from '../shared/world/biomes.ts';
+import { LIVE_PLACES, allWorlds, placeById, placeName, worldOf, type Place } from '../shared/world/places.ts';
 import { populate, turnover, type Individual } from '../shared/world/population.ts';
+import { worldsOfDrawing } from './packs.ts';
 import { record } from './history.ts';
 import { DATA_DIR, listDrawings } from './store.ts';
 import { UPDATE_EXIT, freshUpdate } from './update.ts';
@@ -92,13 +94,13 @@ class Spot {
   /** The next rain (or snow) shower, for places with a sky. */
   nextShower = Date.now() + rand(20, 45) * MINUTE;
 
-  constructor(readonly place: Place) {
+  constructor(public place: Place) {
     this.tank = new Tank(place.biome);
   }
 
-  /** Land places, and water places with sky above the water. */
+  /** Land places, and water places with sky above the water (but no weather out in space or in a station). */
   get hasSky() {
-    return this.tank.world.land === true || this.tank.world.waterTop > 0;
+    return hasWeather(this.place.biome) && (this.tank.world.land === true || this.tank.world.waterTop > 0);
   }
 
   get id() {
@@ -106,7 +108,26 @@ class Spot {
   }
 }
 
-const spots = new Map(LIVE_PLACES.map((p) => [p.id, new Spot(p)]));
+/** Every open place's tank, in every world (places open and close as worlds come and go: see openSpots). */
+const spots = new Map<string, Spot>();
+
+/** Opens a tank for every place there is now, and closes the ones whose world (or place) has gone. */
+function openSpots() {
+  for (const p of LIVE_PLACES) {
+    const had = spots.get(p.id);
+    // A place whose kind changed starts over as the new kind.
+    if (!had || had.place.biome !== p.biome) spots.set(p.id, new Spot(p));
+    else (had as { place: Place }).place = p;
+  }
+  for (const id of [...spots.keys()]) if (!placeById(id)) spots.delete(id);
+}
+
+/** A world was made, changed, installed or removed: open and close places, and move everyone to suit. */
+export function worldsChanged() {
+  openSpots();
+  resync();
+  broadcast({ type: 'map', places: mapSummary(), species: speciesCounts() });
+}
 let individuals: Individual[] = [];
 let settings: Settings = { hour: null, season: null, blacklight: false };
 let scheduled: Scheduled[] = [];
@@ -163,7 +184,8 @@ export async function startWorld() {
   if (save.lastSeason) lastSeason = save.lastSeason;
   applySettings();
 
-  individuals = populate(listDrawings(), individuals);
+  openSpots();
+  individuals = populate(listDrawings(), individuals, undefined, worldsOfDrawing);
   for (const spot of spots.values()) {
     const ps = places[spot.id];
     spot.tank.world.time = ps?.time ?? 0;
@@ -222,11 +244,15 @@ function specsFor(place: string): Spec[] {
 /** Re-works out who lives where (after a drawing comes, goes or changes) and brings every place in line. */
 function resync(fresh = new Set<string>()) {
   const before = new Map(individuals.filter((i) => i.named).map((i) => [i.id, i.place]));
-  individuals = populate(listDrawings(), individuals, fresh);
+  individuals = populate(listDrawings(), individuals, fresh, worldsOfDrawing);
   for (const i of individuals) {
     const was = before.get(i.id);
     if (i.named && was && was !== i.place) {
-      record('travels', [i.id], `🧳 ${nameOf(i.id, true)} went on its travels, from ${placeName(was)} to ${placeName(i.place)}.`, i.place);
+      // Off to another world: say which.
+      const there = worldOf(i.place);
+      const far = placeById(was) && worldOf(was).id !== there.id ? ` in ${there.name}` : '';
+      const from = placeById(was) ? ` from ${placeName(was)}` : '';
+      record('travels', [i.id], `🧳 ${nameOf(i.id, true)} went on its travels${from}, to ${placeName(i.place)}${far}.`, i.place);
     }
   }
   for (const spot of spots.values()) spot.tank.sync(specsFor(spot.id), {}, true);
@@ -234,6 +260,7 @@ function resync(fresh = new Set<string>()) {
 
 /** What a screen needs when it connects. */
 export function onConnect(screen: Screen) {
+  screen.send({ type: 'worlds', worlds: allWorlds() });
   screen.send({ type: 'upcoming', items: upcoming() });
   screen.send({ type: 'map', places: mapSummary(), species: speciesCounts() });
   onWatch(screen);
@@ -449,7 +476,7 @@ export function runCommand(command: TankCommand, value: TankCommandValue, place?
     case 'rain':
     case 'snow':
     case 'rainbow':
-      if (!spot.hasSky) return `☁️ There's no sky to see ${at(spot)}: try a place with sky above it.`;
+      if (!spot.hasSky) return `☁️ There's no weather ${at(spot)}: try a place with sky above it.`;
       startShower(spot, command);
       break;
   }

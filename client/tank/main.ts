@@ -3,11 +3,25 @@ import { imageUrl, motionOf, type Drawing, type Motion, type TankCommand, type T
 import { newPose, type Kind, type Personality, type Pose } from '../../shared/sim/creature.ts';
 import { unpackPose, type MapSummary, type RosterEntry, type Settings, type Upcoming } from '../../shared/sim/protocol.ts';
 import { WORLD_H, WORLD_W, groundBand, sandY } from '../../shared/sim/world.ts';
-import { depthScale } from '../../shared/sim/math.ts';
-import { MAP_H, MAP_W, placeById } from '../../shared/world/places.ts';
-import { arrangeStill, connectLive, feedFish, fetchDrawings, fetchUpdateInfo, layEgg, scheduleTankCommand, sendTankCommand, showEverywhere, startUpdate } from '../shared/api.ts';
+import { depthScale, seededRandom } from '../../shared/sim/math.ts';
+import { MAP_H, MAP_W, allWorlds, placeById, worldById, worldOf } from '../../shared/world/places.ts';
+import {
+  arrangeStill,
+  connectLive,
+  feedFish,
+  fetchDrawings,
+  fetchUpdateInfo,
+  layEgg,
+  loadWorlds,
+  scheduleTankCommand,
+  sendTankCommand,
+  showEverywhere,
+  startUpdate,
+} from '../shared/api.ts';
 import { Glow, loadGlow, type GlowTextures } from './glow.ts';
-import { PORTHOLE, WorldMap } from './map.ts';
+import { PORTHOLE, WorldMap, type MapLooks } from './map.ts';
+import { spaceHaze } from './spacescene.ts';
+import { lookOf } from '../../shared/world/looks.ts';
 import { makeEgg } from './babies.ts';
 import { Documentary, aboutOf } from './documentary.ts';
 import { Events } from './events.ts';
@@ -81,8 +95,15 @@ await app.init({ resizeTo: window, antialias: true, background: 0x0a3456, autoDe
 document.body.append(app.canvas);
 
 const scene = new Scene();
+let mapSummary: MapSummary | null = null;
+/** The map only shows species this screen has heard of (the drawings may still be loading). */
+const knownOnly = (summary: MapSummary): MapSummary =>
+  Object.fromEntries(Object.entries(summary).map(([id, s]) => [id, { ...s, species: s.species.filter((sp) => known.has(sp)) }]));
 const food = new Food();
 const PLACE_KEY = 'doodlearium:place';
+const WORLD_KEY = 'doodlearium:world';
+// Which worlds (and places) there are, before anything looks a place up.
+await loadWorlds().catch(() => {});
 /** The place on screen (null: the map): ?place= (for a bookmark), else the one watched last; the map at first. */
 let place: string | null = (() => {
   const asked = new URLSearchParams(location.search).get('place');
@@ -93,7 +114,19 @@ let place: string | null = (() => {
   } catch {}
   return null;
 })();
-const world: World = { width: WORLD_W, height: WORLD_H, ...shapeFor(placeById(place ?? 'lake')!.biome), time: 0, scene, current: 0 };
+/** The world whose map this screen shows: its place's, else ?world=, else the one shown last; Earth at first. */
+let currentWorld: string = (() => {
+  if (place) return worldOf(place).id;
+  const asked = new URLSearchParams(location.search).get('world');
+  if (worldById(asked ?? undefined)) return asked!;
+  try {
+    const last = localStorage.getItem(WORLD_KEY);
+    if (worldById(last ?? undefined)) return last!;
+  } catch {}
+  return 'earth';
+})();
+const firstPlace = placeById(place ?? 'lake')!;
+const world: World = { width: WORLD_W, height: WORLD_H, ...shapeFor(firstPlace.biome, firstPlace.look), time: 0, scene, current: 0 };
 const timeline = new Timeline();
 const creatureLayer = new Container({ sortableChildren: true });
 /** Night creatures sit above the night tint, so they stay bright while the rest of the tank dims. */
@@ -124,8 +157,8 @@ const documentary = new Documentary(camera);
 const events = new Events({ back: eventBack, front: eventFront, among: creatureLayer });
 const sounds = new Sounds();
 scene.onBloop = () => sounds.bubble();
-/** The map of the whole world; a place's view shows through its porthole while zooming in and out. */
-const worldMap = new WorldMap({
+/** The map of the world on show; a place's view shows through its porthole while zooming in and out. */
+const mapLooks: MapLooks = {
   use(species) {
     const d = known.get(species);
     if (!d) return null;
@@ -134,8 +167,21 @@ const worldMap = new WorldMap({
     const stand = motion === 'plant' || motion === 'decor' ? 'still' : ['walker', 'hopper', 'slitherer', 'crawler'].includes(motion) ? 'walks' : 'swims';
     return { texture: look.ready.then((l) => (l ? wholePicture(l) : null)), release: () => releaseLook(look), stand };
   },
-});
-worldMap.onPick = (id) => enterPlace(id);
+};
+function makeMap(id: string) {
+  const map = new WorldMap(mapLooks, worldById(id) ?? allWorlds()[0]);
+  map.onPick = (place) => enterPlace(place);
+  if (mapSummary) map.setSummary(knownOnly(mapSummary));
+  return map;
+}
+let worldMap = makeMap(currentWorld);
+/** Draws the map afresh (the world changed, or its places did). */
+function replaceMap(id: string) {
+  const old = worldMap;
+  worldMap = makeMap(id);
+  app.stage.addChildAt(worldMap.view, app.stage.getChildIndex(old.view));
+  old.view.destroy({ children: true });
+}
 const porthole = new Graphics();
 const mapHint = new Text({
   text: 'Tap a place to dive in',
@@ -146,7 +192,7 @@ app.stage.addChild(worldMap.view, fit, porthole, documentary.spotlight, labelLay
 // A handle for poking at the tank from the browser console.
 Object.assign(window, {
   doodlearium: {
-    app, world, timeline, worldMap, entries: () => entries, looks: () => looks, pose: (id: string) => entries.get(id)?.pose,
+    app, world, timeline, map: () => worldMap, travelTo: (id: string) => travelTo(id), entries: () => entries, looks: () => looks, pose: (id: string) => entries.get(id)?.pose,
     enterPlace: (id: string) => enterPlace(id), showMap: () => showMap(), zoom: () => zoom,
   },
 });
@@ -533,6 +579,9 @@ const send = connectLive(
       case 'show':
         enterPlace(msg.place);
         break;
+      case 'worlds':
+        worldsChanged();
+        break;
       case 'drawing:added':
       case 'drawing:updated':
         known.set(msg.drawing.id, msg.drawing);
@@ -557,10 +606,6 @@ const send = connectLive(
 
 // --- the map and places: zooming through a porthole into a place, and back out ----------------------------
 
-let mapSummary: MapSummary | null = null;
-/** The map only shows species this screen has heard of (the drawings may still be loading). */
-const knownOnly = (summary: MapSummary): MapSummary =>
-  Object.fromEntries(Object.entries(summary).map(([id, s]) => [id, { ...s, species: s.species.filter((sp) => known.has(sp)) }]));
 
 const ZOOM_SECONDS = 1.1;
 /** 0 on the map, 1 in a place; eases between the two. */
@@ -577,9 +622,13 @@ function remember(view: string) {
   } catch {}
 }
 
-/** Dives into a place from the map (or, from another place, back out and in again). */
+/** Dives into a place from the map (or, from another place, back out and in again; in another world, travel). */
 function enterPlace(id: string) {
   if (!placeById(id)?.live) return;
+  if (worldOf(id).id !== currentWorld || travel) {
+    travelTo(worldOf(id).id, id);
+    return;
+  }
   if (place === id) {
     zoomTo = 1;
     nextPlace = null;
@@ -604,6 +653,131 @@ function showMap() {
 }
 mapButton.onclick = () => showMap();
 
+// --- travelling between worlds -----------------------------------------------------------------------------
+
+const TRAVEL_SECONDS = 3.2;
+/** Off to another world: out to the stars, a rocket across, and into the new world's map. */
+let travel: { t: number; to: string; then?: string; swapped: boolean } | null = null;
+/** Going to travel once this screen is back out on the map. */
+let travelNext: { to: string; then?: string } | null = null;
+const stars = new Graphics();
+const rocket = new Text({ text: '🚀', style: { fontSize: 64 }, anchor: 0.5 });
+const trail = new Graphics();
+const travelLayer = new Container();
+travelLayer.addChild(stars, trail, rocket);
+travelLayer.visible = false;
+app.stage.addChild(travelLayer);
+const worldsBar = document.querySelector<HTMLDivElement>('#worlds')!;
+const tripStars = Array.from({ length: 120 }, (_, i) => {
+  const rand = seededRandom(`trip${i}`);
+  return { x: rand(), y: rand(), speed: rand(0.6, 1.4), len: rand(0.5, 1), size: rand(1, 2.5), alpha: rand(0.4, 1) };
+});
+
+function travelTo(to: string, then?: string) {
+  if (!worldById(to)) return;
+  if (to === currentWorld && !travel) {
+    if (then) enterPlace(then);
+    return;
+  }
+  if (travel) {
+    // Already on the way: go on from there.
+    travel.to = to;
+    travel.then = then;
+    return;
+  }
+  if (place && zoom > 0) {
+    travelNext = { to, then };
+    showMap();
+    return;
+  }
+  travel = { t: 0, to, then, swapped: false };
+  sounds.whoosh();
+  renderWorlds();
+}
+
+/** How big the map is drawn while travelling (1: as usual), and moves the stars and the rocket along. */
+function updateTravel(dt: number) {
+  if (!travel) return 1;
+  travel.t = Math.min(1, travel.t + dt / TRAVEL_SECONDS);
+  const t = travel.t;
+  const { width, height } = screenSize;
+  // Halfway, while the stars cover everything, the new world's map takes the old one's place.
+  if (t >= 0.5 && !travel.swapped) {
+    travel.swapped = true;
+    currentWorld = travel.to;
+    try {
+      localStorage.setItem(WORLD_KEY, currentWorld);
+    } catch {}
+    replaceMap(currentWorld);
+  }
+  const cover = t < 0.3 ? ease(t / 0.3) : t > 0.7 ? 1 - ease((t - 0.7) / 0.3) : 1;
+  travelLayer.visible = true;
+  travelLayer.alpha = cover;
+  const g = stars.clear().rect(0, 0, width, height).fill(0x050818);
+  // Stars stream past, faster in the middle of the trip.
+  const speed = Math.sin(t * Math.PI);
+  for (const st of tripStars) {
+    const x = ((((st.x - t * (1 + speed * 3) * st.speed) % 1) + 1) % 1) * width;
+    g.rect(x, st.y * height, 4 + speed * 60 * st.len, st.size).fill({ color: 0xffffff, alpha: st.alpha });
+  }
+  // The rocket crosses with a sparkly trail.
+  const u = Math.min(1, Math.max(0, (t - 0.2) / 0.6));
+  const rx = -80 + u * (width + 160);
+  const ry = height * 0.5 + Math.sin(u * Math.PI * 2) * height * 0.08;
+  rocket.position.set(rx, ry);
+  rocket.rotation = Math.PI / 4 + Math.cos(u * Math.PI * 2) * 0.25;
+  rocket.visible = u > 0 && u < 1;
+  const tr = trail.clear();
+  for (let i = 1; i < 14; i++) {
+    const k = Math.max(0, u - i * 0.012);
+    const tx = -80 + k * (width + 160);
+    const ty = height * 0.5 + Math.sin(k * Math.PI * 2) * height * 0.08;
+    tr.circle(tx - 30, ty + 30, 10 - i * 0.6).fill({ color: i % 2 ? 0xffd98a : 0xff7ad9, alpha: (1 - i / 14) * 0.8 });
+  }
+  if (t >= 1) {
+    const then = travel.then;
+    travel = null;
+    travelLayer.visible = false;
+    renderWorlds();
+    if (then) enterPlace(then);
+    return 1;
+  }
+  // The old map shrinks away into the stars, and the new one grows out of them.
+  return t < 0.5 ? 1 - 0.8 * ease(Math.min(1, t / 0.4)) : 0.2 + 0.8 * ease(Math.max(0, (t - 0.6) / 0.4));
+}
+
+/** The worlds strip along the bottom of the map (only when there's more than one world). */
+function renderWorlds() {
+  const worlds = allWorlds();
+  worldsBar.hidden = worlds.length < 2 || zoomTo !== 0 || !!travel;
+  if (worldsBar.hidden) return;
+  const key = JSON.stringify([currentWorld, worlds.map((w) => [w.id, w.name, w.icon])]);
+  if (worldsBar.dataset.key === key) return;
+  worldsBar.dataset.key = key;
+  worldsBar.replaceChildren(
+    ...worlds.map((w) => {
+      const b = document.createElement('button');
+      b.textContent = `${w.icon} ${w.name}`;
+      b.title = w.id === currentWorld ? `You're in ${w.name}` : `Travel to ${w.name}`;
+      b.setAttribute('aria-pressed', String(w.id === currentWorld));
+      b.onclick = () => travelTo(w.id);
+      return b;
+    }),
+  );
+}
+
+/** A world was made, changed, installed or removed: redraw the map, and leave a place (or world) that's gone. */
+function worldsChanged() {
+  if (place && !placeById(place)) showMap();
+  if (!worldById(currentWorld)) {
+    travelTo('earth');
+    return;
+  }
+  if (!travel) replaceMap(currentWorld);
+  delete worldsBar.dataset.key;
+  renderWorlds();
+}
+
 /** Shows a place's creatures (null: none, on the map): everyone here goes and the new place's creatures load. */
 function watch(id: string | null) {
   if (id === place) return;
@@ -616,8 +790,10 @@ function watch(id: string | null) {
   roster = [];
   timeline.clear();
   if (id) {
-    Object.assign(world, { land: false, groundDepth: undefined }, shapeFor(placeById(id)!.biome));
-    setHaze(Boolean(world.land));
+    const p = placeById(id)!;
+    Object.assign(world, { land: false, groundDepth: undefined, gravity: undefined }, shapeFor(p.biome, p.look));
+    const space = lookOf(p.biome, p.look);
+    setHaze(Boolean(world.land), space && spaceHaze(space));
     screenSize.width = 0;
     relayoutIfResized();
   }
@@ -631,7 +807,11 @@ function updateZoom(dt: number) {
   zoom += Math.max(-dt / ZOOM_SECONDS, Math.min(dt / ZOOM_SECONDS, zoomTo - zoom));
   if (zoom === 0 && zoomTo === 0) {
     if (place) watch(null);
-    if (nextPlace) {
+    if (travelNext) {
+      const { to, then } = travelNext;
+      travelNext = null;
+      travelTo(to, then);
+    } else if (nextPlace) {
       const id = nextPlace;
       nextPlace = null;
       enterPlace(id);
@@ -639,10 +819,11 @@ function updateZoom(dt: number) {
   }
   const { width, height } = screenSize;
   const e = ease(zoom);
-  // The whole map fits; a tall phone sees just the open places, bigger (they span about 780 map units across).
+  // The whole map fits; a tall phone sees just the places, bigger.
   const portrait = width < height;
-  const s0 = portrait ? Math.min(height / MAP_H, width / 780) : Math.min(width / MAP_W, height / MAP_H) * 0.98;
-  const c0 = { x: portrait ? 555 : MAP_W / 2, y: portrait ? 400 : MAP_H / 2 };
+  const frame = worldMap.frame();
+  const s0 = (portrait ? Math.min(height / MAP_H, width / frame.span) : Math.min(width / MAP_W, height / MAP_H) * 0.98) * updateTravel(dt);
+  const c0 = { x: portrait ? frame.x : MAP_W / 2, y: portrait ? frame.y : MAP_H / 2 };
   // Zoomed all the way in, the porthole covers the screen.
   const s1 = (Math.hypot(width, height) / 2 / PORTHOLE) * 1.05;
   const s = s0 * Math.pow(s1 / s0, e);
@@ -675,6 +856,7 @@ function updateZoom(dt: number) {
   mapHint.alpha = 1 - Math.min(1, zoom * 4);
   mapHint.visible = zoom < 0.25;
   mapButton.hidden = zoomTo === 0;
+  renderWorlds();
 }
 
 /** The server asked this screen to blend two parents into a baby (that takes a browser) and lay its egg. */
@@ -913,7 +1095,7 @@ function when(at: number) {
 function showComingUp() {
   const items = upcoming.filter((u) => u.at > Date.now() - 60_000).sort((a, b) => a.at - b.at).slice(0, 3);
   const lines = items.map((u) => ({ text: `${u.icon} ${u.text}`, when: when(u.at), soon: u.at - Date.now() < SOON }));
-  const key = JSON.stringify(lines);
+  const key = JSON.stringify([currentWorld, lines]);
   if (key === comingShown) return;
   comingShown = key;
   coming.hidden = !lines.length;
@@ -927,7 +1109,10 @@ function showComingUp() {
       const where = items[i].place;
       if (where && placeById(where)?.live) {
         div.className = 'go';
-        div.title = `Go to ${placeById(where)!.name}`;
+        // In another world: say which.
+        const far = worldOf(where).id !== currentWorld ? ` (in ${worldOf(where).name})` : '';
+        if (far) div.firstChild!.textContent = `${l.text}${far} `;
+        div.title = `Go to ${placeById(where)!.name}${far}`;
         div.onclick = () => enterPlace(where);
       }
       return div;

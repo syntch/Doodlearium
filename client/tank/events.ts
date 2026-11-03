@@ -619,7 +619,91 @@ const owl: TankEvent = {
   },
 };
 
-const EVENTS: Record<string, TankEvent> = { whale, diver, ghost, ducks, heron, gulls, tractor, kite, balloon, deer, owl };
+const comet: TankEvent = {
+  name: 'comet',
+  start(world, layers, rand, seconds) {
+    // A bright head with a long glowing tail, sailing slowly across the sky.
+    const node = new Container();
+    const s = world.height * 0.05;
+    const tail = new Graphics();
+    for (let i = 8; i >= 1; i--) tail.ellipse(-s * i * 0.9, 0, s * i * 1.1, s * (0.25 + i * 0.07)).fill({ color: i % 2 ? 0x9fe8ff : 0xffffff, alpha: 0.05 + 0.02 * (8 - i) });
+    const head = new Graphics().circle(0, 0, s * 1.6).fill({ color: 0xbff3ff, alpha: 0.25 }).circle(0, 0, s * 0.7).fill(0xffffff);
+    node.addChild(tail, head);
+    node.rotation = rand(-0.12, 0.12);
+    layers.back.addChild(node);
+    const move = crossing(node, world, seconds, world.height * rand(0.12, 0.3), world.height * 0.01, rand);
+    return {
+      update(_dt, _world, t) {
+        head.scale.set(1 + Math.sin(t * 6) * 0.06);
+        return move(t);
+      },
+      destroy: () => node.destroy({ children: true }),
+    };
+  },
+};
+
+const cargo: TankEvent = {
+  name: 'cargo',
+  start(world, layers, rand, seconds) {
+    // A big boxy cargo ship drifting by far off, its containers in a row and its engines glowing.
+    const node = new Container();
+    const s = world.height * 0.12;
+    const hull = new Graphics()
+      .roundRect(-s * 1.6, -s * 0.3, s * 3.2, s * 0.6, s * 0.12).fill(0x6f7a8c)
+      .poly([s * 1.6, -s * 0.3, s * 2.2, -s * 0.05, s * 2.2, s * 0.05, s * 1.6, s * 0.3]).fill(0x8a95a8)
+      .roundRect(s * 1.5, -s * 0.12, s * 0.35, s * 0.12, s * 0.04).fill(0x9fe8ff);
+    const boxes = [0xe0703a, 0x3a8fe0, 0xe0c03a, 0x4fbf6a];
+    for (let i = 0; i < 4; i++) hull.rect(-s * 1.4 + i * s * 0.72, -s * 0.62, s * 0.62, s * 0.34).fill(boxes[(i + Math.floor(rand(0, 4))) % 4]);
+    const flame = new Graphics();
+    node.addChild(flame, hull);
+    node.alpha = 0.75;
+    node.scale.set(0.8);
+    layers.back.addChild(node);
+    const move = crossing(node, world, seconds, world.height * rand(0.16, 0.3), world.height * 0.015, rand);
+    return {
+      update(_dt, _world, t) {
+        const f = 1 + Math.sin(t * 20) * 0.15;
+        flame.clear().ellipse(-s * 1.75, -s * 0.12, s * 0.25 * f, s * 0.09).fill(0xffa23a).ellipse(-s * 1.75, s * 0.12, s * 0.25 * f, s * 0.09).fill(0xffa23a);
+        return move(t);
+      },
+      destroy: () => node.destroy({ children: true }),
+    };
+  },
+};
+
+const saucer: TankEvent = {
+  name: 'saucer',
+  start(world, layers, rand, seconds) {
+    // A little flying saucer wobbles across, its lights blinking round the rim, and stops to shine its beam down.
+    const node = new Container();
+    const s = world.height * 0.07;
+    const beam = new Graphics();
+    const body = new Graphics()
+      .ellipse(0, -s * 0.3, s * 0.55, s * 0.5).fill({ color: 0xbff3ff, alpha: 0.8 })
+      .ellipse(0, 0, s * 1.4, s * 0.38).fill(0x9aa5b8)
+      .ellipse(0, -s * 0.08, s * 1.2, s * 0.18).fill(0xc8d0dc);
+    const lights = new Graphics();
+    node.addChild(beam, body, lights);
+    layers.back.addChild(node);
+    const move = crossing(node, world, seconds, world.height * rand(0.2, 0.32), world.height * 0.03, rand);
+    return {
+      update(_dt, _world, t) {
+        lights.clear();
+        for (let k = 0; k < 6; k++) lights.circle(-s * 1.1 + k * s * 0.44, s * 0.1, s * 0.09).fill(Math.floor(t * 4 + k) % 2 ? 0xffe14a : 0xff5ca8);
+        node.rotation = Math.sin(t * 2.3) * 0.08;
+        // Halfway across, it stops a moment to beam down a glow.
+        const p = t / seconds;
+        const on = Math.max(0, 1 - Math.abs(p - 0.5) / 0.08);
+        beam.clear();
+        if (on > 0) beam.poly([-s * 0.5, s * 0.2, s * 0.5, s * 0.2, s * 1.6, s * 6, -s * 1.6, s * 6]).fill({ color: 0xd9ff8a, alpha: on * 0.25 });
+        return move(t);
+      },
+      destroy: () => node.destroy({ children: true }),
+    };
+  },
+};
+
+const EVENTS: Record<string, TankEvent> = { whale, diver, ghost, ducks, heron, gulls, tractor, kite, balloon, deer, owl, comet, cargo, saucer };
 
 /** Shows the visit the simulation says is happening (if any), from where it's got to. */
 export class Events {

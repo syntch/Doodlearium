@@ -37,12 +37,17 @@ export const VISITOR_PACKS: Record<string, VisitorInfo[]> = {
     { name: 'deer', icon: '🦌', text: 'a deer', weight: 1, seconds: 30, biomes: ['forest'] },
     { name: 'owl', icon: '🦉', text: 'an owl', weight: 1.5, seconds: 30, biomes: ['forest'], night: true },
   ],
+  space: [
+    { name: 'comet', icon: '☄️', text: 'a comet', weight: 1, seconds: 30, biomes: ['space', 'moon', 'garden'] },
+    { name: 'cargo', icon: '🚀', text: 'a cargo ship', weight: 1, seconds: 45, biomes: ['space', 'station', 'moon'] },
+    { name: 'saucer', icon: '🛸', text: 'a flying saucer', weight: 1, seconds: 32, biomes: ['station', 'garden', 'moon'] },
+  ],
   spooky: [{ name: 'ghost', icon: '👻', text: 'a friendly ghost', weight: 1.5, seconds: 22 }],
 };
 
 export const ALL_VISITORS = Object.values(VISITOR_PACKS).flat();
 
-export const visitorPacks = (season: Season) => ['water', 'land', ...(season.halloween ? ['spooky'] : [])];
+export const visitorPacks = (season: Season) => ['water', 'land', 'space', ...(season.halloween ? ['spooky'] : [])];
 
 /** A random visitor from the packs in play that suits the biome (and the time of day), or a named one. */
 export function pickVisitor(season: Season, name?: string, biome?: Biome, night = false): VisitorInfo | undefined {

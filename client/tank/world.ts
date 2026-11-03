@@ -21,6 +21,8 @@ export interface World extends Shape {
   /** Top edge of the sand at its deepest. */
   floorY: number;
   biome: Biome;
+  /** The place's colour scheme, for the space kinds (see shared/world/looks.ts). */
+  look?: string;
   /** Seconds since the world began. */
   time: number;
   scene: Scene;
@@ -28,10 +30,10 @@ export interface World extends Shape {
   current: number;
 }
 
-/** The lie of the land for a biome: where the water starts and where the bottom is. */
-export function shapeFor(biome: Biome) {
+/** The lie of the land for a biome: where the water starts and where the bottom is (and its colours). */
+export function shapeFor(biome: Biome, look?: string) {
   const shape = shapeOf(biome, WORLD_W, WORLD_H);
-  return { biome, ...shape, floorY: shape.floorAt(WORLD_W) };
+  return { biome, look, ...shape, floorY: shape.floorAt(WORLD_W) };
 }
 
 /** A drawing on screen: it draws itself at the pose the simulation gives it. */
@@ -54,8 +56,8 @@ const WATER = { r: 0x5f, g: 0x9f, b: 0xc4, amount: 0.3 };
 const AIR = { r: 0xc4, g: 0xd8, b: 0xe6, amount: 0.25 };
 let haze = WATER;
 /** Under water, far things fade toward the water's blue; on land, toward a pale haze. Set when the place changes. */
-export function setHaze(land: boolean) {
-  haze = land ? AIR : WATER;
+export function setHaze(land: boolean, tint?: number) {
+  haze = tint === undefined ? (land ? AIR : WATER) : { r: (tint >> 16) & 255, g: (tint >> 8) & 255, b: tint & 255, amount: 0.25 };
 }
 /** Far things are washed toward the water colour (or the haze on land). */
 export function depthTint(z: number) {

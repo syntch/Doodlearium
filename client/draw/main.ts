@@ -15,7 +15,7 @@ import {
   type SpeciesSize,
   LAND_MOTIONS,
 } from '../../shared/types.ts';
-import { fetchDrawings, setupFeedButton, submitDrawing, updateDrawing } from '../shared/api.ts';
+import { fetchDrawings, loadWorlds, setupFeedButton, submitDrawing, updateDrawing } from '../shared/api.ts';
 import { BIOMES, BIOME_NAMES, defaultGroup, defaultHabitats, suits, type Biome } from '../../shared/world/biomes.ts';
 import { LIVE_PLACES, placeById } from '../../shared/world/places.ts';
 import { enclosedHoles, exportDrawing, inkBounds, type PlacedAttachment, type PlacedPart } from './export.ts';
@@ -23,6 +23,9 @@ import { MATERIALS, MATERIAL_LABELS, MATERIAL_TURNS, floodFill, floodRegion, mat
 import { readPhoto, removePaper } from './photo.ts';
 import { Selection, applyTransform, maskHas, type TransformOp } from './selection.ts';
 import { PART_INFO, behindArea, carryParts, cloneCanvas, findHinge, partsFromImage, type EditorPart } from './parts.ts';
+
+// Which worlds (and places) there are, before anything looks a place up.
+await loadWorlds().catch(() => {});
 
 /** Colour and the name shown when hovering it. 'clear' paints and fills see-through. */
 const COLORS: [string, string][] = [
@@ -1580,7 +1583,8 @@ async function refreshPreview() {
   const cutout = partsImage ? toCutout(splitParts(image!, partsImage, exported.parts, behindImage ?? undefined)) : null;
   const glow = glowImage ? glowTextures(image!, glowImage, partsImage ?? undefined) : null;
   // The preview shows where it'll live: its home, or the first place picked.
-  view.setBiome(placeById(homeSelect.value)?.biome ?? habitats[0] ?? 'lake');
+  const home = placeById(homeSelect.value);
+  view.setBiome(home?.biome ?? habitats[0] ?? 'lake', home?.look);
   view.show(
     {
       // This id seeds an easygoing creature near the front glass at a typical size.

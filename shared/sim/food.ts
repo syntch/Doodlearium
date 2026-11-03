@@ -90,7 +90,7 @@ export class SimFood {
       const restY = f.z === undefined ? world.floorAt(f.x) + f.size * 2 : sandY(world, f.z, f.x);
       if (f.y < restY) {
         // Seeds fall quickly through the air (speeding up); flakes drift down through the water.
-        f.y = Math.min(restY, f.y + world.height * (f.z === undefined ? 0.045 : 0.15 + f.age * 0.6) * dt);
+        f.y = Math.min(restY, f.y + world.height * (f.z === undefined ? 0.045 : (0.15 + f.age * 0.6) * (world.gravity ?? 1)) * dt);
         f.x += (Math.sin(f.age * 2 + f.phase) * f.drift + world.current) * dt;
       } else {
         f.landedFor += dt * (f.claimed ? 0.25 : 1);

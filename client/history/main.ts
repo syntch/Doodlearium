@@ -1,6 +1,9 @@
 import { imageUrl, motionOf, type Drawing, type HistoryEntry, type Motion, type SpeciesWhere, type Story } from '../../shared/types.ts';
 import { REGIONS, placeById, placeName } from '../../shared/world/places.ts';
-import { connectLive, fetchDrawings, fetchHistory, fetchPopulation, fetchStories, saveStory } from '../shared/api.ts';
+import { connectLive, loadWorlds, fetchDrawings, fetchHistory, fetchPopulation, fetchStories, saveStory } from '../shared/api.ts';
+
+// Which worlds (and places) there are, before anything looks a place up.
+await loadWorlds().catch(() => {});
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 const fromInput = $<HTMLInputElement>('#from');

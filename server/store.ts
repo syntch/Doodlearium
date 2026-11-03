@@ -52,6 +52,8 @@ type DrawingMeta = {
   hatchAt?: number;
   nest?: number;
   origin?: string;
+  worlds?: string[];
+  places?: string[];
 };
 
 /** Images that go with a drawing: which pixels are moving parts, which glow, and what's painted behind parts. */

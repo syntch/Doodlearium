@@ -9,6 +9,7 @@ import type { Drawing, Pack, PackFile, PackFileDrawing, PackInstall } from '../s
 import { record } from './history.ts';
 import { DATA_DIR, DRAWINGS_DIR, addDrawing, listDrawings, removeDrawing, setParents, updateDrawing, type ExtraImages } from './store.ts';
 import { drawingAdded, drawingRemoved, drawingUpdated } from './world.ts';
+import { allWorlds } from '../shared/world/places.ts';
 import { broadcast } from './ws.ts';
 
 const PACKS_FILE = join(DATA_DIR, 'packs.json');
@@ -49,6 +50,18 @@ function tidy(pack: Pack) {
 /** The packs, each saying whether it's changed since it was last exported. */
 export const listPacks = () => packs.map((p) => ({ ...tidy(p), changed: !p.exported || p.exported.signature !== signature(p) }));
 
+/**
+ * The worlds a drawing lives in: the ones it was given itself, else its packs' (all of them, for a drawing in
+ * more than one), else Earth. Worlds that aren't here (yet) don't count.
+ */
+export function worldsOfDrawing(d: Drawing): string[] {
+  const here = new Set(allWorlds().map((w) => w.id));
+  const own = (d.worlds ?? []).filter((w) => here.has(w));
+  if (own.length) return own;
+  const fromPacks = [...new Set(packs.filter((p) => p.drawings.includes(d.id)).flatMap((p) => p.worlds ?? []))].filter((w) => here.has(w));
+  return fromPacks.length ? fromPacks : ['earth'];
+}
+
 /** The next version: the last number in it goes up one (1 → 2, 1.4 → 1.5); without one, ".2" goes on the end. */
 export function nextVersion(version: string) {
   return /\d+(?!.*\d)/.test(version) ? version.replace(/\d+(?!.*\d)/, (n) => String(Number(n) + 1)) : `${version}.2`;
@@ -62,7 +75,7 @@ function signature(pack: Pack) {
     .filter((d) => d !== undefined)
     .map((d) => `${keyOf(d)}@${d.updatedAt ?? d.createdAt}`)
     .sort();
-  return createHash('sha256').update(JSON.stringify([pack.name, items])).digest('hex').slice(0, 16);
+  return createHash('sha256').update(JSON.stringify([pack.name, items, pack.worlds ?? []])).digest('hex').slice(0, 16);
 }
 
 export async function makePack(name: string, drawings: string[]) {
@@ -73,11 +86,13 @@ export async function makePack(name: string, drawings: string[]) {
   return pack;
 }
 
-export async function changePack(id: string, change: { name?: string; version?: string; drawings?: string[] }) {
+export async function changePack(id: string, change: { name?: string; version?: string; drawings?: string[]; worlds?: string[] }) {
   const pack = packs.find((p) => p.id === id);
   if (!pack) return null;
   Object.assign(pack, change, { updatedAt: Date.now() });
   await save();
+  // Its drawings may live somewhere else now.
+  if (change.worlds || change.drawings) drawingRemoved();
   return tidy(pack);
 }
 
@@ -91,6 +106,7 @@ export async function forgetPack(id: string) {
   packs = packs.filter((p) => p !== pack);
   const removed = pack.installed ? await removeBrought(pack.drawings) : 0;
   await save();
+  if (pack.worlds?.length && !removed) drawingRemoved();
   record('pack', [], `📦 The ${pack.name} pack was ${pack.installed ? 'uninstalled' : 'taken apart'}.`);
   return removed;
 }
@@ -153,10 +169,12 @@ export async function exportPack(id: string): Promise<PackFile | null> {
       group: d.group,
       home: d.home,
       size: d.size,
+      worlds: d.worlds,
+      places: d.places,
       parents: parents?.[0] && parents[1] ? [parents[0], parents[1]] : undefined,
     });
   }
-  return { format: 'doodlearium-pack', formatVersion: 1, id: pack.id, name: pack.name, version: pack.version, exportedAt: Date.now(), drawings };
+  return { format: 'doodlearium-pack', formatVersion: 1, id: pack.id, name: pack.name, version: pack.version, exportedAt: Date.now(), worlds: pack.worlds, drawings };
 }
 
 /** One drawing from a pack file, checked and ready to save (see parseDrawing in routes.ts). */
@@ -172,8 +190,15 @@ export interface PackItem {
  * Installs a pack, or updates it to the version in the file: drawings it brought before are updated in
  * place (the creatures carry on where they are), new ones move in, and ones taken out of it go.
  */
-export async function installPack(file: { id: string; name: string; version: string }, items: PackItem[]): Promise<PackInstall> {
+export async function installPack(file: { id: string; name: string; version: string; worlds?: string[] }, items: PackItem[]): Promise<PackInstall> {
   const had = packs.find((p) => p.id === file.id);
+  const before = had ? [...had.drawings] : [];
+  const now = Date.now();
+  // The pack goes in first, with its worlds, so each drawing moves straight into the right world as it arrives.
+  const pack: Pack = had ?? { id: file.id, name: file.name, version: file.version, drawings: [], installed: true, createdAt: now, updatedAt: now };
+  pack.worlds = file.worlds;
+  if (!had) packs.push(pack);
+  const join = (id: string) => void (pack.drawings.includes(id) || pack.drawings.push(id));
   const byKey = new Map(listDrawings().map((d) => [keyOf(d), d]));
   const ids = new Map<string, string>();
   let added = 0;
@@ -181,6 +206,7 @@ export async function installPack(file: { id: string; name: string; version: str
   for (const item of items) {
     const old = byKey.get(item.key);
     if (old) {
+      join(old.id);
       const drawing = (await updateDrawing(old.id, item.meta, item.png, item.extra))!;
       broadcast({ type: 'drawing:updated', drawing });
       drawingUpdated(drawing);
@@ -188,6 +214,7 @@ export async function installPack(file: { id: string; name: string; version: str
       updated++;
     } else {
       const drawing = await addDrawing({ ...item.meta, origin: item.key }, item.png, item.extra);
+      join(drawing.id);
       broadcast({ type: 'drawing:added', drawing });
       drawingAdded(drawing);
       ids.set(item.key, drawing.id);
@@ -200,11 +227,8 @@ export async function installPack(file: { id: string; name: string; version: str
   }
 
   const drawings = [...new Set(ids.values())];
-  const now = Date.now();
-  const pack: Pack = had ?? { id: file.id, name: file.name, version: file.version, drawings, installed: true, createdAt: now, updatedAt: now };
-  const left = had ? had.drawings.filter((id) => !drawings.includes(id)) : [];
+  const left = before.filter((id) => !drawings.includes(id));
   Object.assign(pack, { name: file.name, version: file.version, drawings, updatedAt: now });
-  if (!had) packs.push(pack);
   const removed = await removeBrought(left);
   // Exporting it again unchanged keeps this version.
   pack.exported = { version: pack.version, at: now, signature: signature(pack) };

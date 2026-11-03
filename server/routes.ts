@@ -24,6 +24,7 @@ import { rateLimit, requirePin } from './security.ts';
 import { updateInfo } from './update.ts';
 import { cleanText } from './text.ts';
 import { MAX_PACK_DRAWINGS, changePack, exportPack, forgetPack, installPack, listPacks, makePack, type PackItem } from './packs.ts';
+import { changeWorld, exportWorld, forgetWorld, installWorld, isWorldInstalled, listWorlds, makeWorld, newWorldId, parseWorld } from './worlds.ts';
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const MAX_DIMENSION = 1024;
@@ -35,7 +36,7 @@ const uploads = rateLimit(30, 60, 'That\'s a lot of drawings at once: wait a min
 api.use((req, res, next) => (req.method === 'GET' ? next() : changes(req, res, next)));
 // Pack files hold a lot of drawings at once: they get more room, on their own route (after the PIN).
 const json = express.json({ limit: '8mb' });
-api.use((req, res, next) => (req.path === '/packs/install' ? next() : json(req, res, next)));
+api.use((req, res, next) => (req.path === '/packs/install' || req.path === '/worlds/install' ? next() : json(req, res, next)));
 
 api.get('/drawings', (_req, res) => {
   res.json(listDrawings());
@@ -102,8 +103,18 @@ function parseDrawing(body: any) {
     group: typeof body.group === 'boolean' ? body.group : undefined,
     home: typeof body.home === 'string' && placeById(body.home)?.live ? body.home : undefined,
     size: body.size === 'small' || body.size === 'big' ? body.size : undefined,
+    // Which worlds, and exactly which places (ones not here yet are kept, for when their world arrives).
+    worlds: keyList(body.worlds, 20),
+    places: keyList(body.places, 60),
   };
   return { meta, png: png.bytes, extra: { parts: partsPng?.bytes ?? null, glow: glowPng?.bytes ?? null, behind: behindPng?.bytes ?? null } };
+}
+
+/** A short list of ids (worlds, places), or undefined for none. */
+function keyList(value: unknown, max: number) {
+  if (!Array.isArray(value)) return undefined;
+  const list = [...new Set(value.filter((v): v is string => typeof v === 'string' && v.length <= 64 && /^[\w.-]+$/.test(v)))].slice(0, max);
+  return list.length ? list : undefined;
 }
 
 /** A PNG data URL's bytes and size, or null if it isn't one. */
@@ -383,7 +394,7 @@ api.post('/packs', async (req, res) => {
   res.status(201).json(await makePack(cleanText(req.body.name, 'My pack', 60), drawings));
 });
 
-/** Renames a pack, sets its version, or changes which drawings are in it: { name?, version?, drawings? }. */
+/** Renames a pack, sets its version, changes which drawings are in it or which worlds it's for: { name?, version?, drawings?, worlds? }. */
 api.put('/packs/:id', async (req: express.Request<{ id: string }>, res) => {
   const { name, version } = req.body ?? {};
   const drawings = req.body?.drawings === undefined ? undefined : parsePackDrawings(req.body.drawings);
@@ -395,6 +406,7 @@ api.put('/packs/:id', async (req: express.Request<{ id: string }>, res) => {
     ...(name !== undefined && { name: cleanText(name, 'My pack', 60) }),
     ...(version !== undefined && { version: cleanText(version, '1', 20) }),
     ...(drawings && { drawings }),
+    ...(req.body?.worlds !== undefined && { worlds: keyList(req.body.worlds, 20) ?? [] }),
   };
   const pack = await changePack(req.params.id, change);
   if (!pack) res.status(404).json({ error: 'no such pack' });
@@ -442,6 +454,77 @@ api.post('/packs/install', requirePin, uploads, express.json({ limit: '200mb' })
     const parents = Array.isArray(d.parents) && d.parents.length === 2 && d.parents.every(isKey) ? ([d.parents[0], d.parents[1]] as [string, string]) : undefined;
     items.push({ key: d.key, meta: parsed.meta, png: parsed.png, extra: parsed.extra, parents });
   }
-  const pack = { id: file.id, name: cleanText(file.name, 'A pack', 60), version: cleanText(file.version, '1', 20) };
+  const pack = { id: file.id, name: cleanText(file.name, 'A pack', 60), version: cleanText(file.version, '1', 20), worlds: keyList(file.worlds, 20) };
   res.json(await installPack(pack, items));
 });
+
+// --- 🌍 worlds (see worlds.ts) ----------------------------------------------------------------------------
+
+api.get('/worlds', (_req, res) => {
+  res.json(listWorlds());
+});
+
+/** Makes a world on the maker page: { name, icon, mapStyle, places: [{ name, biome, x, y, look? }] }. */
+api.post('/worlds', async (req, res) => {
+  const parsed = parseWorld(req.body, newWorldId());
+  if ('error' in parsed) {
+    res.status(400).json({ error: parsed.error });
+    return;
+  }
+  res.status(201).json(await makeWorld(parsed.world));
+});
+
+/** Changes a world: its name, map, or places (places keep their id; new ones get one). */
+api.put('/worlds/:id', async (req: express.Request<{ id: string }>, res) => {
+  if (!listWorlds().some((w) => w.id === req.params.id && !w.builtin)) {
+    res.status(404).json({ error: 'no such world (and Earth stays as it is)' });
+    return;
+  }
+  const parsed = parseWorld(req.body, req.params.id);
+  if ('error' in parsed) {
+    res.status(400).json({ error: parsed.error });
+    return;
+  }
+  const version = req.body?.version === undefined ? undefined : cleanText(req.body.version, '1', 20);
+  res.json(await changeWorld(req.params.id, parsed.world, version));
+});
+
+/** The world as a .doodleworld file (its version goes up first if it's changed since last time). */
+api.post('/worlds/:id/export', async (req: express.Request<{ id: string }>, res) => {
+  const file = await exportWorld(req.params.id);
+  if (!file) {
+    res.status(404).json({ error: 'no such world' });
+    return;
+  }
+  res.attachment(`${file.name} v${file.version}.doodleworld`.replace(/[^\w .()-]+/g, '_')).json(file);
+});
+
+/** Installs a .doodleworld file, or updates the world to the version in it. */
+api.post('/worlds/install', requirePin, uploads, express.json({ limit: '1mb' }), async (req, res) => {
+  const file = req.body ?? {};
+  const isId = typeof file.id === 'string' && /^[\w-]{1,64}$/.test(file.id) && file.id !== 'earth';
+  if (file.format !== 'doodlearium-world' || file.formatVersion !== 1 || !isId) {
+    res.status(400).json({ error: "That isn't a Doodlearium world." });
+    return;
+  }
+  if (listWorlds().some((w) => w.id === file.id && !w.installed)) {
+    res.status(409).json({ error: 'That world was made here: change it on this page instead.' });
+    return;
+  }
+  const parsed = parseWorld(file, file.id);
+  if ('error' in parsed) {
+    res.status(400).json({ error: `That world isn't right: ${parsed.error}` });
+    return;
+  }
+  res.json(await installWorld(parsed.world, cleanText(file.version, '1', 20)));
+});
+
+/** Uninstalls a world (or takes apart one made here); its creatures move to places that suit them elsewhere. */
+api.delete(
+  '/worlds/:id',
+  (req, res, next) => (isWorldInstalled(req.params.id) ? requirePin(req, res, next) : next()),
+  async (req: express.Request<{ id: string }>, res) => {
+    if (!(await forgetWorld(req.params.id))) res.status(404).json({ error: 'no such world (and Earth always stays)' });
+    else res.status(204).end();
+  },
+);

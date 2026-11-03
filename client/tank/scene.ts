@@ -1,6 +1,8 @@
 import { Container, Graphics, Sprite, Texture } from 'pixi.js';
 import type { Effect } from '../../shared/sim/world.ts';
 import type { Biome } from '../../shared/world/biomes.ts';
+import { lookOf, type Look as SpaceLook } from '../../shared/world/looks.ts';
+import { drawSpaceBack, drawSpaceGround, drawSpaceLive, type Span } from './spacescene.ts';
 import { TAU, seededRandom, type World } from './world.ts';
 
 /** The part of the tank's units a screen shows: the tank itself plus extra water or sand around it. */
@@ -115,6 +117,33 @@ const LOOKS: Partial<Record<Biome, Look>> = {
   },
 };
 
+const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`;
+const sceneLooks = new Map<string, Look>();
+
+/**
+ * A place's look: Earth's kinds have their own; the space kinds are coloured by the place's chosen scheme
+ * (open space is "water" everything floats in, from its top colour down).
+ */
+function sceneLook(biome: Biome, look?: string): Look {
+  const l = lookOf(biome, look);
+  if (!l) return LOOKS[biome] ?? LOOKS.lake!;
+  const key = `${biome}:${l.id}`;
+  let found = sceneLooks.get(key);
+  if (!found) {
+    found = {
+      water: [hex(l.sky[1]), hex(mixColor(l.sky[0], l.sky[1], 0.5)), hex(l.sky[0])],
+      sky: [hex(l.sky[0]), hex(l.sky[1])],
+      sand: l.ground,
+      specks: [mixColor(l.ground[1], 0x000000, 0.3), l.accent2],
+      rays: 0,
+      aerators: [],
+      seeps: 0,
+    };
+    sceneLooks.set(key, found);
+  }
+  return found;
+}
+
 /** Puffy clouds drifting over the land places. */
 const CLOUDS = Array.from({ length: 6 }, (_, i) => ({
   x: (i / 6) * 1.2,
@@ -154,6 +183,10 @@ export class Scene {
   private bubbles: Bubble[] = [];
   private hearts: Heart[] = [];
   private look: Look = LOOKS.lake!;
+  /** The space kinds' colours (see spacescene.ts); undefined on Earth. */
+  private spaceLook: SpaceLook | undefined;
+  /** Out in space: twinkles, drifting rocks, traffic and spores. */
+  private spaceSky = new Graphics();
   /** Lily pads on the pond: where across, how big, and their bob. */
   private pads: { x: number; r: number; phase: number; flower: boolean }[] = [];
   /** Called for every aerator bubble burst, e.g. to make a sound. */
@@ -170,7 +203,7 @@ export class Scene {
 
   constructor() {
     this.rays.blendMode = 'add';
-    this.back.addChild(this.background, this.clouds, this.skyWeather, this.rays, this.props, this.sand, this.groundWeather, this.surface);
+    this.back.addChild(this.background, this.spaceSky, this.clouds, this.skyWeather, this.rays, this.props, this.sand, this.groundWeather, this.surface);
     this.front.addChild(this.bubbleGfx, this.foreground, this.falling, this.night, this.nightLights);
   }
 
@@ -179,7 +212,8 @@ export class Scene {
   /** visible is how far the screen sees past the tank's own edges (screens of another shape see more). */
   layout(world: World, visible: Visible = { left: 0, top: 0, right: world.width, bottom: world.height }) {
     this.visible = visible;
-    const look = LOOKS[world.biome] ?? LOOKS.lake!;
+    const look = sceneLook(world.biome, world.look);
+    this.spaceLook = lookOf(world.biome, world.look);
     if (look !== this.look) {
       this.look = look;
       this.bubbles = [];
@@ -211,6 +245,8 @@ export class Scene {
 
   update(dt: number, world: World) {
     this.drawRays(world);
+    this.spaceSky.clear();
+    if (this.spaceLook) drawSpaceLive(this.spaceSky, world, this.span(world), this.spaceLook, world.biome);
     this.drawSurface(world);
     this.drawSky(world);
     this.drawGrass(world);
@@ -319,6 +355,12 @@ export class Scene {
     }
   }
 
+  /** All the screen sees, in tank units. */
+  private span(world: World): Span {
+    const v = this.visible;
+    return { left: Math.min(0, v.left), right: Math.max(world.width, v.right), top: Math.min(0, v.top), bottom: Math.max(world.height, v.bottom) };
+  }
+
   /** The top of the sand at x, with its gentle ripples. */
   private sandTop(world: World, x: number) {
     return world.floorAt(Math.min(world.width, Math.max(0, x))) + Math.sin(x * 0.006) * 10 + Math.sin(x * 0.019 + 1) * 4;
@@ -334,7 +376,7 @@ export class Scene {
   /** Clouds drifting slowly across a land place's sky. */
   private drawSky(world: World) {
     const g = this.clouds.clear();
-    if (!world.land) return;
+    if (!world.land || this.spaceLook) return;
     const left = Math.min(0, this.visible.left);
     const span = Math.max(world.width, this.visible.right) - left + 400;
     for (const c of CLOUDS) {
@@ -455,6 +497,8 @@ export class Scene {
     const g = this.nightLights.clear();
     const n = Math.min(1, Math.max(0, (this.darkness - 0.12) / 0.3));
     if (!world.land || n === 0) return;
+    // Space places have their own stars (and the garden its spores).
+    if (this.spaceLook) return;
     const left = Math.min(0, this.visible.left);
     const right = Math.max(world.width, this.visible.right);
     const top = Math.min(0, this.visible.top);
@@ -500,7 +544,7 @@ export class Scene {
   /** Tufts of long grass along the front edge of a land place, swaying in the breeze. */
   private drawGrass(world: World) {
     const g = this.foreground.clear();
-    if (!world.land) return;
+    if (!world.land || world.biome === 'station' || world.biome === 'moon') return;
     this.drawNearTrunks(world, g);
     const left = Math.min(0, this.visible.left);
     const right = Math.max(world.width, this.visible.right);
@@ -590,7 +634,8 @@ export class Scene {
   private drawProps(world: World) {
     const g = this.props.clear();
     const rand = seededRandom(`props:${world.biome}`);
-    if (world.land) this.drawLandBack(world, g, rand);
+    if (this.spaceLook) drawSpaceBack(g, world, this.span(world), this.spaceLook, world.biome);
+    else if (world.land) this.drawLandBack(world, g, rand);
     else if (world.biome === 'pond') {
       for (const cx of [0.02, 0.07, 0.31, 0.92, 0.97]) {
         for (let i = 0; i < 6; i++) {
@@ -756,6 +801,10 @@ export class Scene {
     for (const [lift, alpha] of [[60, 0.25], [140, 0.35], [230, 0.45]] as const) band(lift, sand[1], alpha);
     band(0, 0xffffff, 0.12);
     band(10, sand[0], 0.9);
+    if (this.spaceLook) {
+      drawSpaceGround(g, world, this.span(world), this.spaceLook, world.biome);
+      return;
+    }
     if (world.biome === 'meadow') {
       // The edge of a pond at the back, with reeds.
       const px = world.width * 0.14;
@@ -879,6 +928,7 @@ export class Scene {
       const y = rand(floor(x) + 18, height);
       g.circle(x, y, rand(1, 3.5)).fill({ color: rand() > 0.5 ? specks[0] : specks[1], alpha: 0.7 });
     }
+    if (this.spaceLook) drawSpaceGround(g, world, this.span(world), this.spaceLook, world.biome);
     if (world.biome === 'seashore') {
       // The beach above the water is dry and pale; where the waves reach, it's dark and wet.
       const shore = this.shoreX(world);
@@ -905,12 +955,12 @@ export class Scene {
 }
 
 /** A picture of a biome's sky and water, height tall (for the map's portholes). */
-export function biomeBackdrop(biome: Biome, height: number, waterTop: number, floor: number) {
-  return backdrop(LOOKS[biome] ?? LOOKS.lake!, height, waterTop, floor);
+export function biomeBackdrop(biome: Biome, height: number, waterTop: number, floor: number, look?: string) {
+  return backdrop(sceneLook(biome, look), height, waterTop, floor);
 }
 
 /** The colour of a biome's sand. */
-export const sandColor = (biome: Biome) => (LOOKS[biome] ?? LOOKS.lake!).sand[0];
+export const sandColor = (biome: Biome, look?: string) => sceneLook(biome, look).sand[0];
 
 /** The sky (above the water, if any), then the water: light at the surface, deep by the bottom. */
 function backdrop(look: Look, height: number, waterTop: number, floor: number) {

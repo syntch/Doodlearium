@@ -67,6 +67,18 @@
       body.idle .coming.chrome.soon-up { opacity: 1; }
       .menu:not([hidden]) ~ .coming { display: none; }
       #map-button[hidden] { display: none; }
+      /* The worlds there are, along the bottom of the map: tap one to travel there. */
+      .worlds {
+        position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; gap: 8px;
+        flex-wrap: wrap; justify-content: center; max-width: calc(100vw - 24px); font: bold 16px 'Trebuchet MS', sans-serif;
+      }
+      .worlds[hidden] { display: none; }
+      .worlds button {
+        padding: 8px 16px; border-radius: 999px; border: 2px solid transparent; background: rgba(6, 36, 59, 0.7);
+        color: #fff; font: inherit; cursor: pointer; backdrop-filter: blur(4px);
+      }
+      .worlds button:hover { background: rgba(6, 36, 59, 0.9); }
+      .worlds button[aria-pressed='true'] { border-color: #ffd98a; }
       /* Arranging plants and decorations by hand. */
       .arrange {
         position: fixed; z-index: 11; left: 50%; bottom: 16px; transform: translateX(-50%);
@@ -91,6 +103,7 @@
   </head>
   <body>
     <div class="hint">Double-click for full screen</div>
+    <div class="worlds chrome" id="worlds" hidden aria-label="Worlds"></div>
     <nav class="bar chrome">
       <a href="/">🐠 Doodlearium</a>
       <a href="/draw/">✏️ Draw</a>

@@ -41,6 +41,8 @@ export interface World {
   /** A land place (see shared/world/biomes.ts). */
   land?: boolean;
   groundDepth?: number;
+  /** How hard things fall (1 when unset; less on a moon). */
+  gravity?: number;
   /** Seconds since the world began. */
   time: number;
   food: SimFood;

@@ -1,6 +1,6 @@
 import { habitatOf, motionOf, type CreatureType, type Drawing } from '../types.ts';
 import type { Placement } from '../sim/creature.ts';
-import { habitatsOf, isGroup, type Biome } from './biomes.ts';
+import { defaultHabitats, habitatsOf, isGroup, suits, type Biome } from './biomes.ts';
 import { LIVE_PLACES, placeById, regionsOf, type Place } from './places.ts';
 
 /**
@@ -31,6 +31,10 @@ const TARGETS: Partial<Record<Biome, Partial<Record<CreatureType, number>>>> = {
   farm: { walker: 10, flier: 4, plant: 10, decor: 5 },
   hills: { walker: 8, flier: 6, plant: 12, decor: 4 },
   forest: { walker: 8, flier: 6, plant: 18, decor: 4 },
+  space: { swimmer: 18, crawler: 4, plant: 8, decor: 4, flier: 6 },
+  station: { walker: 10, flier: 5, plant: 6, decor: 6 },
+  moon: { walker: 8, flier: 3, plant: 8, decor: 5 },
+  garden: { walker: 8, flier: 6, plant: 18, decor: 3 },
 };
 /** Fewer than this many species to choose from, and a place borrows from other regions. */
 const MIN_CHOICE = 4;
@@ -39,13 +43,29 @@ const MAX_DECOR_EACH = 2;
 export const bucketOf = (d: Drawing): CreatureType => habitatOf(motionOf(d));
 /** Blended babies are one of a kind: there's only ever the original. */
 export const isUnique = (d: Drawing) => Boolean(d.parents);
-const fits = (d: Drawing, p: Place) => habitatsOf(d).includes(p.biome);
 
-/** Places a species can live: in its regions, or anywhere if none of those suit it. */
-function rangeOf(d: Drawing) {
-  const regions = regionsOf(d);
-  const inRange = LIVE_PLACES.filter((p) => fits(d, p) && regions.includes(p.region));
-  return inRange.length ? inRange : LIVE_PLACES.filter((p) => fits(d, p));
+/** The worlds a drawing lives in: its own choice, else its packs' (see server/packs.ts), else Earth. */
+export type WorldsOf = (d: Drawing) => string[];
+export const ownWorlds: WorldsOf = (d) => (d.worlds?.length ? d.worlds : ['earth']);
+
+/**
+ * Every place a species could live: the exact places its artist tapped on the map (those that suit it), or
+ * else, in each of its worlds, the places of the kinds it was given (or, where there are none of those, the
+ * usual kinds for its style).
+ */
+export function homesOf(d: Drawing, worlds: string[]): Place[] {
+  const motion = motionOf(d);
+  if (d.places?.length) {
+    const exact = LIVE_PLACES.filter((p) => d.places!.includes(p.id) && suits(motion, p.biome));
+    if (exact.length) return exact;
+  }
+  const kinds = habitatsOf(d);
+  const usual = defaultHabitats(motion);
+  return worlds.flatMap((w) => {
+    const inWorld = LIVE_PLACES.filter((p) => p.world === w);
+    const chosen = inWorld.filter((p) => kinds.includes(p.biome));
+    return chosen.length ? chosen : inWorld.filter((p) => usual.includes(p.biome));
+  });
 }
 
 const suffix = () => Math.random().toString(36).slice(2, 8);
@@ -55,8 +75,16 @@ const suffix = () => Math.random().toString(36).slice(2, 8);
  * whose species is gone (or no longer suits their place) leave, and every place is topped up to its numbers.
  * fresh drawings (just drawn) are picked more often, so they show up right away.
  */
-export function populate(drawings: Drawing[], individuals: Individual[], fresh = new Set<string>()): Individual[] {
+export function populate(drawings: Drawing[], individuals: Individual[], fresh = new Set<string>(), worldsOf: WorldsOf = ownWorlds): Individual[] {
   const byId = new Map(drawings.map((d) => [d.id, d]));
+  const homes = new Map(drawings.map((d) => [d.id, new Set(homesOf(d, worldsOf(d)).map((p) => p.id))]));
+  const fits = (d: Drawing, p: Place) => homes.get(d.id)!.has(p.id);
+  /** Places a species can live: in its regions, or anywhere it fits if none of those suit it. */
+  const rangeOf = (d: Drawing) => {
+    const regions = regionsOf(d);
+    const inRange = LIVE_PLACES.filter((p) => fits(d, p) && regions.includes(p.region));
+    return inRange.length ? inRange : LIVE_PLACES.filter((p) => fits(d, p));
+  };
   let list = individuals.filter((i) => {
     const d = byId.get(i.species);
     const place = placeById(i.place);

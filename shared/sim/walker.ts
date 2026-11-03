@@ -234,7 +234,8 @@ export class SimWalker implements SimCreature {
       this.hopTo = { x: this.x + dx * f, z: this.z + dz * f };
       this.hop = 0;
     }
-    this.hop += (dt * speed) / (world.height * 0.09);
+    // Under a weaker pull a hop takes longer (and goes higher: see setPose).
+    this.hop += ((dt * speed) / (world.height * 0.09)) * Math.sqrt(world.gravity ?? 1);
     const t = Math.min(1, this.hop);
     this.x = this.hopFrom.x + (this.hopTo.x - this.hopFrom.x) * t;
     this.z = this.hopFrom.z + (this.hopTo.z - this.hopFrom.z) * t;
@@ -257,7 +258,7 @@ export class SimWalker implements SimCreature {
     if (this.gait === 'hop') {
       if (this.hop >= 0) {
         const t = this.hop;
-        lift = Math.sin(t * Math.PI) * h * (this.starring ? 1.1 : 0.55);
+        lift = (Math.sin(t * Math.PI) * h * (this.starring ? 1.1 : 0.55)) / Math.sqrt(world.gravity ?? 1);
         sy *= 1 + Math.sin(t * Math.PI) * 0.12;
         sx *= 1 - Math.sin(t * Math.PI) * 0.06;
         rot = (0.5 - t) * -0.35;

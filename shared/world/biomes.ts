@@ -1,12 +1,17 @@
 import type { Drawing, Motion } from '../types.ts';
 import { motionOf } from '../types.ts';
 
-/** The kinds of place in the world. Land ones open up once land animals exist. */
-export const BIOMES = ['lake', 'pond', 'ocean', 'seashore', 'meadow', 'hills', 'forest', 'farm'] as const;
+/** The kinds of place there are: Earth's, and space ones for other worlds. */
+export const BIOMES = ['lake', 'pond', 'ocean', 'seashore', 'meadow', 'hills', 'forest', 'farm', 'space', 'station', 'moon', 'garden'] as const;
 export type Biome = (typeof BIOMES)[number];
 export const WATER_BIOMES: Biome[] = ['lake', 'pond', 'ocean', 'seashore'];
-export const LAND_BIOMES: Biome[] = ['meadow', 'farm', 'hills', 'forest'];
+/** Space kinds of place. Open space is like deep water (things float through it); the rest have ground. */
+export const SPACE_BIOMES: Biome[] = ['space', 'station', 'moon', 'garden'];
+export const LAND_BIOMES: Biome[] = ['meadow', 'farm', 'hills', 'forest', 'station', 'moon', 'garden'];
 export const isLand = (biome: Biome) => LAND_BIOMES.includes(biome);
+export const isSpace = (biome: Biome) => SPACE_BIOMES.includes(biome);
+/** No weather here: open space, and a station's halls (which have a ceiling). */
+export const hasWeather = (biome: Biome) => biome !== 'space' && biome !== 'station';
 
 export const BIOME_NAMES: Record<Biome, string> = {
   lake: '🏞️ Lake',
@@ -17,31 +22,36 @@ export const BIOME_NAMES: Record<Biome, string> = {
   hills: '⛰️ Hills',
   forest: '🌲 Forest',
   farm: '🚜 Farm',
+  space: '🌌 Space',
+  station: '🏙️ Space station',
+  moon: '🌑 Moon',
+  garden: '🌺 Alien garden',
 };
 
 /** Where a style lives unless its artist says otherwise. */
+// (Only the kinds in a creature's own worlds count, so Earth's creatures don't turn up in space by themselves.)
 const DEFAULT_HABITATS: Record<Motion, Biome[]> = {
-  fish: ['lake', 'pond', 'ocean', 'seashore'],
-  puffer: ['ocean', 'seashore'],
-  seahorse: ['ocean', 'seashore'],
-  jelly: ['ocean'],
-  eel: ['lake', 'ocean'],
-  flapper: ['lake', 'ocean'],
-  vessel: ['lake', 'ocean'],
-  crawler: ['seashore', 'pond', 'lake', 'ocean'],
-  walker: ['farm', 'meadow', 'hills'],
-  hopper: ['meadow', 'hills', 'forest'],
-  slitherer: ['forest', 'meadow'],
-  flier: ['meadow', 'farm', 'hills', 'forest', 'pond', 'seashore'],
-  waterfowl: ['pond', 'seashore', 'meadow', 'farm'],
+  fish: ['lake', 'pond', 'ocean', 'seashore', 'space'],
+  puffer: ['ocean', 'seashore', 'space'],
+  seahorse: ['ocean', 'seashore', 'space'],
+  jelly: ['ocean', 'space'],
+  eel: ['lake', 'ocean', 'space'],
+  flapper: ['lake', 'ocean', 'space'],
+  vessel: ['lake', 'ocean', 'space'],
+  crawler: ['seashore', 'pond', 'lake', 'ocean', 'space'],
+  walker: ['farm', 'meadow', 'hills', 'station', 'moon', 'garden'],
+  hopper: ['meadow', 'hills', 'forest', 'moon', 'garden'],
+  slitherer: ['forest', 'meadow', 'garden', 'station'],
+  flier: ['meadow', 'farm', 'hills', 'forest', 'pond', 'seashore', ...SPACE_BIOMES],
+  waterfowl: ['pond', 'seashore', 'meadow', 'farm', 'garden'],
   // Plants and decorations drawn before the land opened were made for the water; on land, tick the places.
-  plant: [...WATER_BIOMES],
-  decor: [...WATER_BIOMES],
+  plant: [...WATER_BIOMES, ...SPACE_BIOMES],
+  decor: [...WATER_BIOMES, ...SPACE_BIOMES],
 };
 
 export const defaultHabitats = (motion: Motion) => DEFAULT_HABITATS[motion];
-/** Places with open sky above the water or the ground. The Lake and the Ocean are all underwater. */
-export const hasSky = (biome: Biome) => isLand(biome) || biome === 'pond' || biome === 'seashore';
+/** Places with open sky (or open space) to fly in. The Lake and the Ocean are all underwater. */
+export const hasSky = (biome: Biome) => isLand(biome) || biome === 'pond' || biome === 'seashore' || biome === 'space';
 /** Whether a style can live in a kind of place: fliers (and waterfowl) need a sky to fly in. */
 export const suits = (motion: Motion, biome: Biome) => (motion !== 'flier' && motion !== 'waterfowl') || hasSky(biome);
 /** Where it lives: the places its artist ticked that suit its style (its style's usual if none do). */
@@ -69,6 +79,8 @@ export interface Shape {
   land?: boolean;
   /** How deep the ground runs from back to front, as a share of the height (the sand's is shallower). */
   groundDepth?: number;
+  /** How hard things fall (1 as on Earth; a moon's is weaker, so hops float and food drifts down). */
+  gravity?: number;
 }
 
 export function shapeOf(biome: Biome, width: number, height: number): Shape {
@@ -77,6 +89,9 @@ export function shapeOf(biome: Biome, width: number, height: number): Shape {
     case 'pond':
       return flat(0.84, height * 0.1);
     case 'ocean':
+      return flat(0.9);
+    case 'space':
+      // Open space: everything floats, over a band of drifting asteroids for things that sit.
       return flat(0.9);
     case 'seashore': {
       // Dry beach on the left, sloping down under the waves to a sandy bottom.
@@ -97,15 +112,22 @@ export function shapeOf(biome: Biome, width: number, height: number): Shape {
     case 'meadow':
     case 'farm':
     case 'hills':
-    case 'forest': {
+    case 'forest':
+    case 'station':
+    case 'moon':
+    case 'garden': {
       // The ground's back edge: the far side of the field. Things nearer the front stand lower down.
       const back = (u: number) => {
         if (biome === 'meadow') return 0.56 + Math.sin(u * 8.2 + 0.6) * 0.018 + Math.sin(u * 3.1) * 0.012;
         if (biome === 'hills') return 0.6 - 0.11 * Math.exp(-(((u - 0.55) / 0.22) ** 2)) + Math.sin(u * 5) * 0.01;
         if (biome === 'forest') return 0.57 + Math.sin(u * 4.4 + 1) * 0.012;
+        // A station's floor is level; a moon's is cratered and rolling; a garden's gently rises and falls.
+        if (biome === 'station') return 0.6;
+        if (biome === 'moon') return 0.58 + Math.sin(u * 6.3 + 2) * 0.02 - 0.03 * Math.exp(-(((u - 0.3) / 0.08) ** 2));
+        if (biome === 'garden') return 0.57 + Math.sin(u * 3.6 + 0.4) * 0.025;
         return 0.57;
       };
-      return { waterTop: height, floorAt: (x) => height * back(x / width), waterLeft: 0, land: true, groundDepth: 0.3 };
+      return { waterTop: height, floorAt: (x) => height * back(x / width), waterLeft: 0, land: true, groundDepth: 0.3, ...(biome === 'moon' && { gravity: 0.35 }) };
     }
     default:
       return flat(0.86);

@@ -1,6 +1,18 @@
-import type { ClientMessage, Drawing, HistoryEntry, NewDrawing, NewEgg, Pack, PackInstall, ServerMessage, SpeciesWhere, Story, TankCommand, TankCommandValue, UpdateInfo } from '../../shared/types.ts';
+import type { ClientMessage, Drawing, HistoryEntry, NewDrawing, NewEgg, Pack, PackInstall, ServerMessage, SpeciesWhere, Story, TankCommand, TankCommandValue, UpdateInfo, WorldPack } from '../../shared/types.ts';
+
+import { setWorlds } from '../../shared/world/places.ts';
+import type { WorldDef } from '../../shared/world/places.ts';
 
 const PIN_KEY = 'doodlearium-pin';
+
+/** Learns which worlds (and so which places) there are: call before anything looks up a place. */
+export async function loadWorlds(): Promise<WorldPack[]> {
+  const res = await fetch('/api/worlds');
+  if (!res.ok) throw await failure(res, 'Failed to load the worlds');
+  const worlds: WorldPack[] = await res.json();
+  setWorlds(worlds as WorldDef[]);
+  return worlds;
+}
 
 function storedPin() {
   try {
@@ -277,6 +289,8 @@ export function connectLive(onMessage: (msg: ServerMessage) => void, onOpen?: ()
         return;
       }
       if (msg.type === 'updating') showUpdating();
+      // Places open and close as worlds come and go: learn them before anyone looks one up.
+      if (msg.type === 'worlds') setWorlds(msg.worlds);
       onMessage(msg);
     };
     ws.onclose = () => {

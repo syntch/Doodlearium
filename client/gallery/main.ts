@@ -10,10 +10,14 @@ import {
   fetchPacks,
   fetchPopulation,
   installPack,
+  loadWorlds,
   makePack,
   removePack,
   setupFeedButton,
 } from '../shared/api.ts';
+
+// Which worlds (and places) there are, before anything looks a place up.
+await loadWorlds().catch(() => {});
 
 setupFeedButton(document.querySelector<HTMLButtonElement>('#feed')!);
 

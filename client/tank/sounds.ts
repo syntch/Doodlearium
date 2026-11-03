@@ -72,6 +72,13 @@ export class Sounds {
     this.tone(900, 300, 0.08, 0.08, 'sine', 0.03);
   }
 
+  /** Off to another world: a rising whoosh, then a sparkle. */
+  whoosh() {
+    this.tone(120, 900, 1.2, 0.18, 'sawtooth');
+    this.tone(180, 1400, 1.2, 0.08, 'triangle', 0.1);
+    [1319, 1568, 2093].forEach((f, i) => this.tone(f, f, 0.4, 0.08, 'triangle', 1.1 + i * 0.1));
+  }
+
   chime() {
     [784, 988, 1175, 1568].forEach((f, i) => this.tone(f, f, 0.6, 0.12, 'triangle', i * 0.12));
   }

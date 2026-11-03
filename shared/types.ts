@@ -1,5 +1,6 @@
 import type { Frame, MapSummary, RosterEntry, Upcoming } from './sim/protocol.ts';
 import type { Biome } from './world/biomes.ts';
+import type { WorldDef } from './world/places.ts';
 
 /** Where a drawing lives: open water, walking on the sand, growing from the sand, or sitting on it. */
 export const CREATURE_TYPES = ['swimmer', 'crawler', 'plant', 'decor', 'walker', 'flier'] as const;
@@ -116,6 +117,10 @@ export interface Drawing {
    * rather than adding it again (see server/packs.ts).
    */
   origin?: string;
+  /** The worlds it lives in (unset: its packs' worlds, or Earth). */
+  worlds?: string[];
+  /** Exactly where it lives, tapped on the map (unset: wherever suits it in its worlds). */
+  places?: string[];
 }
 
 /** A named group of drawings to share with another Doodlearium (see server/packs.ts). */
@@ -135,6 +140,8 @@ export interface Pack {
   exported?: { version: string; at: number; signature: string };
   /** Sent with the list: something's changed since the last export (so the next one is a new version). */
   changed?: boolean;
+  /** The worlds its drawings live in (unless a drawing says otherwise). Unset: Earth. */
+  worlds?: string[];
 }
 
 /** One drawing in a pack file: its details as the draw page sends them, and its key (see Drawing.origin). */
@@ -152,7 +159,32 @@ export interface PackFile {
   name: string;
   version: string;
   exportedAt: number;
+  /** The worlds it was given to, by id: where those are installed, it goes there too. */
+  worlds?: string[];
   drawings: PackFileDrawing[];
+}
+
+/** A world on this server: Earth (built in), or one made here or installed from a .doodleworld file. */
+export interface WorldPack extends WorldDef {
+  /** Goes up by itself when it's exported with changes, like a pack's. */
+  version: string;
+  /** Installed from a file (rather than made here). */
+  installed: boolean;
+  /** Earth: always here. */
+  builtin?: boolean;
+  createdAt: number;
+  updatedAt: number;
+  exported?: { version: string; at: number; signature: string };
+  /** Sent with the list: something's changed since the last export. */
+  changed?: boolean;
+}
+
+/** What's saved in a .doodleworld file. */
+export interface WorldFile extends WorldDef {
+  format: 'doodlearium-world';
+  formatVersion: 1;
+  version: string;
+  exportedAt: number;
 }
 
 /** What installing a pack did. */
@@ -184,6 +216,8 @@ export interface NewDrawing {
   group?: boolean;
   home?: string;
   size?: SpeciesSize;
+  worlds?: string[];
+  places?: string[];
 }
 
 /** A baby made by the tank from two parents, sent to be laid as an egg (in the place the parents are). */
@@ -213,6 +247,8 @@ export type ServerMessage =
   | { type: 'drawing:removed'; id: string }
   /** A drawing pack was made, changed, installed or removed. */
   | { type: 'packs' }
+  /** A world was made, changed, installed or removed: its places may have opened or closed. */
+  | { type: 'worlds'; worlds: WorldDef[] }
   /** Feeding time: x is where across the tank (0..1) the food drops (screens play the plops). */
   | { type: 'feed'; x: number }
   /** Who's in the place being watched, and how it looks right now (see shared/sim/protocol.ts). */
