@@ -104,6 +104,11 @@ export class Walker implements Creature {
       f.afloat = afloat;
       f.below.visible = afloat;
       this.whole.mask = afloat ? f.aboveMask : null;
+      // No longer a mask, the shape would show as itself (a white box): wiped until it's afloat again.
+      if (!afloat) {
+        f.aboveMask.clear();
+        f.belowMask.clear();
+      }
     }
     if (!afloat) return;
     // The view is moved, scaled and turned, so the waterline is drawn in its own (local) terms.
