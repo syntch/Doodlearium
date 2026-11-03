@@ -746,17 +746,20 @@ function updateTravel(dt: number) {
   }
   // The rocket crosses with a sparkly trail.
   const u = Math.min(1, Math.max(0, (t - 0.2) / 0.6));
-  const rx = -80 + u * (width + 160);
-  const ry = height * 0.5 + Math.sin(u * Math.PI * 2) * height * 0.08;
-  rocket.position.set(rx, ry);
-  rocket.rotation = Math.PI / 4 + Math.cos(u * Math.PI * 2) * 0.25;
+  const at = (k: number) => ({ x: -80 + k * (width + 160), y: height * 0.5 + Math.sin(k * Math.PI * 2) * height * 0.08 });
+  // The emoji points up and to the right; this turns it to head along its path (with a little swing).
+  const turn = (k: number) => Math.PI / 4 + Math.cos(k * Math.PI * 2) * 0.25;
+  const here = at(u);
+  rocket.position.set(here.x, here.y);
+  rocket.rotation = turn(u);
   rocket.visible = u > 0 && u < 1;
   const tr = trail.clear();
   for (let i = 1; i < 14; i++) {
     const k = Math.max(0, u - i * 0.012);
-    const tx = -80 + k * (width + 160);
-    const ty = height * 0.5 + Math.sin(k * Math.PI * 2) * height * 0.08;
-    tr.circle(tx - 30, ty + 30, 10 - i * 0.6).fill({ color: i % 2 ? 0xffd98a : 0xff7ad9, alpha: (1 - i / 14) * 0.8 });
+    // Out of its tail: straight back from where it was heading then.
+    const back = turn(k) - Math.PI / 4 + Math.PI;
+    const p = at(k);
+    tr.circle(p.x + Math.cos(back) * 30, p.y + Math.sin(back) * 30, 10 - i * 0.6).fill({ color: i % 2 ? 0xffd98a : 0xff7ad9, alpha: (1 - i / 14) * 0.8 });
   }
   if (t >= 1) {
     const then = travel.then;
