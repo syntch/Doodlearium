@@ -1,7 +1,7 @@
 import { Container, Graphics } from 'pixi.js';
 import type { Visit } from '../../shared/sim/protocol.ts';
 import { ALL_VISITORS } from '../../shared/sim/visitors.ts';
-import { TAU, seededRandom, type World } from './world.ts';
+import { TAU, depthOrder, seededRandom, type World } from './world.ts';
 
 /**
  * Rare visitors in the tank: a whale passing far behind the glass, a diver swimming by... The server
@@ -23,6 +23,8 @@ export interface EventLayers {
   back: Container;
   /** Up close: in front of the creatures. */
   front: Container;
+  /** On the ground among the creatures: give it a zIndex (depthOrder) so nearer ones pass in front of it. */
+  among: Container;
 }
 
 export interface TankEvent {
@@ -334,10 +336,11 @@ const tractor: TankEvent = {
     const back = wheel(s * 0.42, -s * 0.38);
     const front = wheel(s * 0.24, s * 0.55);
     node.addChild(smoke, body, back, front);
-    // Far back in the field, behind everyone.
+    // Towards the back of the field: animals further back go behind it, nearer ones in front.
     const z = 0.85;
     node.scale.set(0.8);
-    layers.back.addChild(node);
+    node.zIndex = depthOrder(z);
+    layers.among.addChild(node);
     const groundY = world.floorAt(world.width / 2) + (1 - z) * world.height * (world.groundDepth ?? 0.1) + 4;
     const move = crossing(node, world, seconds, groundY, 0, rand);
     const puffs: { x: number; y: number; age: number }[] = [];
@@ -507,8 +510,9 @@ const deer: TankEvent = {
     node.addChild(body, head);
     // Towards the back of the clearing.
     node.scale.set(0.85);
-    layers.back.addChild(node);
     const z = 0.75;
+    node.zIndex = depthOrder(z);
+    layers.among.addChild(node);
     const ground = (x: number) => world.floorAt(Math.min(world.width, Math.max(0, x))) + (1 - z) * world.height * (world.groundDepth ?? 0.1) + 4;
     const dir = rand() < 0.5 ? 1 : -1;
     node.scale.x *= dir;

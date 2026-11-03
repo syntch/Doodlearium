@@ -17,6 +17,8 @@ const ZOOM = 2;
 export interface Preview {
   /** Swaps in a new version of the drawing (the preview owns the texture, or cutout, from then on). */
   show(drawing: Drawing, texture: Texture, cutout?: Cutout | null, glow?: GlowTextures | null): void;
+  /** Takes the creature out, leaving the tank empty (the paper was cleared). */
+  empty(): void;
   /** Turns the preview tank's blacklight on or off. */
   setBlacklight(on: boolean): void;
   /** Shows the creature in another kind of place. */
@@ -151,6 +153,11 @@ export async function createPreview(container: HTMLElement): Promise<Preview> {
       (drawing.nocturnal ? nightLayer : creatureLayer).addChild(creature.view);
       if (glowTextures && creature.body) glow = new Glow(creature.body, glowTextures, glowLayer, creature.moving);
       follow(1);
+    },
+    empty() {
+      clear();
+      if (id) tank.remove(id);
+      id = '';
     },
     setBlacklight(on) {
       tank.blacklightOn = on;

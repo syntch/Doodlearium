@@ -1548,7 +1548,11 @@ function schedulePreview() {
 async function refreshPreview() {
   if (previewEl.hidden || !preview) return;
   const exported = exportCurrent();
-  if (!exported) return;
+  // Nothing on the paper (just sent, or cleared): nothing in the preview either.
+  if (!exported) {
+    (await preview).empty();
+    return;
+  }
   const load = async (src?: string) => {
     if (!src) return null;
     const image = new Image();

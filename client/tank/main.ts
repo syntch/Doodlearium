@@ -121,7 +121,7 @@ fit.addChild(camera);
 const glowLayer = new RenderLayer();
 camera.addChild(scene.back, creatureLayer, eventFront, scene.front, nightLayer, glowLayer, seasons.glow);
 const documentary = new Documentary(camera);
-const events = new Events({ back: eventBack, front: eventFront });
+const events = new Events({ back: eventBack, front: eventFront, among: creatureLayer });
 const sounds = new Sounds();
 scene.onBloop = () => sounds.bubble();
 /** The map of the whole world; a place's view shows through its porthole while zooming in and out. */
