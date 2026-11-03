@@ -2,7 +2,9 @@
 
 A family digital aquarium where everything in it was drawn by the family. It runs on an always-on computer at home. Put it on the TV, and draw new creatures from any phone, tablet or PC on the home network.
 
-It's a little world of places: 🏞️ **Sparkle Lake** (the original tank), 🪷 **Lily Pond**, 🌊 **Big Blue Ocean** and 🏖️ **Shell Beach**, with land places (a meadow, hills, woods and a farm) coming later. The world lives on the server: every screen showing a place shows the same fish in the same spots doing the same things, and life carries on everywhere while nobody's watching (and across restarts). Everything notable is written into a **history**, which can be turned into stories.
+![A tour of Doodlearium: the map, the lake, a whale visiting, rain and a rainbow on land, night in the woods, glow paint, a nature documentary, drawing a fish and the gallery](docs/trailer.gif)
+
+It's a little world of places: 🏞️ **Sparkle Lake** (the original tank), 🪷 **Lily Pond**, 🌊 **Big Blue Ocean** and 🏖️ **Shell Beach** underwater, and 🌼 **Buttercup Meadow**, 🚜 **Sunny Farm**, ⛰️ **Rolling Hills** and 🌲 **Whispering Woods** up on land. The world lives on the server: every screen showing a place shows the same fish in the same spots doing the same things, and life carries on everywhere while nobody's watching (and across restarts). Everything notable is written into a **history**, which can be turned into stories.
 
 **Every drawing is a kind of creature** (a species). The one that was drawn keeps its name and lives in one place; the world adds more of its kind wherever they suit, called "a Clowny", so one drawing of a weed can carpet a whole pond and one fish can be a whole school. See **Who lives where** below.
 
