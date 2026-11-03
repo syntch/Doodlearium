@@ -208,13 +208,14 @@ export async function saveStory(story: Pick<Story, 'title' | 'text' | 'from' | '
 
 /** Turns a button into a Feed button with a little "Fed!" confirmation. */
 export function setupFeedButton(button: HTMLButtonElement) {
-  const label = button.textContent;
+  // (Its words are in a span, which a phone hides to leave just the 🍤.)
+  const label = button.innerHTML;
   button.onclick = async () => {
     button.disabled = true;
     const ok = await feedFish().catch(() => false);
-    button.textContent = ok ? '🍤 Fed!' : '🍤 Still eating…';
+    button.innerHTML = `🍤 <span class="label">${ok ? 'Fed!' : 'Still eating…'}</span>`;
     setTimeout(() => {
-      button.textContent = label;
+      button.innerHTML = label;
       button.disabled = false;
     }, 1600);
   };
