@@ -51,6 +51,8 @@ export class Tank {
   private showerFor = 0;
   private showerKind: 'rain' | 'snow' = 'rain';
   private rainbowFor = 0;
+  /** An explorer leading a parade (see startParade), until a world time. */
+  private parade: { leader: string; until: number } | null = null;
 
   constructor(readonly biome: Biome = 'lake') {
     this.world = newWorld(this.food, biome);
@@ -213,6 +215,17 @@ export class Tank {
         c.rank = i;
       });
     }
+    // On parade, everyone of the explorer's kind follows it instead.
+    const parade = this.parade && this.world.time < this.parade.until ? this.creatures.get(this.parade.leader) : undefined;
+    if (parade instanceof SimWalker || parade instanceof SimFlier) {
+      parade.leader = null;
+      let rank = 0;
+      for (const c of this.creatures.values()) {
+        if (c === parade || !c.pose.out || c.constructor !== parade.constructor) continue;
+        (c as SimWalker).leader = parade as never;
+        (c as SimWalker).rank = rank++;
+      }
+    }
   }
 
   /**
@@ -294,6 +307,27 @@ export class Tank {
     const members = rest.slice(0, 2 + Math.floor(Math.random() * 4));
     world.schools.push({ leader, members, until: world.time + 25 });
     world.notes.push({ kind: 'school', leader: leader.id, members: members.map((m) => m.id) });
+  }
+
+  /**
+   * An explorer's parade: everyone here who gets about the way it does (walking, flying or swimming) falls
+   * in behind it for a while. null ends it.
+   */
+  startParade(leader: string | null, seconds = 40) {
+    const world = this.world;
+    if (!leader) {
+      if (this.parade) world.schools = world.schools.filter((s) => s.species || s.leader.id !== this.parade!.leader);
+      this.parade = null;
+      return;
+    }
+    this.parade = { leader, until: world.time + seconds };
+    const lead = this.creatures.get(leader);
+    if (lead instanceof SimSwimmer) {
+      // Swimmers swim as one big school behind it (any school passing by breaks up to join).
+      const grouped = new Set(world.schools.filter((s) => s.species).flatMap((s) => [s.leader, ...s.members]));
+      const members = world.fish.filter((f) => f !== lead && !grouped.has(f)).slice(0, 14);
+      world.schools = [...world.schools.filter((s) => s.species), { leader: lead, members, until: world.time + seconds }];
+    }
   }
 
   /** A rain or snow shower for a while (a rainbow comes out after rain), or just a rainbow. */

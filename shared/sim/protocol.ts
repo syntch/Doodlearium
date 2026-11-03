@@ -2,6 +2,7 @@ import type { Kind, Personality, Pose } from './creature.ts';
 import type { Flake } from './food.ts';
 import type { Season } from './math.ts';
 import type { Effect } from './world.ts';
+import type { ShowKind } from './explorers.ts';
 
 /** Who's in a place, sent whenever that changes (a new drawing, an egg hatching...). */
 export interface RosterEntry {
@@ -27,6 +28,18 @@ export interface Visit {
   name: string;
   seed: number;
   /** World time it started. */
+  startedAt: number;
+}
+
+/** An explorer's show where it has just arrived (see shared/sim/explorers.ts), timed like a visit. */
+export interface Show {
+  kind: ShowKind;
+  /** The explorer (its drawing's id). */
+  who: string;
+  /** Where it came from, for its hello. */
+  from: string;
+  seed: number;
+  /** World time it arrived. */
   startedAt: number;
 }
 
@@ -65,6 +78,7 @@ export interface Frame {
   settings: Settings;
   doc: { id: string; until: number } | null;
   visit: Visit | null;
+  show?: Show | null;
   /** [rain, snow, rainbow], each 0..1. */
   weather?: [number, number, number];
   poses: PackedPose[];

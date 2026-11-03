@@ -10,16 +10,18 @@ import {
   type MapSummary,
   type RosterEntry,
   type Settings,
+  type Show,
   type Upcoming,
   type Visit,
 } from '../shared/sim/protocol.ts';
+import { ARRIVE_SECONDS, SHOWS, SHOW_KINDS, STAY_MINUTES, showSeconds, type ShowKind } from '../shared/sim/explorers.ts';
 import { Tank } from '../shared/sim/tank.ts';
 import { FILM_SECONDS, pickVisitor } from '../shared/sim/visitors.ts';
 import { habitatOf, motionOf, type Drawing, type SpeciesWhere, type TankCommand, type TankCommandValue } from '../shared/types.ts';
 import { hasWeather } from '../shared/world/biomes.ts';
 import { LIVE_PLACES, allWorlds, placeById, placeName, worldOf, type Place } from '../shared/world/places.ts';
-import { populate, turnover, type Individual } from '../shared/world/population.ts';
-import { worldsOfDrawing } from './packs.ts';
+import { populate, tourOf, turnover, type Individual, type PinnedOf } from '../shared/world/population.ts';
+import { chosenWorldsOf, worldsOfDrawing } from './packs.ts';
 import { record } from './history.ts';
 import { DATA_DIR, listDrawings } from './store.ts';
 import { UPDATE_EXIT, freshUpdate } from './update.ts';
@@ -70,12 +72,25 @@ interface WorldSave {
   grown: string[];
   scheduled: Scheduled[];
   lastSeason: Season;
+  journeys?: Record<string, Journey>;
   /** From before there were places: the one tank, which is now the Lake. */
   time?: number;
   saved?: Record<string, Saved>;
   nextVisit?: { at: number; name: string };
   nextDoc?: number;
 }
+
+/** An explorer's travels: where it is, where it's been lately, and its next trip. */
+interface Journey {
+  place: string;
+  next: { at: number; to: string };
+  visited: string[];
+  lastShow?: ShowKind;
+}
+
+/** For trying explorers out: EXPLORER_MINUTES=1 sends them off every minute. */
+const STAY = Number(process.env.EXPLORER_MINUTES) || 0;
+const stayFor = () => (STAY || rand(...STAY_MINUTES)) * MINUTE;
 
 /** One place's tank and what's going on in it. */
 class Spot {
@@ -93,6 +108,10 @@ class Spot {
   feeding: { until: number; eaten: Map<string, number> } | null = null;
   /** The next rain (or snow) shower, for places with a sky. */
   nextShower = Date.now() + rand(20, 45) * MINUTE;
+  /** An explorer who just arrived, putting on a show (and, for a treasure hunt, when the snacks spill out). */
+  show: Show | null = null;
+  showEnds = 0;
+  treasure: number[] = [];
 
   constructor(public place: Place) {
     this.tank = new Tank(place.biome);
@@ -129,6 +148,9 @@ export function worldsChanged() {
   broadcast({ type: 'map', places: mapSummary(), species: speciesCounts() });
 }
 let individuals: Individual[] = [];
+let journeys: Record<string, Journey> = {};
+/** Explorers are wherever their travels have taken them. */
+const pinnedOf: PinnedOf = (d) => (d.explorer ? journeys[d.id]?.place : undefined);
 let settings: Settings = { hour: null, season: null, blacklight: false };
 let scheduled: Scheduled[] = [];
 const grown = new Set<string>();
@@ -182,10 +204,11 @@ export async function startWorld() {
   for (const id of save.grown ?? []) grown.add(id);
   scheduled = save.scheduled ?? [];
   if (save.lastSeason) lastSeason = save.lastSeason;
+  journeys = save.journeys ?? {};
   applySettings();
 
   openSpots();
-  individuals = populate(listDrawings(), individuals, undefined, worldsOfDrawing);
+  individuals = populate(listDrawings(), individuals, undefined, worldsOfDrawing, pinnedOf);
   for (const spot of spots.values()) {
     const ps = places[spot.id];
     spot.tank.world.time = ps?.time ?? 0;
@@ -244,10 +267,11 @@ function specsFor(place: string): Spec[] {
 /** Re-works out who lives where (after a drawing comes, goes or changes) and brings every place in line. */
 function resync(fresh = new Set<string>()) {
   const before = new Map(individuals.filter((i) => i.named).map((i) => [i.id, i.place]));
-  individuals = populate(listDrawings(), individuals, fresh, worldsOfDrawing);
+  individuals = populate(listDrawings(), individuals, fresh, worldsOfDrawing, pinnedOf);
   for (const i of individuals) {
     const was = before.get(i.id);
-    if (i.named && was && was !== i.place) {
+    // (Explorers' trips have lines of their own.)
+    if (i.named && was && was !== i.place && !drawingOf(i.id)?.explorer) {
       // Off to another world: say which.
       const there = worldOf(i.place);
       const far = placeById(was) && worldOf(was).id !== there.id ? ` in ${there.name}` : '';
@@ -286,7 +310,7 @@ function saveWorld() {
   for (const spot of spots.values()) {
     places[spot.id] = { time: spot.tank.world.time, saved: spot.tank.save(), nextVisit: spot.nextVisit, nextDoc: spot.nextDoc };
   }
-  const data: WorldSave = { places, individuals, settings, grown: [...grown], scheduled, lastSeason };
+  const data: WorldSave = { places, individuals, settings, grown: [...grown], scheduled, lastSeason, journeys };
   saving = saving.then(async () => {
     const tmp = `${WORLD_FILE}.tmp`;
     await writeFile(tmp, JSON.stringify(data));
@@ -306,6 +330,7 @@ function tick() {
     updateDoc(spot, now);
     updateVisit(spot, now);
     updateWeather(spot, now);
+    updateShow(spot);
     readNotes(spot, now);
     if (now >= spot.nextTurnover) {
       spot.nextTurnover = now + rand(20, 40) * MINUTE;
@@ -314,6 +339,7 @@ function tick() {
     }
   }
   updateNight();
+  updateExplorers(now);
   if (now - lastMinute > MINUTE) {
     lastMinute = now;
     everyMinute();
@@ -373,6 +399,7 @@ function frame(spot: Spot): Frame {
     settings,
     doc: spot.doc,
     visit: spot.visit,
+    show: spot.show,
     weather: [round3(tank.weather.rain), round3(tank.weather.snow), round3(tank.weather.rainbow)],
     poses: [...tank.creatures.values()].filter((c) => c.kind !== 'plant' && c.kind !== 'decor').map((c) => packPose(c.id, c.pose)),
     flakes: tank.food.flakes.map(packFlake),
@@ -428,6 +455,10 @@ function upcoming(): Upcoming[] {
     items.push({ at: hatchAt, icon: '🐣', text: `The egg from ${parents} hatches ${at(spots.get(i.place)!)}`, place: i.place });
   }
   for (const s of scheduled) items.push({ at: s.at, icon: '⏰', text: describe(s.command, s.value, s.place), ...(s.place ? { place: s.place } : {}) });
+  for (const [id, j] of Object.entries(journeys)) {
+    const d = drawingOf(id);
+    if (d && placeById(j.next.to)) items.push({ at: j.next.at, icon: '🧭', text: `${d.name} arrives at ${placeName(j.next.to)}`, place: j.next.to });
+  }
   return items.sort((a, b) => a.at - b.at).slice(0, 8);
 }
 
@@ -441,7 +472,7 @@ function applySettings() {
 }
 
 /** Commands for one place; the rest (time, season, blacklight) are for the whole world. */
-const LOCAL: TankCommand[] = ['film', 'visit', 'current', 'school', 'puff', 'egg', 'rain', 'snow', 'rainbow'];
+const LOCAL: TankCommand[] = ['film', 'visit', 'current', 'school', 'puff', 'egg', 'rain', 'snow', 'rainbow', 'explorer'];
 
 /** Does a ⚙️ menu command (in place, for the ones that happen somewhere); returns a line to show the person who asked. */
 export function runCommand(command: TankCommand, value: TankCommandValue, place?: string): string {
@@ -479,6 +510,8 @@ export function runCommand(command: TankCommand, value: TankCommandValue, place?
       if (!spot.hasSky) return `☁️ There's no weather ${at(spot)}: try a place with sky above it.`;
       startShower(spot, command);
       break;
+    case 'explorer':
+      return callExplorer(spot, typeof value === 'string' ? value : undefined);
   }
   applySettings();
   return '';
@@ -517,6 +550,8 @@ function describe(command: TankCommand, value: TankCommandValue, place?: string)
       return `Snow${where}`;
     case 'rainbow':
       return `A rainbow${where}`;
+    case 'explorer':
+      return `${(value && drawingOf(String(value))?.name) || 'An explorer'} drops in${where}`;
   }
 }
 
@@ -579,6 +614,115 @@ function updateVisit(spot: Spot, now: number) {
     spot.nextVisit = { at: now + rand(8, 20) * MINUTE, name: pickVisitor(season(), undefined, spot.place.biome, spot.tank.isNight)?.name ?? '' };
   }
   if (!spot.visit && spot.nextVisit.name && now >= spot.nextVisit.at) startVisit(spot, spot.nextVisit.name, true);
+}
+
+// --- explorers ----------------------------------------------------------------------------------------
+
+/** The explorers there are (an egg has to hatch before it can go anywhere). */
+const explorers = () => listDrawings().filter((d) => d.explorer && !((d.hatchAt ?? 0) > Date.now()));
+
+/** Everywhere an explorer can go: the worlds picked for it (or its packs), or else every world there is. */
+function tour(d: Drawing) {
+  const chosen = chosenWorldsOf(d);
+  return tourOf(d, chosen.length ? chosen : allWorlds().map((w) => w.id)).map((p) => p.id);
+}
+
+/** Its next stop: somewhere it hasn't been lately, if there's anywhere. */
+function nextStop(d: Drawing, j: Journey) {
+  const places = tour(d).filter((id) => id !== j.place);
+  const fresh = places.filter((id) => !j.visited.includes(id));
+  const pool = fresh.length ? fresh : places;
+  return pool[Math.floor(Math.random() * pool.length)] ?? '';
+}
+
+/** Keeps every explorer's travels going: plans the next trip, and sets off when it's time. */
+function updateExplorers(now: number) {
+  const list = explorers();
+  for (const id of Object.keys(journeys)) if (!list.some((d) => d.id === id)) delete journeys[id];
+  for (const d of list) {
+    const here = individuals.find((i) => i.id === d.id)?.place;
+    if (!here) continue;
+    let j = journeys[d.id];
+    if (!j) {
+      // A new explorer: it starts wherever the world put it, and its first trip comes before long.
+      j = journeys[d.id] = { place: here, next: { at: now + (STAY || rand(5, 10)) * MINUTE, to: '' }, visited: [here] };
+      j.next.to = nextStop(d, j);
+    }
+    // Its place closed (a world went), or its next stop did.
+    if (j.place !== here) j.place = here;
+    if (j.next.to && !placeById(j.next.to)?.live) j.next.to = nextStop(d, j);
+    if (now < j.next.at) continue;
+    if (j.next.to && tour(d).includes(j.next.to)) travel(d, j.next.to);
+    else j.next = { at: now + stayFor(), to: nextStop(d, j) };
+  }
+}
+
+/** Off it goes to another place (or world), and arrives with a show. */
+function travel(d: Drawing, to: string, kind?: ShowKind) {
+  const j = journeys[d.id];
+  const spot = spotOf(to);
+  if (!j || !spot) return;
+  const from = j.place;
+  j.place = to;
+  j.visited = [...j.visited.filter((v) => v !== to), to].slice(-6);
+  j.next = { at: Date.now() + stayFor(), to: '' };
+  j.next.to = nextStop(d, j);
+  if (from !== to) resync();
+  startShow(spot, d, from, kind);
+}
+
+function startShow(spot: Spot, d: Drawing, from: string, kind?: ShowKind) {
+  const j = journeys[d.id];
+  const options = SHOW_KINDS.filter((k) => k !== j?.lastShow);
+  const show = kind ?? options[Math.floor(Math.random() * options.length)];
+  if (j) j.lastShow = show;
+  const startedAt = spot.tank.world.time;
+  spot.show = { kind: show, who: d.id, from, seed: Math.floor(Math.random() * 1e9), startedAt };
+  spot.showEnds = startedAt + showSeconds(show);
+  spot.treasure = show === 'treasure' ? [4, 7, 10, 13].map((t) => startedAt + ARRIVE_SECONDS + t) : [];
+  spot.tank.creatures.get(d.id)?.star?.(true);
+  if (show === 'parade') spot.tank.startParade(d.id, showSeconds(show));
+  const there = worldOf(spot.id);
+  const far = from !== spot.id && placeById(from) && worldOf(from).id !== there.id;
+  const trip = from !== spot.id && placeById(from) ? `travelled from ${placeName(from)}${far ? ` in ${worldOf(from).name}` : ''} to ${placeName(spot.id)}${far ? ` in ${there.name}` : ''}` : `dropped in ${at(spot)}`;
+  record('explorer', [d.id], `🧭 ${d.name} ${trip}, and ${SHOWS[show].text}! ${SHOWS[show].icon}`, spot.id);
+}
+
+/** The show goes on (a treasure hunt spills snacks as it goes), then ends. */
+function updateShow(spot: Spot) {
+  const { show, tank } = spot;
+  if (!show) return;
+  const explorer = tank.creatures.get(show.who);
+  while (spot.treasure.length && tank.world.time >= spot.treasure[0]) {
+    spot.treasure.shift();
+    const x = clamp((explorer?.pose.x ?? tank.world.width / 2) / tank.world.width + (Math.random() - 0.5) * 0.3, 0.05, 0.95);
+    tank.food.drop(tank.world, x);
+    broadcastTo(spot.id, { type: 'feed', x });
+  }
+  if (tank.world.time < spot.showEnds && explorer) return;
+  if (spot.doc?.id !== show.who) explorer?.star?.(false);
+  tank.startParade(null);
+  spot.show = null;
+  spot.treasure = [];
+}
+
+/** The ⚙️ menu's 🧭: an explorer comes here now (one that's here already puts on another show). */
+function callExplorer(spot: Spot, id?: string) {
+  const able = explorers().filter((d) => (!id || d.id === id) && tour(d).includes(spot.id));
+  if (!able.length) {
+    return explorers().length
+      ? `🧭 No explorer can live ${at(spot)}: try another place.`
+      : '🧭 There are no explorers yet: tick 🧭 Explorer when you draw an animal.';
+  }
+  if (spot.show) return '🧭 There\u2019s a show on here already!';
+  const away = able.filter((d) => journeys[d.id]?.place !== spot.id);
+  const d = (away.length ? away : able)[Math.floor(Math.random() * (away.length || able.length))];
+  if (!journeys[d.id]) {
+    const here = individuals.find((i) => i.id === d.id)?.place ?? spot.id;
+    journeys[d.id] = { place: here, next: { at: 0, to: '' }, visited: [here] };
+  }
+  travel(d, spot.id);
+  return `🧭 Here comes ${d.name}!`;
 }
 
 /** Feeding time, from a click on a screen or a Feed button: in one place, or (no place) everywhere. */

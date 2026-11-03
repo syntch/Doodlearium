@@ -82,4 +82,34 @@ export class Sounds {
   chime() {
     [784, 988, 1175, 1568].forEach((f, i) => this.tone(f, f, 0.6, 0.12, 'triangle', i * 0.12));
   }
+
+  /** An explorer's show begins: ta-da! */
+  fanfare() {
+    [523, 659, 784].forEach((f, i) => this.tone(f, f, 0.18, 0.12, 'square', i * 0.14));
+    this.tone(1047, 1047, 0.7, 0.14, 'square', 0.42);
+  }
+
+  /** One step of a parade's tune (n counts the steps). */
+  march(n: number) {
+    const tune = [392, 392, 523, 523, 659, 587, 523, 0, 440, 440, 587, 587, 698, 659, 587, 0];
+    const f = tune[n % tune.length];
+    if (f) this.tone(f, f, 0.22, 0.07, 'square');
+    if (n % 2 === 0) this.tone(140, 60, 0.12, 0.2);
+  }
+
+  /** One beat of a dance party: a thump, a tick, and a bouncy bass line. */
+  beat(n: number) {
+    this.tone(160, 45, 0.18, 0.35);
+    this.tone(3000, 3000, 0.03, 0.03, 'square', 0.25);
+    const bass = [110, 110, 165, 147][Math.floor(n / 2) % 4];
+    this.tone(bass, bass, 0.2, 0.12, 'sawtooth', 0.25);
+  }
+
+  /** Treasure! A jingle of coins. */
+  coins() {
+    for (let i = 0; i < 5; i++) {
+      const f = 1800 + Math.random() * 1600;
+      this.tone(f, f, 0.12, 0.05, 'triangle', i * 0.05);
+    }
+  }
 }

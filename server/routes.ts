@@ -94,6 +94,8 @@ function parseDrawing(body: any) {
     height,
     attachments,
     nocturnal: body.nocturnal === true,
+    // Only animals get about: plants and decorations stay put.
+    explorer: body.explorer === true && !['plant', 'decor'].includes(motion) ? true : undefined,
     parts,
     glow: glowPng !== null,
     // Where the species lives, and whether it comes in groups (unset: the usual for its style).
@@ -254,7 +256,7 @@ api.post('/feed', (req, res) => {
 /** A ⚙️ menu command for the tank: { command, value }, and (to schedule it) at, in ms since 1970. */
 function parseCommand(body: any) {
   const { command, value = null, place } = body ?? {};
-  const okValue = value === null || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value)) || (typeof value === 'string' && value.length <= 20);
+  const okValue = value === null || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value)) || (typeof value === 'string' && value.length <= 40);
   return TANK_COMMANDS.includes(command) && okValue ? { command, value, place: typeof place === 'string' ? place : undefined } : null;
 }
 

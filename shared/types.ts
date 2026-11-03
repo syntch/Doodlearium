@@ -121,6 +121,11 @@ export interface Drawing {
   worlds?: string[];
   /** Exactly where it lives, tapped on the map (unset: wherever suits it in its worlds). */
   places?: string[];
+  /**
+   * An explorer: one of a kind (never copies), who travels from place to place, and world to world, and
+   * puts on a show wherever it arrives (see shared/sim/explorers.ts).
+   */
+  explorer?: boolean;
 }
 
 /** A named group of drawings to share with another Doodlearium (see server/packs.ts). */
@@ -205,6 +210,7 @@ export interface NewDrawing {
   image: string;
   attachments?: Attachment[];
   nocturnal?: boolean;
+  explorer?: boolean;
   parts?: Part[];
   /** PNG data URL, the same size as image, marking each part's pixels. */
   partsImage?: string;
@@ -228,7 +234,7 @@ export interface NewEgg extends NewDrawing {
 }
 
 /** Things the tank's ⚙️ menu can do (to the one shared tank), now or at a set time. */
-export const TANK_COMMANDS = ['time', 'season', 'blacklight', 'film', 'visit', 'current', 'school', 'egg', 'puff', 'rain', 'snow', 'rainbow'] as const;
+export const TANK_COMMANDS = ['time', 'season', 'blacklight', 'film', 'visit', 'current', 'school', 'egg', 'puff', 'rain', 'snow', 'rainbow', 'explorer'] as const;
 export type TankCommand = (typeof TANK_COMMANDS)[number];
 export type TankCommandValue = string | number | boolean | null;
 

@@ -55,11 +55,16 @@ export const listPacks = () => packs.map((p) => ({ ...tidy(p), changed: !p.expor
  * more than one), else Earth. Worlds that aren't here (yet) don't count.
  */
 export function worldsOfDrawing(d: Drawing): string[] {
+  const chosen = chosenWorldsOf(d);
+  return chosen.length ? chosen : ['earth'];
+}
+
+/** The worlds picked for a drawing (by itself, else by its packs), or none. */
+export function chosenWorldsOf(d: Drawing): string[] {
   const here = new Set(allWorlds().map((w) => w.id));
   const own = (d.worlds ?? []).filter((w) => here.has(w));
   if (own.length) return own;
-  const fromPacks = [...new Set(packs.filter((p) => p.drawings.includes(d.id)).flatMap((p) => p.worlds ?? []))].filter((w) => here.has(w));
-  return fromPacks.length ? fromPacks : ['earth'];
+  return [...new Set(packs.filter((p) => p.drawings.includes(d.id)).flatMap((p) => p.worlds ?? []))].filter((w) => here.has(w));
 }
 
 /** The next version: the last number in it goes up one (1 → 2, 1.4 → 1.5); without one, ".2" goes on the end. */
@@ -161,6 +166,7 @@ export async function exportPack(id: string): Promise<PackFile | null> {
       image,
       attachments: d.attachments,
       nocturnal: d.nocturnal,
+      explorer: d.explorer,
       parts: d.parts,
       partsImage: d.parts?.length ? await dataUrl(`${d.id}.parts.png`) : undefined,
       glowImage: d.glow ? await dataUrl(`${d.id}.glow.png`) : undefined,

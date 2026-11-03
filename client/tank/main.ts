@@ -1,7 +1,7 @@
 import { Application, Assets, Container, Graphics, RenderLayer, Text, Texture } from 'pixi.js';
 import { imageUrl, motionOf, type Drawing, type Motion, type TankCommand, type TankCommandValue } from '../../shared/types.ts';
 import { newPose, type Kind, type Personality, type Pose } from '../../shared/sim/creature.ts';
-import { unpackPose, type MapSummary, type RosterEntry, type Settings, type Upcoming } from '../../shared/sim/protocol.ts';
+import { unpackPose, type MapSummary, type RosterEntry, type Settings, type Show, type Upcoming } from '../../shared/sim/protocol.ts';
 import { WORLD_H, WORLD_W, groundBand, sandY } from '../../shared/sim/world.ts';
 import { depthScale, seededRandom } from '../../shared/sim/math.ts';
 import { MAP_H, MAP_W, allWorlds, placeById, worldById, worldOf } from '../../shared/world/places.ts';
@@ -26,6 +26,7 @@ import { makeEgg } from './babies.ts';
 import { Documentary, aboutOf } from './documentary.ts';
 import { Events } from './events.ts';
 import { Seasons } from './seasons.ts';
+import { Shows } from './shows.ts';
 import { Sounds } from './sounds.ts';
 import { createCreature } from './creatures.ts';
 import { Food } from './food.ts';
@@ -156,6 +157,9 @@ camera.addChild(scene.back, creatureLayer, eventFront, scene.front, nightLayer, 
 const documentary = new Documentary(camera);
 const events = new Events({ back: eventBack, front: eventFront, among: creatureLayer });
 const sounds = new Sounds();
+const shows = new Shows({ back: eventBack, front: eventFront, among: creatureLayer }, sounds);
+/** The explorer show whose hello has been said. */
+let helloFor = -1;
 scene.onBloop = () => sounds.bubble();
 /** The map of the world on show; a place's view shows through its porthole while zooming in and out. */
 const mapLooks: MapLooks = {
@@ -471,9 +475,27 @@ function updateLabels(dt: number) {
   }
 }
 
+/** An explorer just arrived: it's carried in and puts on its show (see shows.ts), and says hello once down. */
+function updateShow(dt: number, show: Show | null) {
+  if (!show && !shows.showing) return;
+  const explorer = show ? entries.get(show.who) : undefined;
+  const here = explorer && !explorer.removing ? explorer : undefined;
+  const movers = [...entries.values()].filter((e) => e !== explorer && !e.removing && !e.still && e.kind !== 'egg' && e.fade > 0).map((e) => e.creature);
+  shows.update(dt, world, show, here?.creature, movers, here?.drawing.name ?? known.get(show?.who ?? '')?.name ?? 'Someone');
+  if (show && here && helloFor !== show.seed && shows.landed(world)) {
+    helloFor = show.seed;
+    const from = show.from !== place && placeById(show.from);
+    const far = from && placeById(place ?? '')?.world !== from.world ? ` in ${worldById(from.world)?.name ?? ''}` : '';
+    for (const l of labels.filter((l) => l.entry === here)) l.remaining = 0;
+    updateLabels(0);
+    showLabel(here, 9, from ? `🧭 explorer, just in from ${from.name}${far}` : '🧭 explorer');
+  }
+}
+
 const describe = (e: Entry) => {
   const d = e.drawing;
   const lines = [];
+  if (d.explorer) lines.push('an explorer 🧭, off to see the worlds');
   if (d.parents) lines.push(`baby of ${parentNames(d)}`);
   const count = speciesCounts[d.id] ?? 0;
   if (!e.named && count > 1) lines.push(`one of ${count} ${plural(d.name)} in the world`);
@@ -548,6 +570,8 @@ app.ticker.add((ticker) => {
       retiring.splice(i, 1);
     }
   }
+
+  updateShow(dt, frame?.show ?? null);
 
   const starring = frame?.doc ? entries.get(frame.doc.id) : undefined;
   documentary.update(dt, world, screenSize, starring && !starring.removing ? starring.creature : null, cardLines, cardName);
@@ -965,7 +989,7 @@ const clock = (d: Date) => d.toLocaleTimeString([], { hour: 'numeric', minute: '
 
 /** A menu button: done in the tank now (every screen sees it), or at the time picked. */
 /** Commands that happen in one place (the rest are for the whole world). */
-const LOCAL: string[] = ['film', 'visit', 'current', 'school', 'puff', 'egg', 'show', 'rain', 'snow', 'rainbow'];
+const LOCAL: string[] = ['film', 'visit', 'current', 'school', 'puff', 'egg', 'show', 'rain', 'snow', 'rainbow', 'explorer'];
 
 async function command(cmd: TankCommand, value: TankCommandValue = null) {
   const here = zoomTo === 1 ? (place ?? undefined) : undefined;

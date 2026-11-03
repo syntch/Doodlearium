@@ -41,8 +41,8 @@ const MIN_CHOICE = 4;
 const MAX_DECOR_EACH = 2;
 
 export const bucketOf = (d: Drawing): CreatureType => habitatOf(motionOf(d));
-/** Blended babies are one of a kind: there's only ever the original. */
-export const isUnique = (d: Drawing) => Boolean(d.parents);
+/** Blended babies and explorers are one of a kind: there's only ever the original. */
+export const isUnique = (d: Drawing) => Boolean(d.parents) || d.explorer === true;
 
 /** The worlds a drawing lives in: its own choice, else its packs' (see server/packs.ts), else Earth. */
 export type WorldsOf = (d: Drawing) => string[];
@@ -68,6 +68,15 @@ export function homesOf(d: Drawing, worlds: string[]): Place[] {
   });
 }
 
+/** Where an explorer can go: the places it could live in those worlds that have room for its kind. */
+export function tourOf(d: Drawing, worlds: string[]): Place[] {
+  const bucket = bucketOf(d);
+  return homesOf(d, worlds).filter((p) => (TARGETS[p.biome]?.[bucket] ?? 0) > 0);
+}
+
+/** Where an explorer is right now (its trips are planned by the server), or undefined for everyone else. */
+export type PinnedOf = (d: Drawing) => string | undefined;
+
 const suffix = () => Math.random().toString(36).slice(2, 8);
 
 /**
@@ -75,7 +84,13 @@ const suffix = () => Math.random().toString(36).slice(2, 8);
  * whose species is gone (or no longer suits their place) leave, and every place is topped up to its numbers.
  * fresh drawings (just drawn) are picked more often, so they show up right away.
  */
-export function populate(drawings: Drawing[], individuals: Individual[], fresh = new Set<string>(), worldsOf: WorldsOf = ownWorlds): Individual[] {
+export function populate(
+  drawings: Drawing[],
+  individuals: Individual[],
+  fresh = new Set<string>(),
+  worldsOf: WorldsOf = ownWorlds,
+  pinnedOf: PinnedOf = () => undefined,
+): Individual[] {
   const byId = new Map(drawings.map((d) => [d.id, d]));
   const homes = new Map(drawings.map((d) => [d.id, new Set(homesOf(d, worldsOf(d)).map((p) => p.id))]));
   const fits = (d: Drawing, p: Place) => homes.get(d.id)!.has(p.id);
@@ -102,7 +117,8 @@ export function populate(drawings: Drawing[], individuals: Individual[], fresh =
     const stay = had && fits(d, placeById(had.place)!) ? had.place : undefined;
     const range = ranges.get(d.id)!;
     const best = [...range].sort((a, b) => count(a.id, bucketOf(d)) - count(b.id, bucketOf(d)))[0]?.id;
-    const place = home?.live && fits(d, home) ? home.id : (stay ?? best);
+    const pinned = placeById(pinnedOf(d));
+    const place = pinned?.live ? pinned.id : home?.live && fits(d, home) ? home.id : (stay ?? best);
     if (!place) {
       list = list.filter((i) => i.id !== d.id);
       continue;

@@ -128,8 +128,8 @@ function card(d: Drawing) {
 
   const name = document.createElement('div');
   name.className = 'name';
-  name.textContent = d.nocturnal ? `${d.name} 🌙` : d.name;
-  if (d.nocturnal) name.title = 'Night creature: only comes out after dark';
+  name.textContent = `${d.name}${d.nocturnal ? ' 🌙' : ''}${d.explorer ? ' 🧭' : ''}`;
+  name.title = [d.nocturnal && 'Night creature: only comes out after dark', d.explorer && 'Explorer: travels from place to place, and puts on a show wherever it arrives'].filter(Boolean).join('. ');
   const meta = document.createElement('div');
   meta.className = 'meta';
   meta.textContent = `by ${d.artist} · ${new Date(d.createdAt).toLocaleDateString()}`;
@@ -151,7 +151,9 @@ function card(d: Drawing) {
       .map(([id, n]) => {
         const p = placeById(id);
         const icon = p ? BIOME_NAMES[p.biome].split(' ')[0] : '';
-        return `${icon} ${p?.name ?? id}${n > 1 ? ` ×${n}` : ''}${id === where.home ? ' 🏠' : ''}`;
+        // An explorer is only ever passing through.
+        const mark = id !== where.home ? '' : d.explorer ? ' (exploring) 🧭' : ' 🏠';
+        return `${icon} ${p?.name ?? id}${n > 1 ? ` ×${n}` : ''}${mark}`;
       })
       .join(' · ');
     lines.push(line);
@@ -168,7 +170,11 @@ function card(d: Drawing) {
     const own = d.worlds?.length ? d.worlds : [...new Set(inPacks.flatMap((p) => p.worlds ?? []))];
     const line = document.createElement('div');
     line.className = 'meta';
-    line.textContent = (own.length ? own : ['earth']).map((id) => worldById(id)).filter((w) => !!w).map((w) => `${w.icon} ${w.name}`).join(' · ');
+    line.textContent =
+      // An explorer with no worlds picked visits them all.
+      d.explorer && !own.length
+        ? '🌌 Every world'
+        : (own.length ? own : ['earth']).map((id) => worldById(id)).filter((w) => !!w).map((w) => `${w.icon} ${w.name}`).join(' · ');
     if (d.worlds?.length) line.title = 'Chosen for this drawing on the Draw page';
     lines.push(line);
   }

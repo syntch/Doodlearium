@@ -93,6 +93,8 @@ const nameInput = document.querySelector<HTMLInputElement>('#name')!;
 const artistInput = document.querySelector<HTMLInputElement>('#artist')!;
 const sendButton = document.querySelector<HTMLButtonElement>('#send')!;
 const nocturnalInput = document.querySelector<HTMLInputElement>('#nocturnal')!;
+const explorerInput = document.querySelector<HTMLInputElement>('#explorer')!;
+const explorerLabel = document.querySelector<HTMLLabelElement>('#explorer-label')!;
 const groupInput = document.querySelector<HTMLInputElement>('#group')!;
 const homeSelect = document.querySelector<HTMLSelectElement>('#home')!;
 const speciesSizesEl = document.querySelector<HTMLSpanElement>('#species-size')!;
@@ -463,6 +465,11 @@ function worldsChanged() {
 const SPECIES_SIZES: [SpeciesSize | undefined, string][] = [['small', 'Small'], [undefined, 'Medium'], ['big', 'Big']];
 
 function renderWhere(home = homeSelect.value) {
+  // Only animals explore; an explorer is one of a kind, and goes wherever its travels take it.
+  explorerLabel.hidden = state.motion === 'plant' || state.motion === 'decor';
+  if (explorerLabel.hidden) explorerInput.checked = false;
+  groupInput.closest('label')!.hidden = explorerInput.checked;
+  homeSelect.closest('label')!.hidden = explorerInput.checked;
   // The worlds, when there's more than one: ticked are where it lives. Changing them away from what its
   // packs say makes them its own choice; back to the same, and it follows its packs again.
   const worlds = allWorlds();
@@ -1745,6 +1752,7 @@ async function refreshPreview() {
 }
 document.querySelector<HTMLInputElement>('#paper-fill')!.addEventListener('change', schedulePreview);
 nocturnalInput.addEventListener('change', schedulePreview);
+explorerInput.addEventListener('change', () => renderWhere());
 homeSelect.addEventListener('change', schedulePreview);
 
 // --- submit --------------------------------------------------------------
@@ -1773,6 +1781,7 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
     image: exported.dataUrl,
     attachments: exported.attachments,
     nocturnal: nocturnalInput.checked,
+    explorer: explorerInput.checked || undefined,
     parts: exported.parts,
     partsImage: exported.partsImage,
     glowImage: exported.glowImage,
@@ -1793,13 +1802,16 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
     } catch {}
     const drawing = await submitDrawing(payload);
     const where = drawing.place ? placeById(drawing.place)?.name : undefined;
-    showToast(`Splash! ${drawing.name} moved into ${where ?? 'the world'}.${drawing.nocturnal ? ' It comes out at night 🌙' : ''}`);
+    showToast(
+      `Splash! ${drawing.name} moved into ${where ?? 'the world'}.${drawing.nocturnal ? ' It comes out at night 🌙' : ''}${drawing.explorer ? ' It\u2019ll be off exploring before long 🧭' : ''}`,
+    );
     ops.length = 0;
     base = null;
     baseAttachments = [];
     baseParts = [];
     nameInput.value = '';
     nocturnalInput.checked = false;
+    explorerInput.checked = false;
     setWhere(defaultHabitats(state.motion), defaultGroup(state.motion), '', undefined, {});
     suggestDismissed = false;
     closePhotoPanel();
@@ -1883,6 +1895,7 @@ async function loadForEditing(id: string) {
   nameInput.value = drawing.name;
   artistInput.value = drawing.artist;
   nocturnalInput.checked = drawing.nocturnal === true;
+  explorerInput.checked = drawing.explorer === true;
   // The worlds its drawing packs give it, so the chips show where it lives now.
   const packs = await fetchPacks().catch(() => []);
   packWorlds = [...new Set(packs.filter((p) => p.drawings.includes(drawing.id)).flatMap((p) => p.worlds ?? []))];
