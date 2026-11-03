@@ -51,6 +51,7 @@ type DrawingMeta = {
   parents?: [string, string];
   hatchAt?: number;
   nest?: number;
+  origin?: string;
 };
 
 /** Images that go with a drawing: which pixels are moving parts, which glow, and what's painted behind parts. */
@@ -89,6 +90,14 @@ export async function updateDrawing(
   Object.assign(drawing, meta, { updatedAt: Date.now() });
   await save();
   return drawing;
+}
+
+/** Links a baby from a drawing pack to its parents, once they're in too. */
+export async function setParents(id: string, parents: [string, string]) {
+  const drawing = drawings.find((d) => d.id === id);
+  if (!drawing) return;
+  drawing.parents = parents;
+  await save();
 }
 
 export async function removeDrawing(id: string): Promise<boolean> {

@@ -13,6 +13,9 @@ import { burst, heart, newWorld, sandY, type Hideout, type School, type World } 
 
 /** Night creatures come out once it's getting properly dark. */
 const NIGHT = 0.25;
+
+/** Tells one edit of a creature's drawing (or a move by hand) from the next. */
+const madeFrom = (spec: Spec) => `${spec.drawing.updatedAt ?? 0} ${JSON.stringify(spec.placement ?? null)}`;
 /** Schools of one species keep to this size; a big group swims as several. */
 const SCHOOL_SIZE = 7;
 
@@ -26,6 +29,11 @@ export class Tank {
   readonly world: World;
   readonly creatures = new Map<string, SimCreature>();
   private specs = new Map<string, Spec>();
+  /**
+   * Which edit of its drawing (and which placement) each creature was made from. Kept apart from specs because
+   * the server edits a drawing in place, so the spec's own drawing always looks up to date.
+   */
+  private made = new Map<string, string>();
   /** The hour to show, or null for the real time. */
   hour: number | null = null;
   /** 0 in daylight, 0.5 at full night; eases when the hour changes. */
@@ -56,6 +64,7 @@ export class Tank {
   add(spec: Spec, dropIn: boolean, saved?: Saved) {
     const creature = this.make(spec, dropIn, saved);
     this.creatures.set(spec.id, creature);
+    this.made.set(spec.id, madeFrom(spec));
     this.specs.set(spec.id, spec);
     if (dropIn && creature.kind !== 'egg') burst(this.world, creature.pose.x, this.world.waterTop);
     return creature;
@@ -103,6 +112,7 @@ export class Tank {
   remove(id: string) {
     this.creatures.delete(id);
     this.specs.delete(id);
+    this.made.delete(id);
   }
 
   /** Where everyone is, to carry on from after a restart. */
@@ -119,9 +129,8 @@ export class Tank {
     for (const spec of specs) {
       const had = this.specs.get(spec.id);
       if (!had) this.add(spec, dropIn && !saved[spec.id], saved[spec.id]);
-      else if (had.drawing.updatedAt !== spec.drawing.updatedAt || JSON.stringify(had.placement) !== JSON.stringify(spec.placement)) {
-        this.replace(spec);
-      } else if (had.drawing !== spec.drawing) this.specs.set(spec.id, { ...had, drawing: spec.drawing });
+      else if (this.made.get(spec.id) !== madeFrom(spec)) this.replace(spec);
+      else if (had.drawing !== spec.drawing) this.specs.set(spec.id, { ...had, drawing: spec.drawing });
     }
   }
 

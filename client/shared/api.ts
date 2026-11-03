@@ -1,4 +1,4 @@
-import type { ClientMessage, Drawing, HistoryEntry, NewDrawing, NewEgg, ServerMessage, SpeciesWhere, Story, TankCommand, TankCommandValue, UpdateInfo } from '../../shared/types.ts';
+import type { ClientMessage, Drawing, HistoryEntry, NewDrawing, NewEgg, Pack, PackInstall, ServerMessage, SpeciesWhere, Story, TankCommand, TankCommandValue, UpdateInfo } from '../../shared/types.ts';
 
 const PIN_KEY = 'doodlearium-pin';
 
@@ -42,6 +42,54 @@ const failure = async (res: Response, what: string) => new Error((await res.json
 export async function fetchDrawings(): Promise<Drawing[]> {
   const res = await fetch('/api/drawings');
   if (!res.ok) throw new Error(`Failed to load drawings (${res.status})`);
+  return res.json();
+}
+
+// --- 📦 drawing packs ---------------------------------------------------------------------------------------
+
+const asJson = (method: string, body: unknown): RequestInit => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+export async function fetchPacks(): Promise<Pack[]> {
+  const res = await fetch('/api/packs');
+  if (!res.ok) throw await failure(res, 'Failed to load packs');
+  return res.json();
+}
+
+export async function makePack(name: string, drawings: string[]): Promise<Pack> {
+  const res = await fetch('/api/packs', asJson('POST', { name, drawings }));
+  if (!res.ok) throw await failure(res, 'Saving the pack failed');
+  return res.json();
+}
+
+export async function changePack(id: string, change: { name?: string; version?: string; drawings?: string[] }): Promise<Pack> {
+  const res = await fetch(`/api/packs/${id}`, asJson('PUT', change));
+  if (!res.ok) throw await failure(res, 'Saving the pack failed');
+  return res.json();
+}
+
+/** Uninstalls a pack (or takes apart one made here); answers how many drawings went with it. */
+export async function removePack(id: string): Promise<number> {
+  const res = await withPin(`/api/packs/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw await failure(res, 'Removing the pack failed');
+  return (await res.json()).removed;
+}
+
+/** Saves the pack as a .doodlepack file on this device. */
+export async function exportPack(id: string) {
+  const res = await fetch(`/api/packs/${id}/export`, { method: 'POST' });
+  if (!res.ok) throw await failure(res, 'Exporting failed');
+  const name = /filename="?([^";]+)"?/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? 'drawings.doodlepack';
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(await res.blob());
+  link.download = name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
+}
+
+/** Installs a pack file's text (or updates the pack to it). */
+export async function installPack(text: string): Promise<PackInstall> {
+  const res = await withPin('/api/packs/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: text });
+  if (!res.ok) throw await failure(res, 'Installing failed');
   return res.json();
 }
 

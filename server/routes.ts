@@ -22,19 +22,20 @@ import { EGG_GAP, HATCH_TIME, arrange, drawingAdded, drawingRemoved, drawingUpda
 import { broadcast } from './ws.ts';
 import { rateLimit, requirePin } from './security.ts';
 import { updateInfo } from './update.ts';
+import { cleanText } from './text.ts';
+import { MAX_PACK_DRAWINGS, changePack, exportPack, forgetPack, installPack, listPacks, makePack, type PackItem } from './packs.ts';
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const MAX_DIMENSION = 1024;
-
-const cleanText = (value: unknown, fallback: string) =>
-  (typeof value === 'string' ? value.trim().slice(0, 40) : '') || fallback;
 
 export const api = Router();
 // Plenty for a family tapping away, not for a flood.
 const changes = rateLimit(300, 60);
 const uploads = rateLimit(30, 60, 'That\'s a lot of drawings at once: wait a minute, then try again.');
 api.use((req, res, next) => (req.method === 'GET' ? next() : changes(req, res, next)));
-api.use(express.json({ limit: '8mb' }));
+// Pack files hold a lot of drawings at once: they get more room, on their own route (after the PIN).
+const json = express.json({ limit: '8mb' });
+api.use((req, res, next) => (req.path === '/packs/install' ? next() : json(req, res, next)));
 
 api.get('/drawings', (_req, res) => {
   res.json(listDrawings());
@@ -320,12 +321,12 @@ api.get('/stories', async (_req, res) => {
 /** Keeps a story written from the history. */
 api.post('/stories', async (req, res) => {
   const { title, text, from, to } = req.body ?? {};
-  if (typeof text !== 'string' || !text.trim() || text.length > 50_000 || typeof from !== 'number' || typeof to !== 'number') {
+  const story = cleanText(text, '', 50_000, true);
+  if (typeof text !== 'string' || text.length > 60_000 || !story || !Number.isFinite(from) || !Number.isFinite(to)) {
     res.status(400).json({ error: 'a story needs its text and the stretch of history it covers' });
     return;
   }
-  const clean = typeof title === 'string' && title.trim() ? title.trim().slice(0, 120) : 'A story from Doodlearium';
-  res.status(201).json(await addStory({ title: clean, text: text.trim(), from, to }));
+  res.status(201).json(await addStory({ title: cleanText(title, 'A story from Doodlearium', 120), text: story, from, to }));
 });
 
 api.delete('/drawings/:id', requirePin, async (req: express.Request<{ id: string }>, res) => {
@@ -352,4 +353,95 @@ api.post('/update', requirePin, async (_req, res) => {
   }
   res.json({ ok: true });
   stopForUpdate();
+});
+
+// --- 📦 drawing packs (see packs.ts) ----------------------------------------------------------------------
+
+/** Pack ids and drawing keys: a UUID, or something like one. */
+const isKey = (v: unknown): v is string => typeof v === 'string' && /^[\w-]{1,64}$/.test(v);
+
+/** A list of drawings here, for a pack: an error, or their ids. */
+function parsePackDrawings(value: unknown) {
+  const ids = new Set(listDrawings().map((d) => d.id));
+  if (!Array.isArray(value) || value.length > MAX_PACK_DRAWINGS || !value.every((id) => typeof id === 'string' && ids.has(id))) {
+    return null;
+  }
+  return [...new Set<string>(value)];
+}
+
+api.get('/packs', (_req, res) => {
+  res.json(listPacks());
+});
+
+/** Puts a new pack together: { name, drawings }. */
+api.post('/packs', async (req, res) => {
+  const drawings = parsePackDrawings(req.body?.drawings);
+  if (!drawings?.length) {
+    res.status(400).json({ error: `a pack needs between 1 and ${MAX_PACK_DRAWINGS} drawings` });
+    return;
+  }
+  res.status(201).json(await makePack(cleanText(req.body.name, 'My pack', 60), drawings));
+});
+
+/** Renames a pack, sets its version, or changes which drawings are in it: { name?, version?, drawings? }. */
+api.put('/packs/:id', async (req: express.Request<{ id: string }>, res) => {
+  const { name, version } = req.body ?? {};
+  const drawings = req.body?.drawings === undefined ? undefined : parsePackDrawings(req.body.drawings);
+  if (drawings === null || drawings?.length === 0) {
+    res.status(400).json({ error: `a pack needs between 1 and ${MAX_PACK_DRAWINGS} drawings` });
+    return;
+  }
+  const change = {
+    ...(name !== undefined && { name: cleanText(name, 'My pack', 60) }),
+    ...(version !== undefined && { version: cleanText(version, '1', 20) }),
+    ...(drawings && { drawings }),
+  };
+  const pack = await changePack(req.params.id, change);
+  if (!pack) res.status(404).json({ error: 'no such pack' });
+  else res.json(pack);
+});
+
+/** Uninstalls a pack (removing the drawings it brought: that needs the PIN), or takes apart one made here. */
+api.delete(
+  '/packs/:id',
+  (req, res, next) => (listPacks().find((p) => p.id === req.params.id)?.installed ? requirePin(req, res, next) : next()),
+  async (req: express.Request<{ id: string }>, res) => {
+    const removed = await forgetPack(req.params.id);
+    if (removed === null) res.status(404).json({ error: 'no such pack' });
+    else res.json({ removed });
+  },
+);
+
+/** The pack as a .doodlepack file (its version goes up first if it's changed since last time). */
+api.post('/packs/:id/export', async (req: express.Request<{ id: string }>, res) => {
+  const file = await exportPack(req.params.id);
+  if (!file) {
+    res.status(404).json({ error: 'no such pack' });
+    return;
+  }
+  const filename = `${file.name} v${file.version}.doodlepack`.replace(/[^\w .()-]+/g, '_');
+  res.attachment(filename).json(file);
+});
+
+/** Installs a .doodlepack file, or updates the pack to the version in it. Every drawing is checked first. */
+api.post('/packs/install', requirePin, uploads, express.json({ limit: '200mb' }), async (req, res) => {
+  const file = req.body ?? {};
+  const fail = (error: string) => void res.status(400).json({ error });
+  if (file.format !== 'doodlearium-pack' || file.formatVersion !== 1 || !isKey(file.id)) return fail("That isn't a Doodlearium drawing pack.");
+  if (!Array.isArray(file.drawings) || !file.drawings.length || file.drawings.length > MAX_PACK_DRAWINGS) {
+    return fail(`A pack has between 1 and ${MAX_PACK_DRAWINGS} drawings.`);
+  }
+  const items: PackItem[] = [];
+  const keys = new Set<string>();
+  for (const d of file.drawings) {
+    const parsed = parseDrawing(d);
+    const what = `"${cleanText(d?.name, 'A drawing')}" in the pack`;
+    if ('error' in parsed) return fail(`${what} isn't right: ${parsed.error}`);
+    if (!isKey(d.key) || keys.has(d.key)) return fail(`${what} is missing its key.`);
+    keys.add(d.key);
+    const parents = Array.isArray(d.parents) && d.parents.length === 2 && d.parents.every(isKey) ? ([d.parents[0], d.parents[1]] as [string, string]) : undefined;
+    items.push({ key: d.key, meta: parsed.meta, png: parsed.png, extra: parsed.extra, parents });
+  }
+  const pack = { id: file.id, name: cleanText(file.name, 'A pack', 60), version: cleanText(file.version, '1', 20) };
+  res.json(await installPack(pack, items));
 });

@@ -111,6 +111,56 @@ export interface Drawing {
   home?: string;
   /** Roughly how big its kind grows (unset: medium). Each one still varies around it. */
   size?: SpeciesSize;
+  /**
+   * Came in a drawing pack: its id where it was first drawn, so a newer version of the pack updates it
+   * rather than adding it again (see server/packs.ts).
+   */
+  origin?: string;
+}
+
+/** A named group of drawings to share with another Doodlearium (see server/packs.ts). */
+export interface Pack {
+  /** The same everywhere the pack goes, so installing a newer version updates it. */
+  id: string;
+  name: string;
+  /** Goes up by itself when it's exported with changes (1, 2, 3... or 1.4, 1.5...). */
+  version: string;
+  /** The drawings in it here. */
+  drawings: string[];
+  /** Installed from a pack file (rather than put together here): uninstalling it removes its drawings. */
+  installed: boolean;
+  createdAt: number;
+  updatedAt: number;
+  /** The last export: which version, and what was in it (to tell whether anything has changed since). */
+  exported?: { version: string; at: number; signature: string };
+  /** Sent with the list: something's changed since the last export (so the next one is a new version). */
+  changed?: boolean;
+}
+
+/** One drawing in a pack file: its details as the draw page sends them, and its key (see Drawing.origin). */
+export interface PackFileDrawing extends NewDrawing {
+  key: string;
+  /** A baby's parents' keys (kept when they're in the pack too). */
+  parents?: [string, string];
+}
+
+/** What's saved in a .doodlepack file. */
+export interface PackFile {
+  format: 'doodlearium-pack';
+  formatVersion: 1;
+  id: string;
+  name: string;
+  version: string;
+  exportedAt: number;
+  drawings: PackFileDrawing[];
+}
+
+/** What installing a pack did. */
+export interface PackInstall {
+  pack: Pack;
+  added: number;
+  updated: number;
+  removed: number;
 }
 
 export type SpeciesSize = 'small' | 'big';
@@ -161,6 +211,8 @@ export type ServerMessage =
   | { type: 'drawing:added'; drawing: Drawing }
   | { type: 'drawing:updated'; drawing: Drawing }
   | { type: 'drawing:removed'; id: string }
+  /** A drawing pack was made, changed, installed or removed. */
+  | { type: 'packs' }
   /** Feeding time: x is where across the tank (0..1) the food drops (screens play the plops). */
   | { type: 'feed'; x: number }
   /** Who's in the place being watched, and how it looks right now (see shared/sim/protocol.ts). */

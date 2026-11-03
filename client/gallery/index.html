@@ -23,6 +23,32 @@
       .card a.button:hover { border-color: var(--accent); }
       .card button:hover { border-color: var(--danger); }
       .empty { color: var(--muted); }
+
+      /* 📦 drawing packs */
+      .packs { background: var(--panel); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 16px; }
+      .packs-head { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+      .packs-head h2 { margin: 0 auto 0 0; font-size: 1.1rem; }
+      .packs .note { color: var(--muted); font-size: 0.9rem; margin: 8px 0 0; white-space: pre-line; }
+      .packs .note:empty { display: none; }
+      .pack-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+      .pack-list:empty { display: none; }
+      .pack { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; background: var(--panel-2); border-radius: 10px; padding: 8px 10px; }
+      .pack .title { font-weight: bold; overflow-wrap: anywhere; }
+      .pack .version { background: var(--bg); border-radius: 8px; padding: 1px 8px; font-size: 0.85rem; }
+      .pack .meta { color: var(--muted); font-size: 0.85rem; margin-right: auto; }
+      .pack button { padding: 4px 10px; font-size: 0.85rem; background: var(--panel); }
+      .pack button.danger:hover { border-color: var(--danger); }
+      .choose {
+        position: sticky; top: 0; z-index: 5; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+        background: var(--panel); border: 2px solid var(--accent); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 16px;
+      }
+      .choose input[type='text'] { flex: 1 1 160px; }
+      .choose #choose-version { flex: 0 1 90px; }
+      .choose .count { color: var(--muted); margin-right: auto; }
+      .grid.choosing .card { cursor: pointer; position: relative; outline: 3px solid transparent; }
+      .grid.choosing .card.chosen { outline-color: var(--accent); }
+      .grid.choosing .card .actions { display: none; }
+      .card .tick { position: absolute; top: 14px; left: 14px; width: 26px; height: 26px; accent-color: var(--accent); pointer-events: none; }
     </style>
   </head>
   <body>
@@ -34,6 +60,25 @@
       <button id="feed" title="Drop food in for everyone">🍤 Feed</button>
     </nav>
     <main>
+      <section class="packs" aria-labelledby="packs-title">
+        <div class="packs-head">
+          <h2 id="packs-title">📦 Drawing packs</h2>
+          <button id="pack-new" title="Choose some drawings to share with another Doodlearium">➕ Make a pack</button>
+          <button id="pack-install" title="Add the drawings from a .doodlepack file (or update a pack you have)">📥 Install a pack…</button>
+          <input type="file" id="pack-file" accept=".doodlepack,application/json" hidden />
+        </div>
+        <div class="pack-list" id="pack-list"></div>
+        <p class="note" id="packs-note" role="status"></p>
+      </section>
+      <div class="choose" id="choose" hidden>
+        <input type="text" id="choose-name" maxlength="60" placeholder="Name the pack (e.g. Farm friends)" aria-label="Pack name" />
+        <input type="text" id="choose-version" maxlength="20" placeholder="1" aria-label="Version" title="Version (it goes up by itself when you export it with changes)" />
+        <span class="count" id="choose-count"></span>
+        <button id="choose-all">Select all</button>
+        <button id="choose-none">Unselect all</button>
+        <button class="primary" id="choose-save">💾 Save pack</button>
+        <button id="choose-cancel">Cancel</button>
+      </div>
       <div class="filters" id="filters"></div>
       <div class="grid" id="grid"></div>
       <p class="empty" id="empty" hidden>No drawings yet. <a href="/draw/">Draw the first one!</a></p>

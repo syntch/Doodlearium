@@ -4,6 +4,7 @@ import { networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import express from 'express';
 import { loadHistory } from './history.ts';
+import { loadPacks } from './packs.ts';
 import { api } from './routes.ts';
 import { accessNote, guard, securityHeaders } from './security.ts';
 import { DRAWINGS_DIR, loadStore } from './store.ts';
@@ -15,6 +16,7 @@ const DIST_DIR = join(import.meta.dirname, '..', 'dist');
 
 await loadStore();
 await loadHistory();
+await loadPacks();
 await startWorld();
 
 const app = express();
