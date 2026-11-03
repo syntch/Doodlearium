@@ -81,6 +81,10 @@
 .habitats { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .habitats button { padding: 4px 10px; font-size: 0.85rem; }
 .where select { font: inherit; }
+.place-picker { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.picker-map { width: min(100%, 640px); aspect-ratio: 10 / 7; border-radius: 12px; overflow: hidden; touch-action: manipulation; }
+.picker-map canvas { display: block; width: 100%; height: 100%; }
+.picker-hint { margin: 0; color: var(--muted); font-size: 0.9rem; text-align: center; }
 .toast { min-height: 1.4em; margin: 0; color: var(--accent); font-weight: bold; text-align: center; }
 .toast.error { color: var(--danger); }
 .photo-panel {

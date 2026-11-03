@@ -56,7 +56,12 @@ interface Porthole {
   count: Text;
   swimmers: Swimmer[];
   shown: string;
+  /** A glow round it when it's chosen (the place picker on the draw page). */
+  glow: Graphics;
 }
+
+/** How the place picker shows a place: chosen, free to choose, or not suited to the drawing. */
+export type Mark = 'chosen' | 'free' | 'unsuited';
 
 /** Space maps: the dark between the stars. */
 const SPACE = 0x070b24;
@@ -272,11 +277,13 @@ export class WorldMap {
     banner.roundRect(-w / 2, R + 10, w, 40, 10).fill(0xfff4d6).stroke({ width: 2, color: metal });
     name.position.set(0, R + 23);
     count.position.set(0, R + 40);
-    view.addChild(contents, mask, glass, ring, banner, name, count);
+    const glow = new Graphics().circle(0, 0, R + 18).stroke({ width: 12, color: 0xffd34a, alpha: 0.9 }).circle(0, 0, R + 28).stroke({ width: 8, color: 0xffd34a, alpha: 0.35 });
+    glow.visible = false;
+    view.addChild(glow, contents, mask, glass, ring, banner, name, count);
     view.eventMode = 'static';
     view.cursor = 'pointer';
     view.on('pointertap', () => this.onPick(place.id));
-    this.portholes.push({ place, view, inside, count, swimmers: [], shown: '' });
+    this.portholes.push({ place, view, inside, count, swimmers: [], shown: '', glow });
     return view;
   }
 
@@ -285,6 +292,26 @@ export class WorldMap {
     this.note.text = text;
     this.note.position.set(place.x, place.y - LOCKED - 34);
     this.noteFor = 3;
+  }
+
+  /** The place whose porthole is at a point (in map units), if any. */
+  placeAt(x: number, y: number) {
+    return this.portholes.find((p) => Math.hypot(p.view.x - x, p.view.y - y) < PORTHOLE + 10)?.place.id;
+  }
+
+  /** Moves a place's porthole while the world maker drags it (the map round it is redrawn once it's let go). */
+  movePlace(id: string, x: number, y: number) {
+    this.portholes.find((p) => p.place.id === id)?.view.position.set(x, y);
+  }
+
+  /** The place picker: a glow round the chosen places, and the ones that don't suit the drawing faded. */
+  setMarks(marks: Record<string, Mark>) {
+    for (const p of this.portholes) {
+      const mark = marks[p.place.id] ?? 'free';
+      p.glow.visible = mark === 'chosen';
+      p.view.alpha = mark === 'unsuited' ? 0.35 : 1;
+      p.view.cursor = mark === 'unsuited' ? 'not-allowed' : 'pointer';
+    }
   }
 
   /** Who lives where, from the server: each porthole shows a few of its kinds. */

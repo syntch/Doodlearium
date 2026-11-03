@@ -28,6 +28,8 @@
       .packs { background: var(--panel); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 16px; }
       .packs-head { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
       .packs-head h2 { margin: 0 auto 0 0; font-size: 1.1rem; }
+      .packs-head a.button { background: var(--panel-2); border: 2px solid transparent; border-radius: 10px; color: var(--text); text-decoration: none; padding: 6px 12px; }
+      .packs-head a.button:hover { border-color: var(--accent); }
       .packs .note { color: var(--muted); font-size: 0.9rem; margin: 8px 0 0; white-space: pre-line; }
       .packs .note:empty { display: none; }
       .pack-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
@@ -38,6 +40,8 @@
       .pack .meta { color: var(--muted); font-size: 0.85rem; margin-right: auto; }
       .pack button { padding: 4px 10px; font-size: 0.85rem; background: var(--panel); }
       .pack button.danger:hover { border-color: var(--danger); }
+      .world-chips { flex-basis: 100%; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+      .world-chips button[aria-pressed='true'] { border-color: var(--accent); }
       .choose {
         position: sticky; top: 0; z-index: 5; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
         background: var(--panel); border: 2px solid var(--accent); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 16px;
@@ -66,6 +70,7 @@
           <button id="pack-new" title="Choose some drawings to share with another Doodlearium">➕ Make a pack</button>
           <button id="pack-install" title="Add the drawings from a .doodlepack file (or update a pack you have)">📥 Install a pack…</button>
           <input type="file" id="pack-file" accept=".doodlepack,application/json" hidden />
+          <a class="button" href="/worlds/" title="Make, share and install worlds">🌍 Worlds</a>
         </div>
         <div class="pack-list" id="pack-list"></div>
         <p class="note" id="packs-note" role="status"></p>

@@ -855,6 +855,8 @@ function updateZoom(dt: number) {
   documentary.spotlight.visible = inPlace;
   mapHint.alpha = 1 - Math.min(1, zoom * 4);
   mapHint.visible = zoom < 0.25;
+  // Above the worlds strip, when it's showing (it fades away with the buttons when nobody's touched the screen for a while).
+  mapHint.y = screenSize.height - (screenSize.width < screenSize.height ? 44 : 16) - (worldsBar.hidden || document.body.classList.contains('idle') ? 0 : worldsBar.offsetHeight + 10);
   mapButton.hidden = zoomTo === 0;
   renderWorlds();
 }

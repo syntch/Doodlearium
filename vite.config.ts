@@ -24,6 +24,7 @@ export default defineConfig({
         draw: resolve(client, 'draw/index.html'),
         gallery: resolve(client, 'gallery/index.html'),
         history: resolve(client, 'history/index.html'),
+        worlds: resolve(client, 'worlds/index.html'),
       },
     },
   },

@@ -79,6 +79,11 @@
       }
       .worlds button:hover { background: rgba(6, 36, 59, 0.9); }
       .worlds button[aria-pressed='true'] { border-color: #ffd98a; }
+      /* On a phone: one row that scrolls sideways. */
+      @media (max-width: 600px) {
+        .worlds { flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; bottom: 40px; font-size: 14px; scrollbar-width: none; }
+        .worlds button { white-space: nowrap; padding: 6px 12px; }
+      }
       /* Arranging plants and decorations by hand. */
       .arrange {
         position: fixed; z-index: 11; left: 50%; bottom: 16px; transform: translateX(-50%);

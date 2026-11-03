@@ -2,6 +2,7 @@ import type { ClientMessage, Drawing, HistoryEntry, NewDrawing, NewEgg, Pack, Pa
 
 import { setWorlds } from '../../shared/world/places.ts';
 import type { WorldDef } from '../../shared/world/places.ts';
+import type { Biome } from '../../shared/world/biomes.ts';
 
 const PIN_KEY = 'doodlearium-pin';
 
@@ -73,7 +74,7 @@ export async function makePack(name: string, drawings: string[]): Promise<Pack> 
   return res.json();
 }
 
-export async function changePack(id: string, change: { name?: string; version?: string; drawings?: string[] }): Promise<Pack> {
+export async function changePack(id: string, change: { name?: string; version?: string; drawings?: string[]; worlds?: string[] }): Promise<Pack> {
   const res = await fetch(`/api/packs/${id}`, asJson('PUT', change));
   if (!res.ok) throw await failure(res, 'Saving the pack failed');
   return res.json();
@@ -88,9 +89,14 @@ export async function removePack(id: string): Promise<number> {
 
 /** Saves the pack as a .doodlepack file on this device. */
 export async function exportPack(id: string) {
-  const res = await fetch(`/api/packs/${id}/export`, { method: 'POST' });
+  await saveDownload(`/api/packs/${id}/export`, 'drawings.doodlepack');
+}
+
+/** Asks the server for a file and saves it on this device, under the name the server gives it. */
+async function saveDownload(url: string, fallback: string) {
+  const res = await fetch(url, { method: 'POST' });
   if (!res.ok) throw await failure(res, 'Exporting failed');
-  const name = /filename="?([^";]+)"?/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? 'drawings.doodlepack';
+  const name = /filename="?([^";]+)"?/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? fallback;
   const link = document.createElement('a');
   link.href = URL.createObjectURL(await res.blob());
   link.download = name;
@@ -101,6 +107,45 @@ export async function exportPack(id: string) {
 /** Installs a pack file's text (or updates the pack to it). */
 export async function installPack(text: string): Promise<PackInstall> {
   const res = await withPin('/api/packs/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: text });
+  if (!res.ok) throw await failure(res, 'Installing failed');
+  return res.json();
+}
+
+/** What the world maker sends: the world's name, icon, map style and places (ids kept for places it had). */
+export interface WorldChange {
+  name: string;
+  icon: string;
+  mapStyle: WorldDef['mapStyle'];
+  places: { id?: string; name: string; biome: Biome; x: number; y: number; look?: string }[];
+  version?: string;
+}
+
+export async function makeWorld(world: WorldChange): Promise<WorldPack> {
+  const res = await fetch('/api/worlds', asJson('POST', world));
+  if (!res.ok) throw await failure(res, 'Saving the world failed');
+  return res.json();
+}
+
+export async function changeWorld(id: string, world: WorldChange): Promise<WorldPack> {
+  const res = await fetch(`/api/worlds/${id}`, asJson('PUT', world));
+  if (!res.ok) throw await failure(res, 'Saving the world failed');
+  return res.json();
+}
+
+/** Uninstalls a world (or takes apart one made here): its creatures move to places that suit them elsewhere. */
+export async function removeWorld(id: string) {
+  const res = await withPin(`/api/worlds/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw await failure(res, 'Removing the world failed');
+}
+
+/** Saves the world as a .doodleworld file on this device. */
+export async function exportWorld(id: string) {
+  await saveDownload(`/api/worlds/${id}/export`, 'world.doodleworld');
+}
+
+/** Installs a world file's text (or updates the world to it): says how many places opened and closed. */
+export async function installWorld(text: string): Promise<{ world: WorldPack; opened: number; closed: number; updated: boolean }> {
+  const res = await withPin('/api/worlds/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: text });
   if (!res.ok) throw await failure(res, 'Installing failed');
   return res.json();
 }

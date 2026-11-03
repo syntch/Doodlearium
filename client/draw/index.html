@@ -124,6 +124,8 @@
           <input type="checkbox" id="nocturnal" /> 🌙 Night creature
         </label>
         <div class="where">
+          <span class="fill" id="worlds-label" title="Which worlds it lives in (none ticked: wherever its drawing packs are)">Worlds:</span>
+          <span class="habitats" id="worlds"></span>
           <span class="fill">Lives in:</span>
           <span class="habitats" id="habitats"></span>
           <label class="fill" title="More of them turn up together, as a school, flock or herd">
@@ -134,6 +136,12 @@
           <label class="fill" title="Where the one you drew lives (the world adds more of its kind wherever they suit)">
             🏠 <select id="home"></select>
           </label>
+          <button type="button" id="choose-places" title="Pick exactly which places it lives in, on the map">📍 Choose places…</button>
+          <div class="place-picker" id="place-picker" hidden>
+            <div class="habitats" id="picker-worlds" role="group" aria-label="Which world's map"></div>
+            <div class="picker-map" id="picker-map"></div>
+            <p class="picker-hint" id="picker-hint"></p>
+          </div>
         </div>
         <button class="primary" type="submit" id="send">Add to the world 🌊</button>
       </form>

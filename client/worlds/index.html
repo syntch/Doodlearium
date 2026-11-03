@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Doodlearium · Worlds</title>
+    <link rel="stylesheet" href="../shared/style.css" />
+    <style>
+      main { padding: 0 16px 32px; max-width: 1000px; margin: 0 auto; }
+      section { background: var(--panel); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 16px; }
+      .head { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+      .head h2 { margin: 0 auto 0 0; font-size: 1.1rem; }
+      .note { color: var(--muted); font-size: 0.9rem; margin: 8px 0 0; white-space: pre-line; }
+      .note:empty { display: none; }
+      .list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+      .world { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; background: var(--panel-2); border-radius: 10px; padding: 8px 10px; }
+      .world .title { font-weight: bold; overflow-wrap: anywhere; }
+      .world .version { background: var(--bg); border-radius: 8px; padding: 1px 8px; font-size: 0.85rem; }
+      .world .meta { color: var(--muted); font-size: 0.85rem; margin-right: auto; }
+      .world button, .world a.button { padding: 4px 10px; font-size: 0.85rem; background: var(--panel); }
+      .world a.button { border: 2px solid transparent; border-radius: 10px; color: var(--text); text-decoration: none; }
+      .world a.button:hover { border-color: var(--accent); }
+      .world button.danger:hover { border-color: var(--danger); }
+
+      /* ✏️ making or changing a world */
+      .editor .fields { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
+      .editor #icon { width: 3.2em; text-align: center; font-size: 1.2rem; }
+      .editor #name { flex: 1 1 200px; }
+      .editor #version { width: 6em; }
+      .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+      .chips button[aria-pressed='true'] { border-color: var(--accent); background: var(--panel-2); }
+      .map { position: relative; width: 100%; aspect-ratio: 10 / 7; border-radius: 12px; overflow: hidden; background: #070b24; touch-action: none; }
+      .map canvas { display: block; width: 100%; height: 100%; }
+      .hint { color: var(--muted); font-size: 0.9rem; margin: 6px 0 10px; }
+      .places { display: flex; flex-direction: column; gap: 6px; }
+      .place { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; background: var(--panel-2); border-radius: 10px; padding: 6px 8px; border: 2px solid transparent; }
+      .place.picked { border-color: var(--accent); }
+      .place input { flex: 1 1 160px; }
+      .place select { flex: 0 1 auto; }
+      .place button { padding: 4px 10px; }
+      .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    </style>
+  </head>
+  <body>
+    <nav class="nav">
+      <a class="brand" href="/">🐠 Doodlearium</a>
+      <a href="/tank/">World</a>
+      <a href="/draw/">Draw</a>
+      <a href="/gallery/">Gallery</a>
+      <a href="/history/">History</a>
+    </nav>
+    <main>
+      <section aria-labelledby="worlds-title">
+        <div class="head">
+          <h2 id="worlds-title">🌍 Worlds</h2>
+          <button id="new" title="Make a new world with places of your own">➕ Make a world</button>
+          <button id="install" title="Add a world from a .doodleworld file (or update one you have)">📥 Install a world…</button>
+          <input type="file" id="file" accept=".doodleworld,application/json" hidden />
+        </div>
+        <div class="list" id="list"></div>
+        <p class="note" id="note" role="status"></p>
+        <p class="note">To choose who lives in a world, give it drawing packs on the <a href="/gallery/">Gallery</a> page, or pick worlds for a drawing on the <a href="/draw/">Draw</a> page.</p>
+      </section>
+
+      <section class="editor" id="editor" hidden aria-labelledby="editor-title">
+        <div class="head"><h2 id="editor-title">➕ A new world</h2></div>
+        <div class="fields">
+          <input type="text" id="icon" maxlength="8" aria-label="Icon (an emoji)" title="Its icon: an emoji" />
+          <input type="text" id="name" maxlength="40" placeholder="Name the world (e.g. Bubble Islands)" aria-label="World name" />
+          <input type="text" id="version" maxlength="20" aria-label="Version" title="Version (it goes up by itself when you export it with changes)" />
+          <div class="chips" id="styles" role="group" aria-label="Map style"></div>
+        </div>
+        <div class="map" id="map"></div>
+        <p class="hint">Drag the places about on the map. Tap one to find it in the list below.</p>
+        <div class="places" id="places"></div>
+        <div class="actions">
+          <button id="add">➕ Add a place</button>
+          <button class="primary" id="save">💾 Save world</button>
+          <button id="cancel">Cancel</button>
+        </div>
+        <p class="note" id="editor-note" role="status"></p>
+      </section>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

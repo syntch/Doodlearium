@@ -15,9 +15,10 @@ import {
   type SpeciesSize,
   LAND_MOTIONS,
 } from '../../shared/types.ts';
-import { fetchDrawings, loadWorlds, setupFeedButton, submitDrawing, updateDrawing } from '../shared/api.ts';
+import { fetchDrawings, fetchPacks, loadWorlds, setupFeedButton, submitDrawing, updateDrawing } from '../shared/api.ts';
 import { BIOMES, BIOME_NAMES, defaultGroup, defaultHabitats, suits, type Biome } from '../../shared/world/biomes.ts';
-import { LIVE_PLACES, placeById } from '../../shared/world/places.ts';
+import { LIVE_PLACES, allWorlds, placeById, worldById } from '../../shared/world/places.ts';
+import { createMapPanel, type MapPanel } from '../tank/mappanel.ts';
 import { enclosedHoles, exportDrawing, inkBounds, type PlacedAttachment, type PlacedPart } from './export.ts';
 import { MATERIALS, MATERIAL_LABELS, MATERIAL_TURNS, floodFill, floodRegion, materialPreview, type Material } from './fill.ts';
 import { readPhoto, removePaper } from './photo.ts';
@@ -96,6 +97,12 @@ const groupInput = document.querySelector<HTMLInputElement>('#group')!;
 const homeSelect = document.querySelector<HTMLSelectElement>('#home')!;
 const speciesSizesEl = document.querySelector<HTMLSpanElement>('#species-size')!;
 const habitatsEl = document.querySelector<HTMLSpanElement>('#habitats')!;
+const worldsEl = document.querySelector<HTMLSpanElement>('#worlds')!;
+const worldsLabel = document.querySelector<HTMLSpanElement>('#worlds-label')!;
+const choosePlacesButton = document.querySelector<HTMLButtonElement>('#choose-places')!;
+const placePicker = document.querySelector<HTMLDivElement>('#place-picker')!;
+const pickerWorldsEl = document.querySelector<HTMLDivElement>('#picker-worlds')!;
+const pickerHint = document.querySelector<HTMLParagraphElement>('#picker-hint')!;
 
 const state = {
   motion: 'fish' as Motion,
@@ -409,23 +416,81 @@ let habitats: Biome[] = [];
 /** Roughly how big its kind grows (undefined: medium). */
 let speciesSize: SpeciesSize | undefined;
 
-/** The kinds of place that are open (the chips to pick from). */
-const OPEN_BIOMES = BIOMES.filter((b) => LIVE_PLACES.some((p) => p.biome === b));
+/** Worlds picked for it (none: wherever its drawing packs are, else Earth). */
+let chosenWorlds: string[] = [];
+/** Exact places picked on the map (none: anywhere in its worlds that suits it). */
+let chosenPlaces: string[] = [];
+/** The worlds its drawing packs give it (when changing a drawing that's in some). */
+let packWorlds: string[] = [];
+const followed = () => (packWorlds.length ? packWorlds : ['earth']).filter((id) => worldById(id));
+/** The worlds it lives in. */
+const livesIn = () => {
+  const list = (chosenWorlds.length ? chosenWorlds : followed()).filter((id) => worldById(id));
+  return list.length ? list : ['earth'];
+};
+/** The kinds of place open in its worlds (the chips to pick from). */
+const openBiomes = () => BIOMES.filter((b) => LIVE_PLACES.some((p) => p.biome === b && livesIn().includes(p.world)));
 /** The ones that suit the style: no Lake or Ocean for fliers and waterfowl, which have no sky to fly in there. */
-const choices = () => OPEN_BIOMES.filter((b) => suits(state.motion, b));
+const choices = () => openBiomes().filter((b) => suits(state.motion, b));
 
-function setWhere(list: Biome[], group: boolean, home = '', size?: SpeciesSize) {
+/** Sets where it lives; worlds and exact places only when given (a new style keeps them, but drops places that don't suit it). */
+function setWhere(list: Biome[], group: boolean, home = '', size?: SpeciesSize, where?: { worlds?: string[]; places?: string[] }) {
+  if (where) {
+    chosenWorlds = where.worlds ?? [];
+    chosenPlaces = where.places ?? [];
+  }
+  chosenPlaces = chosenPlaces.filter((id) => {
+    const p = placeById(id);
+    return p && suits(state.motion, p.biome) && livesIn().includes(p.world);
+  });
   const picked = choices().filter((b) => list.includes(b));
   if (!picked.length) list = defaultHabitats(state.motion);
   habitats = choices().filter((b) => list.includes(b)).sort((a, b) => list.indexOf(a) - list.indexOf(b));
+  // Somewhere to live in its worlds, even if its style's usual kinds aren't there.
+  if (!habitats.length) habitats = choices().slice(0, 1);
   groupInput.checked = group;
   speciesSize = size;
   renderWhere(home);
 }
 
+/** Its worlds changed: keep the kinds and places that are still there. */
+function worldsChanged() {
+  setWhere(habitats, groupInput.checked, homeSelect.value, speciesSize);
+  if (!placePicker.hidden) void showPicker();
+  schedulePreview();
+}
+
 const SPECIES_SIZES: [SpeciesSize | undefined, string][] = [['small', 'Small'], [undefined, 'Medium'], ['big', 'Big']];
 
 function renderWhere(home = homeSelect.value) {
+  // The worlds, when there's more than one: ticked are where it lives. Changing them away from what its
+  // packs say makes them its own choice; back to the same, and it follows its packs again.
+  const worlds = allWorlds();
+  worldsLabel.hidden = worldsEl.hidden = worlds.length < 2;
+  worldsEl.replaceChildren(
+    ...worlds.map((w) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      const on = livesIn().includes(w.id);
+      b.textContent = `${w.icon} ${w.name}`;
+      b.setAttribute('aria-pressed', String(on));
+      b.title = chosenWorlds.length ? 'Chosen for this drawing' : packWorlds.length ? 'From its drawing packs' : 'Where new drawings live';
+      b.onclick = () => {
+        const next = on ? livesIn().filter((id) => id !== w.id) : [...livesIn(), w.id];
+        // Always somewhere to live.
+        if (!next.length) return;
+        const same = next.length === followed().length && next.every((id) => followed().includes(id));
+        chosenWorlds = same ? [] : next;
+        if (!on) {
+          // Moving into a new world: if none of its kinds are ticked yet, tick the ones its style usually likes there.
+          const there = LIVE_PLACES.filter((p) => p.world === w.id).map((p) => p.biome);
+          if (!habitats.some((h) => there.includes(h))) habitats = [...habitats, ...defaultHabitats(state.motion).filter((h) => there.includes(h))];
+        }
+        worldsChanged();
+      };
+      return b;
+    }),
+  );
   habitatsEl.replaceChildren(
     ...choices().map((biome) => {
       const b = document.createElement('button');
@@ -456,20 +521,91 @@ function renderWhere(home = homeSelect.value) {
       return b;
     }),
   );
-  const places = LIVE_PLACES.filter((p) => habitats.includes(p.biome));
-  homeSelect.replaceChildren(new Option('Anywhere it suits', ''), ...places.map((p) => new Option(`At ${p.name}`, p.id)));
+  const places = chosenPlaces.length
+    ? LIVE_PLACES.filter((p) => chosenPlaces.includes(p.id))
+    : LIVE_PLACES.filter((p) => habitats.includes(p.biome) && livesIn().includes(p.world));
+  // Grouped by world when it lives in more than one.
+  const byWorld = livesIn().map((id) => [worldById(id)!, places.filter((p) => p.world === id)] as const).filter(([, list]) => list.length);
+  homeSelect.replaceChildren(
+    new Option('Anywhere it suits', ''),
+    ...(byWorld.length > 1
+      ? byWorld.map(([w, list]) => {
+          const group = document.createElement('optgroup');
+          group.label = `${w.icon} ${w.name}`;
+          group.append(...list.map((p) => new Option(`At ${p.name}`, p.id)));
+          return group;
+        })
+      : places.map((p) => new Option(`At ${p.name}`, p.id))),
+  );
   homeSelect.value = places.some((p) => p.id === home) ? home : '';
+  const only = chosenPlaces.length === 1 ? placeById(chosenPlaces[0])!.name : `${chosenPlaces.length} places`;
+  choosePlacesButton.textContent = chosenPlaces.length ? `📍 Only at ${only}…` : '📍 Choose places…';
+  choosePlacesButton.setAttribute('aria-expanded', String(!placePicker.hidden));
 }
+
+// --- 📍 the place picker: tap exactly which places it lives at, on each of its worlds' maps --------------------
+
+let picker: MapPanel | null = null;
+let pickerWorld = 'earth';
+
+async function showPicker() {
+  placePicker.hidden = false;
+  if (!livesIn().includes(pickerWorld)) pickerWorld = livesIn()[0];
+  picker ??= await createMapPanel(document.querySelector<HTMLDivElement>('#picker-map')!);
+  pickerWorldsEl.hidden = livesIn().length < 2;
+  pickerWorldsEl.replaceChildren(
+    ...livesIn().map((id) => {
+      const w = worldById(id)!;
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = `${w.icon} ${w.name}`;
+      b.setAttribute('aria-pressed', String(id === pickerWorld));
+      b.onclick = () => {
+        pickerWorld = id;
+        void showPicker();
+      };
+      return b;
+    }),
+  );
+  const map = picker.show(worldById(pickerWorld)!);
+  const marks = () => {
+    map.setMarks(Object.fromEntries(map.world.places.map((p) => [p.id, chosenPlaces.includes(p.id) ? 'chosen' : suits(state.motion, p.biome) ? 'free' : 'unsuited'] as const)));
+    const names = chosenPlaces.map((id) => placeById(id)?.name).filter(Boolean);
+    pickerHint.textContent = names.length
+      ? `Lives only at ${names.join(', ')}. Tap a place again to take it out.`
+      : 'Tap the places it should live at. With none picked, it lives anywhere in its worlds that suits it. Faded places don’t suit its style.';
+  };
+  map.onPick = (id) => {
+    const p = placeById(id);
+    if (!p || !suits(state.motion, p.biome)) return;
+    chosenPlaces = chosenPlaces.includes(id) ? chosenPlaces.filter((x) => x !== id) : [...chosenPlaces, id];
+    marks();
+    renderWhere();
+    schedulePreview();
+  };
+  marks();
+  renderWhere();
+}
+
+choosePlacesButton.onclick = () => {
+  if (placePicker.hidden) void showPicker();
+  else {
+    placePicker.hidden = true;
+    renderWhere();
+  }
+};
 
 /** What to send: nothing where it's just the style's usual, so it keeps following the style. */
 function wherePayload() {
-  const usual = defaultHabitats(state.motion).filter((b) => OPEN_BIOMES.includes(b));
+  const usual = defaultHabitats(state.motion).filter((b) => openBiomes().includes(b));
   const same = usual.length === habitats.length && usual.every((b) => habitats.includes(b));
   return {
     habitats: same ? undefined : habitats,
     group: groupInput.checked === defaultGroup(state.motion) ? undefined : groupInput.checked,
     home: homeSelect.value || undefined,
     size: speciesSize,
+    worlds: chosenWorlds.length ? chosenWorlds : undefined,
+    places: chosenPlaces.length ? chosenPlaces : undefined,
   };
 }
 document.querySelectorAll<HTMLButtonElement>('.kinds [data-motion]').forEach((b) => {
@@ -1583,7 +1719,7 @@ async function refreshPreview() {
   const cutout = partsImage ? toCutout(splitParts(image!, partsImage, exported.parts, behindImage ?? undefined)) : null;
   const glow = glowImage ? glowTextures(image!, glowImage, partsImage ?? undefined) : null;
   // The preview shows where it'll live: its home, or the first place picked.
-  const home = placeById(homeSelect.value);
+  const home = placeById(homeSelect.value || chosenPlaces[0] || '');
   view.setBiome(home?.biome ?? habitats[0] ?? 'lake', home?.look);
   view.show(
     {
@@ -1664,7 +1800,7 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
     baseParts = [];
     nameInput.value = '';
     nocturnalInput.checked = false;
-    setWhere(defaultHabitats(state.motion), defaultGroup(state.motion));
+    setWhere(defaultHabitats(state.motion), defaultGroup(state.motion), '', undefined, {});
     suggestDismissed = false;
     closePhotoPanel();
     redraw();
@@ -1747,7 +1883,13 @@ async function loadForEditing(id: string) {
   nameInput.value = drawing.name;
   artistInput.value = drawing.artist;
   nocturnalInput.checked = drawing.nocturnal === true;
-  setWhere(drawing.habitats?.length ? drawing.habitats : defaultHabitats(motionOf(drawing)), drawing.group ?? defaultGroup(motionOf(drawing)), drawing.home, drawing.size);
+  // The worlds its drawing packs give it, so the chips show where it lives now.
+  const packs = await fetchPacks().catch(() => []);
+  packWorlds = [...new Set(packs.filter((p) => p.drawings.includes(drawing.id)).flatMap((p) => p.worlds ?? []))];
+  setWhere(drawing.habitats?.length ? drawing.habitats : defaultHabitats(motionOf(drawing)), drawing.group ?? defaultGroup(motionOf(drawing)), drawing.home, drawing.size, {
+    worlds: drawing.worlds,
+    places: drawing.places,
+  });
   sendButton.textContent = 'Save changes 💾';
   const banner = document.querySelector<HTMLParagraphElement>('#editing')!;
   banner.hidden = false;

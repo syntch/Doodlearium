@@ -1,6 +1,6 @@
 import { imageUrl, type CreatureType, type Drawing, type Pack, type PackFile, type SpeciesWhere } from '../../shared/types.ts';
 import { BIOME_NAMES } from '../../shared/world/biomes.ts';
-import { placeById } from '../../shared/world/places.ts';
+import { allWorlds, placeById, worldById } from '../../shared/world/places.ts';
 import {
   changePack,
   connectLive,
@@ -15,6 +15,7 @@ import {
   removePack,
   setupFeedButton,
 } from '../shared/api.ts';
+import { compareVersions } from '../shared/versions.ts';
 
 // Which worlds (and places) there are, before anything looks a place up.
 await loadWorlds().catch(() => {});
@@ -162,6 +163,15 @@ function card(d: Drawing) {
     line.textContent = inPacks.map((p) => `📦 ${p.name}`).join(' · ');
     lines.push(line);
   }
+  if (allWorlds().length > 1) {
+    // Which worlds it lives in: its own choice, else its packs', else Earth.
+    const own = d.worlds?.length ? d.worlds : [...new Set(inPacks.flatMap((p) => p.worlds ?? []))];
+    const line = document.createElement('div');
+    line.className = 'meta';
+    line.textContent = (own.length ? own : ['earth']).map((id) => worldById(id)).filter((w) => !!w).map((w) => `${w.icon} ${w.name}`).join(' · ');
+    if (d.worlds?.length) line.title = 'Chosen for this drawing on the Draw page';
+    lines.push(line);
+  }
 
   const remove = document.createElement('button');
   remove.textContent = 'Remove';
@@ -204,17 +214,6 @@ const chooseSave = document.querySelector<HTMLButtonElement>('#choose-save')!;
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const problem = (err: unknown, fallback: string) => (err instanceof Error ? err.message : fallback);
 
-/** Which is newer: compares the numbers in two versions in turn (1.10 is newer than 1.9). */
-function compareVersions(a: string, b: string) {
-  const na = a.match(/\d+/g)?.map(Number) ?? [];
-  const nb = b.match(/\d+/g)?.map(Number) ?? [];
-  for (let i = 0; i < Math.max(na.length, nb.length); i++) {
-    const diff = (na[i] ?? 0) - (nb[i] ?? 0);
-    if (diff) return Math.sign(diff);
-  }
-  return a.localeCompare(b);
-}
-
 function renderPacks() {
   packList.replaceChildren(
     ...packs
@@ -248,6 +247,18 @@ function renderPacks() {
         });
         show.setAttribute('aria-pressed', String(packFilter === pack.id));
         const change = button('✏️ Change', 'Choose which drawings are in it, or rename it', () => startChoosing(pack));
+        // Which worlds its drawings live in (unless a drawing has its own choice): a row of world chips.
+        const homes = pack.worlds?.length ? pack.worlds : ['earth'];
+        const worldsButton = button(
+          homes.map((id) => worldById(id)?.icon ?? '').join(''),
+          `Lives in: ${homes.map((id) => worldById(id)?.name ?? id).join(', ')}. Choose which worlds its drawings live in`,
+          () => {
+            worldsOpen = worldsOpen === pack.id ? null : pack.id;
+            renderPacks();
+          },
+        );
+        worldsButton.setAttribute('aria-expanded', String(worldsOpen === pack.id));
+        if (allWorlds().length < 2) worldsButton.hidden = true;
         const nextUp = pack.exported && pack.changed ? ' (as a new version)' : '';
         const share = button('⬆️ Export', `Save it as a file to share${nextUp}`, async () => {
           share.disabled = true;
@@ -281,10 +292,46 @@ function renderPacks() {
           },
         );
         remove.className = 'danger';
-        row.append(title, version, meta, show, change, share, remove);
+        row.append(title, version, meta, worldsButton, show, change, share, remove);
+        if (worldsOpen === pack.id && allWorlds().length > 1) row.append(worldChips(pack, homes));
         return row;
       }),
   );
+}
+
+/** The pack whose world chips are open. */
+let worldsOpen: string | null = null;
+
+/** A chip for every world: tap to add the pack's drawings to it, or take them out (one world at least). */
+function worldChips(pack: Pack, homes: string[]) {
+  const chips = document.createElement('div');
+  chips.className = 'world-chips';
+  chips.append(Object.assign(document.createElement('span'), { className: 'meta', textContent: 'Lives in:' }));
+  for (const w of allWorlds()) {
+    const on = homes.includes(w.id);
+    const chip = document.createElement('button');
+    chip.textContent = `${on ? '✓ ' : ''}${w.icon} ${w.name}`;
+    chip.setAttribute('aria-pressed', String(on));
+    chip.disabled = on && homes.length === 1;
+    chip.title = chip.disabled ? 'It has to live somewhere' : on ? `Take it out of ${w.name}` : `Its drawings move into ${w.name} too`;
+    chip.onclick = async () => {
+      const next = on ? homes.filter((id) => id !== w.id) : [...homes, w.id];
+      chip.disabled = true;
+      try {
+        await changePack(pack.id, { worlds: next });
+        const names = next.map((id) => worldById(id)?.name ?? id);
+        const listed = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
+        packsNote.textContent = `🌍 ${pack.name} lives in ${listed} now (drawings with their own worlds chosen stay where they are).`;
+        await refreshPacks();
+        refreshPopulationSoon();
+      } catch (err) {
+        packsNote.textContent = problem(err, 'Changing its worlds failed.');
+        chip.disabled = false;
+      }
+    };
+    chips.append(chip);
+  }
+  return chips;
 }
 
 function startChoosing(pack: Pack | null) {
@@ -416,7 +463,7 @@ connectLive(
     } else if (msg.type === 'drawing:removed') {
       drawings = drawings.filter((d) => d.id !== msg.id);
       choosing?.chosen.delete(msg.id);
-    } else if (msg.type === 'packs') {
+    } else if (msg.type === 'packs' || msg.type === 'worlds') {
       void refreshPacks();
       return;
     } else {
