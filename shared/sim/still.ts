@@ -22,9 +22,11 @@ export class SimStill implements SimCreature {
     const z = rand();
     // Plants grow under water (on the beach, that's past the shore); decorations can go anywhere.
     const nx = kind === 'plant' ? rand(Math.max(0.04, world.waterLeft / world.width + 0.02), 0.96) : rand(0.05, 0.95);
-    const grow = sizeFactor(drawing);
+    const landPlant = kind === 'plant' && world.land;
+    const grow = sizeFactor(drawing, landPlant);
     const size = (kind === 'plant' ? rand(0.8, 1.25) : rand(0.85, 1.2)) * grow;
-    const [tall, wide] = kind === 'plant' ? [0.32, 0.22] : [0.2, 0.25];
+    // Weeds grow tall under water; on land, a medium plant is about as tall as a horse.
+    const [tall, wide] = landPlant ? [0.11, 0.22] : kind === 'plant' ? [0.32, 0.22] : [0.2, 0.25];
     // Plants are measured by height; decorations by their overall size, so a flat clam and a tall
     // castle come out about as big as each other.
     const measure = kind === 'plant' ? drawing.height : Math.sqrt(drawing.width * drawing.height);

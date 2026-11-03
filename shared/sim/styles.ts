@@ -2,9 +2,15 @@ import type { Drawing, Motion, SpeciesSize } from '../types.ts';
 
 const SIZE_FACTORS: Record<SpeciesSize, number> = { small: 0.65, big: 1.5 };
 
+/**
+ * On land, plants range much further: small is a little wildflower in the grass, medium a tall flower or a
+ * bush, and big a tree.
+ */
+const LAND_PLANT_FACTORS: Record<SpeciesSize, number> = { small: 0.5, big: 3 };
+
 /** How much bigger (or smaller) than usual a species grows: the family's small, medium or big. */
-export function sizeFactor(drawing: Pick<Drawing, 'size'>) {
-  return drawing.size ? SIZE_FACTORS[drawing.size] : 1;
+export function sizeFactor(drawing: Pick<Drawing, 'size'>, landPlant = false) {
+  return drawing.size ? (landPlant ? LAND_PLANT_FACTORS : SIZE_FACTORS)[drawing.size] : 1;
 }
 
 /**
