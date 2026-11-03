@@ -1,4 +1,4 @@
-import { Application, Assets, Container, Graphics, RenderLayer, Text, type Texture } from 'pixi.js';
+import { Application, Assets, Container, Graphics, RenderLayer, Text, Texture } from 'pixi.js';
 import { imageUrl, motionOf, type Drawing, type Motion, type TankCommand, type TankCommandValue } from '../../shared/types.ts';
 import { newPose, type Kind, type Personality, type Pose } from '../../shared/sim/creature.ts';
 import { unpackPose, type MapSummary, type RosterEntry, type Settings, type Upcoming } from '../../shared/sim/protocol.ts';
@@ -39,6 +39,8 @@ interface Loaded {
   texture: Texture;
   /** Drawings with animated parts are split into their own textures. */
   cutout?: Cutout;
+  /** With parts: the body and parts put back together, for the map's portholes (made when first needed). */
+  whole?: Texture;
   glowTextures: GlowTextures | null;
 }
 
@@ -128,7 +130,9 @@ const worldMap = new WorldMap({
     const d = known.get(species);
     if (!d) return null;
     const look = useLook(d);
-    return { texture: look.ready.then((l) => l?.texture ?? null), release: () => releaseLook(look) };
+    const motion = motionOf(d);
+    const stand = motion === 'plant' || motion === 'decor' ? 'still' : ['walker', 'hopper', 'slitherer', 'crawler'].includes(motion) ? 'walks' : 'swims';
+    return { texture: look.ready.then((l) => (l ? wholePicture(l) : null)), release: () => releaseLook(look), stand };
   },
 });
 worldMap.onPick = (id) => enterPlace(id);
@@ -217,6 +221,20 @@ function useLook(drawing: Drawing): Look {
   return look;
 }
 
+/** The whole drawing in one texture: its body with its parts put back where they were drawn. */
+function wholePicture(loaded: Loaded) {
+  if (!loaded.cutout) return loaded.texture;
+  if (!loaded.whole) {
+    const body = loaded.cutout.body.source.resource as HTMLCanvasElement;
+    const canvas = Object.assign(document.createElement('canvas'), { width: body.width, height: body.height });
+    const c = canvas.getContext('2d')!;
+    c.drawImage(body, 0, 0);
+    for (const piece of loaded.cutout.pieces) c.drawImage(piece.canvas, piece.x, piece.y);
+    loaded.whole = Texture.from(canvas);
+  }
+  return loaded.whole;
+}
+
 function releaseLook(look: Look) {
   if (--look.refs > 0) return;
   looks.delete(look.key);
@@ -226,6 +244,7 @@ function releaseLook(look: Look) {
       t.glow?.destroy(true);
       t.uv?.destroy(true);
     }
+    loaded.whole?.destroy(true);
     if (loaded.cutout) loaded.cutout.destroy();
     else void Assets.unload(imageUrl(look.drawing));
   });

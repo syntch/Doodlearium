@@ -32,11 +32,15 @@ const RIVER: [number, number][] = [[430, 300], [500, 280], [575, 315], [640, 355
 /** Pictures a place's creatures, so its porthole can show them bobbing about. */
 export interface MapLooks {
   /** Starts loading a species' picture; give it back with release. */
-  use(species: string): { texture: Promise<Texture | null>; release(): void } | null;
+  use(species: string): { texture: Promise<Texture | null>; release(): void; stand: Stand } | null;
 }
+
+/** Plants and decorations stay put on the bottom, walkers and crawlers go along it, the rest swim or fly. */
+export type Stand = 'still' | 'walks' | 'swims';
 
 interface Swimmer {
   species: string;
+  stand: Stand;
   sprite: Sprite;
   release(): void;
   phase: number;
@@ -248,7 +252,17 @@ export class WorldMap {
         sprite.anchor.set(0.5);
         sprite.visible = false;
         p.inside.addChild(sprite);
-        const swimmer: Swimmer = { species: id, sprite, release: look.release, phase: i * 1.7, speed: 0.25 + (i % 3) * 0.08, depth: -0.45 + i * 0.28 };
+        const swimmer: Swimmer = {
+          species: id,
+          stand: look.stand,
+          sprite,
+          release: look.release,
+          phase: i * 1.7,
+          speed: (0.25 + (i % 3) * 0.08) * (look.stand === 'walks' ? 0.6 : 1),
+          depth: -0.45 + i * 0.28,
+        };
+        // On the bottom: standing on the sand, at the bottom of the picture.
+        if (look.stand !== 'swims') sprite.anchor.set(0.5, 1);
         p.swimmers.push(swimmer);
         void look.texture.then((texture) => {
           if (!texture || sprite.destroyed) return;
@@ -265,10 +279,10 @@ export class WorldMap {
   update(dt: number, time: number) {
     for (const p of this.portholes) {
       for (const s of p.swimmers) {
-        // Back and forth across the porthole, turning at each end.
-        const t = time * s.speed + s.phase;
+        // Back and forth across the porthole, turning at each end (on the sand for walkers; plants stay put).
+        const t = s.stand === 'still' ? s.phase : time * s.speed + s.phase;
         s.sprite.x = Math.sin(t) * PORTHOLE * 0.55;
-        s.sprite.y = s.depth * PORTHOLE + Math.sin(t * 2.3) * 4;
+        s.sprite.y = s.stand === 'swims' ? s.depth * PORTHOLE + Math.sin(t * 2.3) * 4 : PORTHOLE * (0.7 + s.depth * 0.06);
         s.sprite.scale.x = Math.abs(s.sprite.scale.x) * (Math.cos(t) >= 0 ? 1 : -1);
       }
     }
