@@ -11,10 +11,40 @@
       .lead { color: var(--muted); margin: 0 0 16px; }
       .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; margin-bottom: 18px; }
       .filters label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 0.85rem; }
-      .filters input, .filters select {
+      .filters input, .filters select, .filters .who-button {
         background: var(--panel-2); border: 2px solid transparent; border-radius: 10px; padding: 7px 10px; color: var(--text);
       }
       .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+      /* Who: a button that opens a searchable grid of everyone, by artist. */
+      .who { position: relative; display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 0.85rem; }
+      .who-button { display: flex; align-items: center; gap: 8px; min-width: 200px; text-align: left; font-size: 1rem; }
+      .who-button img { width: 26px; height: 26px; object-fit: contain; background: #1f78a8; border-radius: 6px; }
+      .who-button .caret { margin-left: auto; color: var(--muted); }
+      .picker {
+        position: absolute; z-index: 5; top: 100%; left: 0; margin-top: 6px; width: min(620px, calc(100vw - 32px));
+        max-height: min(70vh, 560px); overflow-y: auto; background: var(--panel); border-radius: var(--radius);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); padding: 12px; color: var(--text); font-size: 1rem;
+      }
+      .picker input[type='search'] {
+        width: 100%; background: var(--panel-2); border: 2px solid transparent; border-radius: 10px; padding: 8px 12px; color: var(--text);
+      }
+      .picker input[type='search']:focus { outline: none; border-color: var(--accent); }
+      .picker h3 { margin: 12px 0 6px; font-size: 0.85rem; color: var(--muted); font-weight: normal; }
+      .picker .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 6px; }
+      .picker .grid button { display: flex; align-items: center; gap: 8px; padding: 5px 8px; text-align: left; font-size: 0.9rem; }
+      .picker .grid img { width: 34px; height: 34px; flex: none; object-fit: contain; background: #1f78a8; border-radius: 6px; }
+      .picker .grid span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .picker .none { color: var(--muted); margin: 10px 2px 2px; }
+      .shown { display: grid; gap: 8px; margin: -6px 0 18px; }
+      /* A run of happenings that are filtered out, folded into one quiet line. */
+      .folded { display: block; width: 100%; background: none; border: 1px dashed rgba(255, 255, 255, 0.15); color: var(--muted); font-size: 0.85rem; padding: 4px 12px; margin-bottom: 6px; text-align: left; }
+      @media (max-width: 560px) {
+        .who, .who-button { width: 100%; }
+        .actions { margin-left: 0; }
+        .event { gap: 8px; padding: 8px; }
+        .event time { min-width: 52px; font-size: 0.78rem; }
+        .thumbs img { width: 36px; height: 36px; }
+      }
       .day { margin: 0 0 22px; }
       .day h2 { font-size: 1.05rem; color: var(--accent); margin: 0 0 8px; position: sticky; top: 0; background: var(--bg); padding: 6px 0; z-index: 1; }
       .event { display: flex; gap: 12px; align-items: center; background: var(--panel); border-radius: var(--radius); padding: 8px 12px; margin-bottom: 6px; }
@@ -60,11 +90,23 @@
       <div class="filters">
         <label>From <input type="date" id="from" /></label>
         <label>To <input type="date" id="to" /></label>
-        <label>Who <select id="who"><option value="">Everyone</option></select></label>
+        <div class="who">
+          Who
+          <button type="button" class="who-button" id="who" aria-haspopup="true" aria-expanded="false"></button>
+          <div class="picker" id="who-picker" hidden>
+            <input type="search" id="who-search" placeholder="🔎 Find a creature or an artist…" autocomplete="off" />
+            <div id="who-list"></div>
+          </div>
+        </div>
         <div class="actions">
           <button class="primary" id="make-prompt">📖 Make a story prompt</button>
           <button id="add-story">✍️ Add a story</button>
         </div>
+      </div>
+
+      <div class="shown">
+        <div class="chips" id="world-chips"></div>
+        <div class="chips" id="kind-chips"></div>
       </div>
 
       <section class="panel" id="prompt-panel" hidden>

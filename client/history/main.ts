@@ -1,5 +1,5 @@
 import { imageUrl, motionOf, type Drawing, type HistoryEntry, type Motion, type SpeciesWhere, type Story } from '../../shared/types.ts';
-import { placeById, placeName, worldOf } from '../../shared/world/places.ts';
+import { allWorlds, placeById, placeName, worldOf } from '../../shared/world/places.ts';
 import { lookOf } from '../../shared/world/looks.ts';
 import { connectLive, loadWorlds, fetchDrawings, fetchHistory, fetchPopulation, fetchStories, saveStory } from '../shared/api.ts';
 
@@ -9,7 +9,6 @@ await loadWorlds().catch(() => {});
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 const fromInput = $<HTMLInputElement>('#from');
 const toInput = $<HTMLInputElement>('#to');
-const whoSelect = $<HTMLSelectElement>('#who');
 const timeline = $<HTMLDivElement>('#timeline');
 const empty = $<HTMLParagraphElement>('#empty');
 
@@ -19,6 +18,8 @@ const drawings = new Map<string, Drawing>();
 /** Where each species lives, for the story prompt. */
 let population: Record<string, SpeciesWhere> = {};
 let entries: HistoryEntry[] = [];
+/** The one creature picked (unset: everyone). */
+let who: string | undefined;
 
 /** yyyy-mm-dd in local time, for date inputs. */
 const dateValue = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -28,7 +29,7 @@ const startOf = (value: string) => new Date(`${value}T00:00:00`).getTime();
 function range() {
   const from = fromInput.value ? startOf(fromInput.value) : 0;
   const to = toInput.value ? startOf(toInput.value) + DAY - 1 : Date.now();
-  return { from, to, who: whoSelect.value || undefined };
+  return { from, to, who };
 }
 
 const now = new Date();
@@ -43,37 +44,211 @@ async function load() {
   render();
 }
 
+// --- 👥 who: a searchable grid of every creature, by artist ----------------------------------------------
+
+const whoButton = $<HTMLButtonElement>('#who');
+const picker = $<HTMLDivElement>('#who-picker');
+const search = $<HTMLInputElement>('#who-search');
+const whoList = $<HTMLDivElement>('#who-list');
+
+const thumb = (d: Drawing) => Object.assign(document.createElement('img'), { src: imageUrl(d), alt: '', loading: 'lazy' });
+
+/** The button says who's picked. */
 function fillWho() {
-  const chosen = whoSelect.value;
-  const names = [...drawings.values()].filter((d) => !d.hatchAt || d.hatchAt < Date.now()).sort((a, b) => a.name.localeCompare(b.name));
-  whoSelect.replaceChildren(
-    new Option('Everyone', ''),
-    ...names.map((d) => new Option(`${d.name} (by ${d.artist})`, d.id)),
+  const d = who ? drawings.get(who) : undefined;
+  whoButton.replaceChildren(
+    ...(d ? [thumb(d), d.name] : ['👥 Everyone']),
+    Object.assign(document.createElement('span'), { className: 'caret', textContent: '▾' }),
   );
-  whoSelect.value = chosen;
+  whoButton.title = d ? `${d.name} by ${d.artist}` : 'Pick a creature to see just its story';
+  if (!picker.hidden) fillPicker();
+}
+
+function pick(id: string | undefined) {
+  who = id;
+  openPicker(false);
+  fillWho();
+  void load();
+}
+
+/** Everyone that's hatched, grouped by artist (the family first, then what came with packs), filtered by the search. */
+function fillPicker() {
+  const words = search.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const matches = (d: Drawing) => words.every((w) => `${d.name} ${d.artist}`.toLowerCase().includes(w));
+  const hatched = [...drawings.values()].filter((d) => (!d.hatchAt || d.hatchAt < Date.now()) && matches(d));
+  const artists = new Map<string, Drawing[]>();
+  for (const d of hatched.sort((a, b) => a.name.localeCompare(b.name))) artists.set(d.artist, [...(artists.get(d.artist) ?? []), d]);
+  const order = [...artists.keys()].sort((a, b) => Number(a === 'Doodlearium') - Number(b === 'Doodlearium') || a.localeCompare(b));
+  const top: HTMLElement[] = [];
+  if (!words.length) {
+    const everyone = Object.assign(document.createElement('button'), { textContent: '👥 Everyone' });
+    everyone.setAttribute('aria-pressed', String(!who));
+    everyone.onclick = () => pick(undefined);
+    const grid = Object.assign(document.createElement('div'), { className: 'grid' });
+    grid.style.marginTop = '10px';
+    grid.append(everyone);
+    top.push(grid);
+  }
+  whoList.replaceChildren(
+    ...top,
+    ...order.flatMap((artist) => {
+      const grid = Object.assign(document.createElement('div'), { className: 'grid' });
+      for (const d of artists.get(artist)!) {
+        const b = document.createElement('button');
+        b.title = `${d.name} by ${d.artist}`;
+        b.setAttribute('aria-pressed', String(d.id === who));
+        b.append(thumb(d), Object.assign(document.createElement('span'), { textContent: d.name }));
+        b.onclick = () => pick(d.id);
+        grid.append(b);
+      }
+      const title = artist === 'Doodlearium' ? 'Came with Doodlearium' : `Drawn by ${artist}`;
+      return [Object.assign(document.createElement('h3'), { textContent: `${title} (${artists.get(artist)!.length})` }), grid];
+    }),
+    ...(hatched.length ? [] : [Object.assign(document.createElement('p'), { className: 'none', textContent: 'Nobody by that name.' })]),
+  );
+}
+
+function openPicker(open: boolean) {
+  picker.hidden = !open;
+  whoButton.setAttribute('aria-expanded', String(open));
+  if (!open) return;
+  search.value = '';
+  fillPicker();
+  search.focus();
+}
+whoButton.onclick = () => openPicker(picker.hidden === true);
+search.oninput = () => fillPicker();
+// Enter picks the only match; Escape closes.
+search.onkeydown = (e) => {
+  if (e.key === 'Escape') openPicker(false);
+  if (e.key !== 'Enter') return;
+  const buttons = whoList.querySelectorAll<HTMLButtonElement>('.grid button');
+  if (buttons.length === 1) buttons[0].click();
+};
+addEventListener('pointerdown', (e) => {
+  if (!picker.hidden && !(e.target as Element).closest('.who')) openPicker(false);
+});
+
+// --- what's shown: which worlds, and which kinds of happening ---------------------------------------------
+
+/** Kinds of happening, from the server's history types; anything new counts as creature doings. */
+const KINDS = [
+  { id: 'family', label: '🍼 Eggs & babies', types: ['egg', 'hatch', 'grown'] },
+  { id: 'explorers', label: '🧭 Explorers & travels', types: ['explorer', 'travels'] },
+  { id: 'doings', label: '🐟 Creature doings', types: ['school', 'scare', 'chase', 'feed', 'documentary', 'night-out'] },
+  { id: 'new', label: '🎨 New drawings & worlds', types: ['joined', 'pack', 'world', 'update'] },
+  { id: 'visitors', label: '🛸 Visitors', types: ['visitor'] },
+  { id: 'weather', label: '🌦️ Weather & days', types: ['weather', 'night', 'morning', 'holiday', 'blacklight'] },
+] as const;
+type KindId = (typeof KINDS)[number]['id'];
+const kindOf = (type: string): KindId => KINDS.find((k) => (k.types as readonly string[]).includes(type))?.id ?? 'doings';
+
+const SHOWN_KEY = 'doodlearium.history.shown';
+/** Visitors and weather are most of the history, so they start hidden. */
+let hiddenKinds = new Set<KindId>(['visitors', 'weather']);
+/** Worlds left out (none: every world). */
+let hiddenWorlds = new Set<string>();
+try {
+  const saved = JSON.parse(localStorage.getItem(SHOWN_KEY) ?? 'null') as { kinds?: KindId[]; worlds?: string[] } | null;
+  if (saved?.kinds) hiddenKinds = new Set(saved.kinds);
+  if (saved?.worlds) hiddenWorlds = new Set(saved.worlds);
+} catch {}
+const saveShown = () => {
+  try {
+    localStorage.setItem(SHOWN_KEY, JSON.stringify({ kinds: [...hiddenKinds], worlds: [...hiddenWorlds] }));
+  } catch {}
+};
+
+/** Whether a happening is shown: its kind is on, and it's in a world that's on (or happened everywhere). */
+const isShown = (e: HistoryEntry) => !hiddenKinds.has(kindOf(e.type)) && (!placeById(e.place) || !hiddenWorlds.has(worldOf(e.place).id));
+const shownEntries = () => entries.filter(isShown);
+
+function chip(label: string, on: boolean, toggle: () => void) {
+  const b = Object.assign(document.createElement('button'), { className: 'chip', textContent: label });
+  b.setAttribute('aria-pressed', String(on));
+  b.onclick = () => {
+    toggle();
+    saveShown();
+    renderChips();
+    render();
+  };
+  return b;
+}
+
+const flip = <T,>(set: Set<T>, value: T) => (set.has(value) ? set.delete(value) : set.add(value));
+
+function renderChips() {
+  const worlds = allWorlds();
+  const worldChips = $<HTMLDivElement>('#world-chips');
+  worldChips.hidden = worlds.length < 2;
+  worldChips.replaceChildren(
+    Object.assign(document.createElement('span'), { className: 'chips-label', textContent: 'Worlds' }),
+    ...worlds.map((w) => chip(`${w.icon} ${w.name}`, !hiddenWorlds.has(w.id), () => flip(hiddenWorlds, w.id))),
+  );
+  $<HTMLDivElement>('#kind-chips').replaceChildren(
+    Object.assign(document.createElement('span'), { className: 'chips-label', textContent: 'Show' }),
+    ...KINDS.map((k) => chip(k.label, !hiddenKinds.has(k.id), () => flip(hiddenKinds, k.id))),
+  );
 }
 
 const dayTitle = (at: number) => new Date(at).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 const clock = (at: number) => new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
-/** Newest day first; each day reads in order, like a diary. */
+/** Newest day first; each day reads in order, like a diary. Hidden happenings fold into quiet lines. */
 function render() {
   const days = new Map<string, HistoryEntry[]>();
   for (const e of entries) {
     const key = new Date(e.at).toDateString();
     days.set(key, [...(days.get(key) ?? []), e]);
   }
-  empty.hidden = entries.length > 0;
+  empty.hidden = entries.some(isShown);
+  empty.textContent = entries.length
+    ? 'Nothing to show on these days with those choices. Try turning on more of the kinds above.'
+    : 'Nothing has happened on these days yet. Give it time, or feed the fish!';
   timeline.replaceChildren(
-    ...[...days.values()].reverse().map((list) => {
-      const section = document.createElement('section');
-      section.className = 'day';
-      const h = document.createElement('h2');
-      h.textContent = dayTitle(list[0].at);
-      section.append(h, ...list.map(eventRow));
-      return section;
-    }),
+    ...[...days.values()]
+      .reverse()
+      .filter((list) => list.some(isShown))
+      .map((list) => {
+        const section = document.createElement('section');
+        section.className = 'day';
+        const h = document.createElement('h2');
+        h.textContent = dayTitle(list[0].at);
+        section.append(h);
+        let run: HistoryEntry[] = [];
+        const fold = () => {
+          if (run.length) section.append(folded(run));
+          run = [];
+        };
+        for (const e of list) {
+          if (isShown(e)) {
+            fold();
+            section.append(eventRow(e));
+          } else run.push(e);
+        }
+        fold();
+        return section;
+      }),
   );
+}
+
+/** "＋ 6 more: 🛸 visitors, 🌦️ weather and days": tap to turn those kinds on. */
+function folded(run: HistoryEntry[]) {
+  const kinds = [...new Set(run.map((e) => kindOf(e.type)))].filter((k) => hiddenKinds.has(k));
+  const names = kinds.map((k) => KINDS.find((x) => x.id === k)!.label.toLowerCase().replace(/&/g, 'and'));
+  const b = Object.assign(document.createElement('button'), {
+    className: 'folded',
+    textContent: `＋ ${run.length} more${names.length ? `: ${names.join(', ')}` : ' in other worlds'}`,
+    title: kinds.length ? 'Show these kinds' : 'Turn the other worlds back on to see these',
+  });
+  b.onclick = () => {
+    if (kinds.length) for (const k of kinds) hiddenKinds.delete(k);
+    else hiddenWorlds.clear();
+    saveShown();
+    renderChips();
+    render();
+  };
+  return b;
 }
 
 function eventRow(e: HistoryEntry) {
@@ -89,14 +264,21 @@ function eventRow(e: HistoryEntry) {
   for (const id of e.who.slice(0, 3)) {
     const d = drawings.get(id);
     if (!d) continue;
-    const img = Object.assign(document.createElement('img'), { src: imageUrl(d), alt: d.name, title: `${d.name} by ${d.artist}`, loading: 'lazy' });
+    const img = Object.assign(document.createElement('img'), { src: imageUrl(d), alt: d.name, title: `${d.name} by ${d.artist}: tap to see just its story`, loading: 'lazy' });
+    // Tap a face to see just that creature's story.
+    img.style.cursor = 'pointer';
+    img.onclick = () => {
+      pick(id);
+      scrollTo({ top: 0, behavior: 'smooth' });
+    };
     thumbs.append(img);
   }
   row.append(time, thumbs, text);
   return row;
 }
 
-for (const input of [fromInput, toInput, whoSelect]) input.onchange = () => void load();
+for (const input of [fromInput, toInput]) input.onchange = () => void load();
+
 
 // --- making a story ----------------------------------------------------------------------------------
 
@@ -164,7 +346,8 @@ function describePlace(id: string) {
 }
 
 function storyPrompt() {
-  const { who } = range();
+  // What's shown is what the story's about (visitors left out if they're hidden, say).
+  const entries = shownEntries();
   // The days that actually have happenings in them.
   const from = entries[0].at;
   const to = entries[entries.length - 1].at;
@@ -212,7 +395,7 @@ const promptStatus = $<HTMLSpanElement>('#prompt-status');
 const storyPanel = $<HTMLElement>('#story-panel');
 
 $<HTMLButtonElement>('#make-prompt').onclick = () => {
-  if (!entries.length) {
+  if (!shownEntries().length) {
     promptPanel.hidden = false;
     promptText.value = '';
     promptStatus.textContent = 'Nothing happened on these days to tell a story about. Try more days.';
@@ -304,13 +487,15 @@ connectLive((msg) => {
     fillWho();
   }
   if (msg.type !== 'history') return;
-  const { from, to, who } = range();
+  const { from, to } = range();
   const e = msg.entry;
   if (e.at < from || (toInput.value !== dateValue(new Date()) && e.at > to) || (who && !e.who.includes(who))) return;
   entries.push(e);
   render();
 });
 
+renderChips();
+fillWho();
 await load();
 fillWho();
 await loadStories();

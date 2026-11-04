@@ -41,6 +41,12 @@ input[type='text'] {
   min-width: 0;
 }
 input[type='text']:focus { outline: none; border-color: var(--accent); }
+/* Rows of little toggle buttons (filters, choices). */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chips .chips-label { color: var(--muted); font-size: 0.85rem; margin-right: 2px; }
+.chip { padding: 5px 11px; border-radius: 999px; font-size: 0.9rem; background: var(--panel); }
+.chip[aria-pressed='true'] { background: var(--panel-2); border-color: var(--accent); }
+.chip[aria-pressed='false'] { color: var(--muted); }
 .nav {
   display: flex;
   gap: 16px;
