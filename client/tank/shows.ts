@@ -63,6 +63,9 @@ interface Running {
   dim: Graphics | null;
   /** Each dancer's own step, so they don't all bob as one. */
   steps: Map<Creature, number>;
+  /** The conga: who's in the line (the explorer first), and where along its winding path it started. */
+  line: Creature[] | null;
+  s0: number;
 }
 
 export class Shows {
@@ -96,6 +99,7 @@ export class Shows {
       if (run.show.kind === 'wave') this.wave(run, world, u, explorer, others);
       else if (run.show.kind === 'parade') this.parade(run, world, u, dt, explorer, others);
       else if (run.show.kind === 'party') this.party(run, world, u, dt, explorer, others);
+      else if (run.show.kind === 'conga') this.conga(run, world, u, explorer, others);
       else this.treasure(run, world, u, explorer);
     }
     this.moveBits(run, dt);
@@ -138,6 +142,7 @@ export class Shows {
       carry: kind === 'saucer' ? size * 0.75 : kind === 'balloon' ? size * 1.55 : 0,
       dropped: late ? { x: 0, y: 0 } : null, popped: late, banner: null, bits: [], emitIn: 0, beat: -1,
       hellos: [], hand: null, chest: null, drops: 0, ball: null, lights: null, dim: null, steps: new Map(),
+      line: null, s0: 0,
     };
   }
 
@@ -340,6 +345,68 @@ export class Shows {
     for (let i = 0; i < Math.round(dt * 20 * on); i++) if (run.rand() < 0.5) this.confetti(run, world, true);
   }
 
+  // --- 💃 a conga line: the locals fall in behind, single file, winding back and forth across the place ---
+  // Cha, cha, cha… kick! Everyone steps on three beats and kicks out on the fourth, to alternate sides.
+
+  private conga(run: Running, world: World, u: number, explorer: Creature | undefined, others: Creature[]) {
+    const seconds = SHOWS.conga.seconds;
+    const { width: W, height: H } = world;
+    // The line goes round an oval: along the front one way, round, and back along the far side. Spaced by
+    // distance along it, so nobody bunches up on the turns.
+    const loop = congaLoop(W * 0.36, H * 0.12);
+    if (!run.line) {
+      // Not so many that the head catches up with the tail.
+      const pool = [...others].sort(() => run.rand() - 0.5).slice(0, 8);
+      run.line = explorer ? [explorer, ...pool] : pool;
+      // The head of the line starts where the explorer landed (on the front of the oval).
+      const a = Math.acos(clamp(((explorer?.view.x ?? W / 2) - W / 2) / (W * 0.36), -1, 1));
+      run.s0 = loop.at(-a);
+    }
+    const ending = Math.min(1, (seconds - u) / 2.5);
+    const head = run.s0 + u * H * 0.16;
+    const gap = H * 0.13;
+    const beats = u / 0.42;
+    const beat = Math.floor(beats);
+    if (beat !== run.beat && u < seconds - 2.5) {
+      run.beat = beat;
+      this.sounds.conga(beat);
+      if (explorer && beat % 4 === 3) this.note(run, explorer, world);
+    }
+    const inBar = beats % 4;
+    const kick = inBar >= 3 ? Math.sin((inBar - 3) * Math.PI) : 0;
+    const side = Math.floor(beats / 4) % 2 ? 1 : -1;
+    const farGround = (x: number) => sandY(world, 1, x) - H * 0.05;
+    run.line.forEach((c, i) => {
+      if (c.view.destroyed) return;
+      // Each one joins just after the one in front, and they all wander off again at the end.
+      const k = ease((u - i * 0.25) / 2) * ending;
+      if (k <= 0) return;
+      // Where it is round the oval: across (cos) and how far back (sin, -1 front .. 1 back).
+      const angle = loop.angle(head - i * gap);
+      const x = W / 2 + W * 0.36 * Math.cos(angle);
+      const back = Math.sin(angle);
+      const real = { x: c.view.x, y: c.view.y };
+      let y: number;
+      if (world.land) {
+        // Along the ground; fliers dance along just above it.
+        const flying = real.y < farGround(real.x);
+        y = sandY(world, 0.3 + 0.2 * back, x) - (flying ? H * 0.08 : 0);
+      } else if (real.y > world.floorAt(real.x) - H * 0.06) {
+        // Crabs and snails conga along the bottom.
+        y = sandY(world, 0.3 + 0.2 * back, x);
+      } else {
+        const top = Math.max(world.waterTop, H * 0.15);
+        y = top + (world.floorAt(x) - top) * (0.5 - 0.15 * back);
+      }
+      const hop = Math.abs(Math.sin(beats * Math.PI)) * H * 0.008 * (1 - kick) + kick * H * (i === 0 ? 0.03 : 0.018);
+      c.view.position.set(lerp(real.x, x, k), lerp(real.y, y, k) - hop * k);
+      c.view.rotation += side * kick * 0.3 * k;
+      // Facing the way the line is going.
+      if (k > 0.5) c.view.scale.x = Math.abs(c.view.scale.x) * (Math.sin(angle) >= 0 ? 1 : -1);
+    });
+    if (u < seconds - 3 && run.rand() < 0.15) this.confetti(run, world);
+  }
+
   // --- 💰 a treasure hunt: it digs, up comes a chest, and out spill snacks (the server drops them) --------
 
   private treasure(run: Running, world: World, u: number, explorer: Creature | undefined) {
@@ -452,6 +519,41 @@ export class Shows {
       }
     }
   }
+}
+
+/**
+ * An oval rx across and ry deep, measured by distance round it: at(angle) is how far round an angle is,
+ * angle(distance) the way back (any distance, going round and round). x = cos, and sin is -1 at the front;
+ * going round, the angle gets smaller, so the front row heads left and the back row right.
+ */
+function congaLoop(rx: number, ry: number) {
+  const N = 240;
+  const lengths = [0];
+  for (let i = 1; i <= N; i++) {
+    const a0 = ((i - 1) / N) * TAU;
+    const a1 = (i / N) * TAU;
+    lengths.push(lengths[i - 1] + Math.hypot(rx * (Math.cos(a1) - Math.cos(a0)), ry * (Math.sin(a1) - Math.sin(a0))));
+  }
+  const total = lengths[N];
+  return {
+    at(angle: number) {
+      const a = (((-angle % TAU) + TAU) % TAU) / TAU;
+      const i = Math.floor(a * N);
+      return lerp(lengths[i], lengths[i + 1] ?? total, a * N - i);
+    },
+    angle(distance: number) {
+      const d = ((distance % total) + total) % total;
+      let lo = 0;
+      let hi = N;
+      while (hi - lo > 1) {
+        const mid = (lo + hi) >> 1;
+        if (lengths[mid] <= d) lo = mid;
+        else hi = mid;
+      }
+      const f = (d - lengths[lo]) / (lengths[lo + 1] - lengths[lo] || 1);
+      return -((lo + f) / N) * TAU;
+    },
+  };
 }
 
 /** The ride in: a striped balloon with a basket, a big shiny bubble, or a flying saucer. */

@@ -71,6 +71,7 @@ A drawing can live both on land and in water (a frog ticked for the Pond and the
   - **🎺 A parade**: everyone there who gets about the way it does (walking, flying or swimming) falls in behind it, with confetti and a marching tune.
   - **🪩 A dance party**: a disco ball comes down, coloured lights sweep the floor, and everyone dances to the beat.
   - **💰 A treasure hunt**: it digs at an X, up comes a treasure chest, and out spill coins and snacks for everyone.
+  - **💃 A conga line**: the locals fall in behind it, single file, and dance round the place: cha, cha, cha… kick!
 
   The history tells each trip and show, and the gallery says where it's exploring now. For trying it out, `EXPLORER_MINUTES=1 npm start` sends explorers off every minute.
 - **Places.** Each looks different: the Lake is the old tank with its bubbling aerators, the Pond is green and shallow with reeds and lily pads, the Ocean is deep and dark with far-off coral and rocks, and at the Beach the sand slopes up out of the sea under the sky, with waves lapping the shore. Crawlers walk up and down the slope.

@@ -97,6 +97,16 @@ export class Sounds {
     if (n % 2 === 0) this.tone(140, 60, 0.12, 0.2);
   }
 
+  /** One beat of a conga: cha, cha, cha… and a big kick on the fourth. */
+  conga(n: number) {
+    const kick = n % 4 === 3;
+    this.tone(kick ? 220 : 180, 70, 0.14, kick ? 0.35 : 0.2);
+    this.tone(kick ? 2200 : 1500, kick ? 2600 : 1500, 0.05, 0.05, 'square');
+    const tune = [523, 659, 784, 1047, 784, 659, 587, 0];
+    const f = tune[Math.floor(n / 2) % tune.length];
+    if (f && n % 2 === 0) this.tone(f, f, 0.18, 0.06, 'triangle');
+  }
+
   /** One beat of a dance party: a thump, a tick, and a bouncy bass line. */
   beat(n: number) {
     this.tone(160, 45, 0.18, 0.35);

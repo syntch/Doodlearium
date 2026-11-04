@@ -6,7 +6,7 @@
  * time (client/tank/shows.ts), like a visit.
  */
 
-export const SHOW_KINDS = ['wave', 'parade', 'party', 'treasure'] as const;
+export const SHOW_KINDS = ['wave', 'parade', 'party', 'treasure', 'conga'] as const;
 export type ShowKind = (typeof SHOW_KINDS)[number];
 
 export interface ShowInfo {
@@ -24,6 +24,7 @@ export const SHOWS: Record<ShowKind, ShowInfo> = {
   parade: { icon: '🎺', seconds: 40, text: 'led a parade of the locals', title: 'parade' },
   party: { icon: '🪩', seconds: 40, text: 'threw a dance party', title: 'dance party' },
   treasure: { icon: '💰', seconds: 28, text: 'dug up a treasure chest full of snacks', title: 'treasure hunt' },
+  conga: { icon: '💃', seconds: 36, text: 'started a conga line', title: 'conga line' },
 };
 
 /** The arrival before the show: dropped off from above, then a moment to land. */
