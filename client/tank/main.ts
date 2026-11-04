@@ -1623,7 +1623,11 @@ app.ticker.add(() => {
 
 // --- TV niceties: fullscreen on double-click, hide the idle cursor, keep the screen awake ---
 
-addEventListener('dblclick', () => {
+addEventListener('dblclick', (e) => {
+  // Clicking a button quickly (➕ Bigger, again and again) isn't asking for full screen, and nor is
+  // tidying up the decorations: only a double-click on the world itself is.
+  const target = e.target as Element | null;
+  if (arranging || target?.closest('button, a, input, select, textarea, label, .menu, .chrome, .arrange')) return;
   if (document.fullscreenElement) void document.exitFullscreen();
   else void document.documentElement.requestFullscreen().catch(() => {});
 });
