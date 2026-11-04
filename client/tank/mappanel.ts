@@ -1,4 +1,5 @@
 import { Application } from 'pixi.js';
+import { NO_GC } from './nogc.ts';
 import { MAP_H, MAP_W, type WorldDef } from '../../shared/world/places.ts';
 import { WorldMap, type MapLooks } from './map.ts';
 
@@ -18,7 +19,7 @@ const noLooks: MapLooks = { use: () => null };
 /** The whole map fits the panel (which should be about MAP_W × MAP_H in shape), centred. */
 export async function createMapPanel(container: HTMLElement, looks: MapLooks = noLooks): Promise<MapPanel> {
   const app = new Application();
-  await app.init({ resizeTo: container, antialias: true, background: 0x070b24, autoDensity: true, resolution: Math.min(devicePixelRatio, 2) });
+  await app.init({ resizeTo: container, antialias: true, background: 0x070b24, autoDensity: true, resolution: Math.min(devicePixelRatio, 2), ...NO_GC });
   app.ticker.maxFPS = 60;
   container.append(app.canvas);
   let map: WorldMap | null = null;

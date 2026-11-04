@@ -1,4 +1,5 @@
 import { Application, Container, RenderLayer, Texture } from 'pixi.js';
+import { NO_GC } from './nogc.ts';
 import type { Drawing } from '../../shared/types.ts';
 import type { Biome } from '../../shared/world/biomes.ts';
 import { packFlake } from '../../shared/sim/protocol.ts';
@@ -35,7 +36,7 @@ export interface Preview {
  */
 export async function createPreview(container: HTMLElement): Promise<Preview> {
   const app = new Application();
-  await app.init({ resizeTo: container, antialias: true, background: 0x0a3456, autoDensity: true, resolution: Math.min(devicePixelRatio, 2) });
+  await app.init({ resizeTo: container, antialias: true, background: 0x0a3456, autoDensity: true, resolution: Math.min(devicePixelRatio, 2), ...NO_GC });
   app.ticker.maxFPS = 60;
   container.append(app.canvas);
 

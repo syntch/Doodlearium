@@ -1,4 +1,5 @@
 import { Application, Assets, Container, Graphics, RenderLayer, Text, Texture } from 'pixi.js';
+import { NO_GC } from './nogc.ts';
 import { imageUrl, motionOf, type Drawing, type Motion, type TankCommand, type TankCommandValue } from '../../shared/types.ts';
 import { newPose, type Kind, type Personality, type Pose } from '../../shared/sim/creature.ts';
 import { unpackPose, type MapSummary, type RosterEntry, type Settings, type Show, type Upcoming } from '../../shared/sim/protocol.ts';
@@ -95,7 +96,7 @@ const FADE_SECONDS = 1.5;
 const NIGHT = 0.25;
 
 const app = new Application();
-await app.init({ resizeTo: window, antialias: true, background: 0x0a3456, autoDensity: true, resolution: Math.min(devicePixelRatio, 2) });
+await app.init({ resizeTo: window, antialias: true, background: 0x0a3456, autoDensity: true, resolution: Math.min(devicePixelRatio, 2), ...NO_GC });
 // 60 frames a second is plenty for drifting creatures; fast screens would otherwise draw 120-240.
 app.ticker.maxFPS = 60;
 document.body.append(app.canvas);
