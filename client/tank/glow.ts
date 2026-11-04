@@ -137,6 +137,11 @@ export class Glow {
     }
   }
 
+  /** Where it sits among the glows and covers in the glow layer (see Cover). */
+  order(z: number) {
+    for (const { node } of this.nodes) node.zIndex = z;
+  }
+
   /** How brightly each kind glows right now (0 = not at all). */
   update(glow: number, uv: number) {
     for (const { node, kind, halo } of this.nodes) {
@@ -158,6 +163,41 @@ export class Glow {
       t.glow?.destroy(true);
       t.uv?.destroy(true);
     }
+  }
+}
+
+/**
+ * Glows are drawn above the night tint, so without this they'd shine through creatures passing in front.
+ * A Cover is a copy of a creature's body, dimmed as the night tint dims it, drawn in the glow layer at the
+ * creature's depth: a creature in front covers the glow of one behind, just as it covers its body.
+ */
+export class Cover {
+  private node: Container & { tint: number };
+
+  constructor(
+    private body: Container & { tint: number; texture: Texture },
+    private layer: RenderLayer,
+  ) {
+    this.node = copyOf(body, body.texture) as Container & { tint: number };
+    body.parent!.addChildAt(this.node, body.parent!.getChildIndex(body));
+    layer.attach(this.node);
+  }
+
+  /** dim: how much the night tint darkens it (0 = not at all). */
+  update(on: boolean, z: number, dim: number) {
+    this.node.visible = on;
+    if (!on) return;
+    this.node.zIndex = z;
+    const t = this.body.tint;
+    const k = 1 - dim;
+    const ch = (shift: number) => Math.round(((t >> shift) & 255) * k) << shift;
+    this.node.tint = ch(16) | ch(8) | ch(0);
+  }
+
+  destroy() {
+    if (this.node.destroyed) return;
+    this.layer.detach(this.node);
+    this.node.destroy();
   }
 }
 

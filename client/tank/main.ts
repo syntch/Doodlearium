@@ -18,7 +18,7 @@ import {
   showEverywhere,
   startUpdate,
 } from '../shared/api.ts';
-import { Glow, loadGlow, type GlowTextures } from './glow.ts';
+import { Cover, Glow, loadGlow, type GlowTextures } from './glow.ts';
 import { PORTHOLE, WorldMap, type MapLooks } from './map.ts';
 import { spaceHaze } from './spacescene.ts';
 import { lookOf } from '../../shared/world/looks.ts';
@@ -73,6 +73,8 @@ interface Entry {
   cutout?: Cutout;
   /** Glowing paint, and (for an egg) the textures waiting for the baby. */
   glow?: Glow;
+  /** Its dimmed copy among the glows, so it hides glows behind it (see Cover). */
+  cover?: Cover;
   glowTextures?: GlowTextures | null;
   /** Where it is right now (plants and decorations: where they always are). */
   pose: Pose;
@@ -152,7 +154,7 @@ const camera = new Container();
 const fit = new Container();
 fit.addChild(camera);
 /** Glowing paint is drawn above the night tint (while staying with its creature), so it shines in the dark. */
-const glowLayer = new RenderLayer();
+const glowLayer = new RenderLayer({ sortableChildren: true });
 camera.addChild(scene.back, creatureLayer, eventFront, scene.front, nightLayer, glowLayer, seasons.glow);
 const documentary = new Documentary(camera);
 const events = new Events({ back: eventBack, front: eventFront, among: creatureLayer });
@@ -381,6 +383,16 @@ async function addEntry(drawing: Drawing, r: RosterEntry) {
 function attachGlow(entry: Entry) {
   const body = entry.creature.body;
   if (entry.glowTextures && body) entry.glow = new Glow(body, entry.glowTextures, glowLayer, entry.creature.moving);
+  if (body && 'texture' in body && 'tint' in body) entry.cover = new Cover(body as Container & { tint: number; texture: Texture }, glowLayer);
+}
+
+/** Puts a creature's glow and its cover at its depth among the glows (night creatures, above the tint, on top). */
+function layerGlow(entry: Entry, anyGlow: boolean, dim: number) {
+  const view = entry.creature.view;
+  const night = view.parent === nightLayer;
+  const z = view.zIndex * 2 + (night ? 100_000 : 0);
+  entry.cover?.update(anyGlow, z, night ? 0 : dim);
+  entry.glow?.order(z + 1);
 }
 
 const isAwake = (entry: Entry) => entry.kind === 'egg' || !entry.drawing.nocturnal || scene.darkness >= NIGHT;
@@ -425,8 +437,9 @@ function safeUpdate(entry: Entry, dt: number) {
   }
 }
 
-function destroyEntry({ creature, glow, look }: Entry) {
+function destroyEntry({ creature, glow, cover, look }: Entry) {
   glow?.destroy(true);
+  cover?.destroy();
   creature.view.destroy({ children: true });
   releaseLook(look);
 }
@@ -543,6 +556,9 @@ app.ticker.add((ticker) => {
   // Glow paint is brightest in the dark; blacklight paint only shines under the blacklight.
   const glowLevel = 0.4 + scene.darkness * 1.2 + scene.blacklight * 0.3;
   const uvLevel = scene.blacklight * 1.1;
+  // Covers only matter while something glows; the night tint dims them as it dims the creatures.
+  const anyGlow = [...entries.values(), ...retiring].some((e) => e.glow);
+  const dim = Math.max(scene.darkness, 0.78 * scene.blacklight);
   for (const [id, entry] of entries) {
     const { creature } = entry;
     const placed = entry.still || timeline.pose(id, entry.pose) !== null;
@@ -557,6 +573,7 @@ app.ticker.add((ticker) => {
     if (!placed || (!wanted && entry.fade === 0)) continue; // asleep until night
     safeUpdate(entry, dt);
     entry.glow?.update(glowLevel, uvLevel);
+    layerGlow(entry, anyGlow, dim);
   }
   for (let i = retiring.length - 1; i >= 0; i--) {
     const entry = retiring[i];
@@ -565,6 +582,7 @@ app.ticker.add((ticker) => {
     if (!entry.still) timeline.pose(entry.id, entry.pose);
     safeUpdate(entry, dt);
     entry.glow?.update(glowLevel, uvLevel);
+    layerGlow(entry, anyGlow, dim);
     if (entry.fade === 0) {
       destroyEntry(entry);
       retiring.splice(i, 1);
@@ -573,7 +591,9 @@ app.ticker.add((ticker) => {
 
   updateShow(dt, frame?.show ?? null);
 
-  const starring = frame?.doc ? entries.get(frame.doc.id) : undefined;
+  filmWhenIdle(frame?.doc ?? null);
+  // The camera only follows the star on a screen nobody is using, or one that asked for the film.
+  const starring = frame?.doc && (idle() || filmAsked) ? entries.get(frame.doc.id) : undefined;
   documentary.update(dt, world, screenSize, starring && !starring.removing ? starring.creature : null, cardLines, cardName);
   if (documentary.filming) for (const l of labels) l.remaining = Math.min(l.remaining, 0.5);
   updateLabels(dt);
@@ -940,6 +960,32 @@ app.canvas.addEventListener('pointermove', (e) => {
 });
 for (const type of ['pointerup', 'pointercancel'] as const) app.canvas.addEventListener(type, (e) => fingers.delete(e.pointerId));
 
+// --- 🎬 documentaries: for a screen nobody's using, like a screensaver -------------------------------------
+
+/** How long with nobody touching the screen before documentaries start. */
+const IDLE_MS = 5 * 60_000;
+let lastActive = performance.now();
+let nextIdleFilm = 0;
+/** This screen asked for the documentary that's on (⚙️ or D), so it follows it even while in use. */
+let filmAsked = false;
+const idle = () => performance.now() - lastActive >= IDLE_MS;
+for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'touchstart'] as const) {
+  addEventListener(type, () => {
+    lastActive = performance.now();
+    nextIdleFilm = 0;
+  }, { passive: true, capture: true });
+}
+
+/** Once the screen has been left alone a while, films a documentary where it is, and another every so often. */
+function filmWhenIdle(doc: { id: string } | null) {
+  if (!doc) filmAsked = false;
+  if (!idle() || doc || zoomTo !== 1 || !place) return;
+  const now = performance.now();
+  if (now < nextIdleFilm) return;
+  nextIdleFilm = now + (6 + Math.random() * 8) * 60_000;
+  void sendTankCommand('film', null, place).catch(() => {});
+}
+
 // Keys for trying things out: D films a documentary, V brings a visitor, S toggles sound, B the blacklight.
 addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement) return;
@@ -1000,6 +1046,7 @@ async function command(cmd: TankCommand, value: TankCommandValue = null) {
     say('🗺️ Pick a place on the map first.');
     return;
   }
+  if (cmd === 'film' && !later.checked) filmAsked = true;
   try {
     if (later.checked && laterTime.value) {
       const at = nextTime(laterTime.value);

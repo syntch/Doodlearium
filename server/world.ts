@@ -62,7 +62,6 @@ interface PlaceSave {
   time: number;
   saved: Record<string, Saved>;
   nextVisit: { at: number; name: string };
-  nextDoc: number;
 }
 
 interface WorldSave {
@@ -77,7 +76,6 @@ interface WorldSave {
   time?: number;
   saved?: Record<string, Saved>;
   nextVisit?: { at: number; name: string };
-  nextDoc?: number;
 }
 
 /** An explorer's travels: where it is, where it's been lately, and its next trip. */
@@ -99,7 +97,6 @@ class Spot {
   visit: Visit | null = null;
   visitEnds = 0;
   nextVisit = { at: Date.now() + rand(6, 16) * MINUTE, name: '' };
-  nextDoc = Date.now() + rand(2, 6) * MINUTE;
   nextTurnover = Date.now() + rand(20, 40) * MINUTE;
   lastEgg = 0;
   /** Originals that just dropped in, so screens can say hello. */
@@ -197,7 +194,7 @@ export async function startWorld() {
   }
   // A save from before places: its one tank is the Lake, and everyone who lived there still does.
   const places = save.places ?? {
-    lake: { time: save.time ?? 0, saved: save.saved ?? {}, nextVisit: save.nextVisit ?? { at: 0, name: '' }, nextDoc: save.nextDoc ?? 0 },
+    lake: { time: save.time ?? 0, saved: save.saved ?? {}, nextVisit: save.nextVisit ?? { at: 0, name: '' } },
   };
   individuals = save.individuals ?? listDrawings().map((d) => ({ id: d.id, species: d.id, place: 'lake', named: true }));
   if (save.settings) settings = save.settings;
@@ -214,7 +211,6 @@ export async function startWorld() {
     spot.tank.world.time = ps?.time ?? 0;
     if (ps?.nextVisit?.name && pickVisitor(season(), ps.nextVisit.name)) spot.nextVisit = ps.nextVisit;
     else spot.nextVisit.name = pickVisitor(season(), undefined, spot.place.biome, spot.tank.isNight)?.name ?? '';
-    if (ps?.nextDoc) spot.nextDoc = Math.max(ps.nextDoc, Date.now() + MINUTE);
     spot.tank.sync(specsFor(spot.id), ps?.saved);
     spot.tank.step(0);
   }
@@ -308,7 +304,7 @@ let saving = Promise.resolve();
 function saveWorld() {
   const places: Record<string, PlaceSave> = {};
   for (const spot of spots.values()) {
-    places[spot.id] = { time: spot.tank.world.time, saved: spot.tank.save(), nextVisit: spot.nextVisit, nextDoc: spot.nextDoc };
+    places[spot.id] = { time: spot.tank.world.time, saved: spot.tank.save(), nextVisit: spot.nextVisit };
   }
   const data: WorldSave = { places, individuals, settings, grown: [...grown], scheduled, lastSeason, journeys };
   saving = saving.then(async () => {
@@ -445,7 +441,6 @@ function upcoming(): Upcoming[] {
   for (const spot of spots.values()) {
     const visitor = spot.nextVisit.name ? pickVisitor(season(), spot.nextVisit.name) : undefined;
     if (visitor && !spot.visit) items.push({ at: spot.nextVisit.at, icon: visitor.icon, text: `${capital(visitor.text)} drops by ${placeName(spot.id)}`, place: spot.id });
-    if (!spot.doc) items.push({ at: spot.nextDoc, icon: '🎬', text: `A documentary ${at(spot)}`, place: spot.id });
   }
   for (const i of individuals) {
     const d = drawingOf(i.species);
@@ -593,9 +588,7 @@ function updateDoc(spot: Spot, now: number) {
   if (spot.doc && (tank.world.time > spot.doc.until || !tank.creatures.has(spot.doc.id))) {
     tank.creatures.get(spot.doc.id)?.star?.(false);
     spot.doc = null;
-    spot.nextDoc = now + rand(6, 14) * MINUTE;
   }
-  if (!spot.doc && now >= spot.nextDoc && !startDoc(spot)) spot.nextDoc = now + MINUTE;
 }
 
 function startVisit(spot: Spot, name?: string, planned = false) {
