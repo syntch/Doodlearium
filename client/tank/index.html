@@ -66,6 +66,15 @@
       .coming .soon { color: #ffd98a; font-weight: bold; }
       body.idle .coming.chrome.soon-up { opacity: 1; }
       .menu:not([hidden]) ~ .coming { display: none; }
+      /* Where this is: the place and its world, bottom left, fading with the buttons (but up a moment on arrival). */
+      .where {
+        position: fixed; left: 12px; bottom: 12px; display: flex; flex-direction: column; padding: 7px 14px;
+        border-radius: 14px; background: rgba(6, 36, 59, 0.6); color: #dff3ff; font: 14px 'Trebuchet MS', sans-serif;
+        backdrop-filter: blur(4px); pointer-events: none;
+      }
+      .where b { color: #fff; font-size: 18px; }
+      .where[hidden] { display: none; }
+      body.idle .where.chrome.fresh { opacity: 1; }
       #map-button[hidden] { display: none; }
       /* The worlds there are, along the bottom of the map: tap one to travel there. */
       .worlds {
@@ -197,6 +206,7 @@
       <p class="status" id="menu-status" role="status"></p>
     </div>
     <div class="coming chrome" id="coming" hidden></div>
+    <div class="where chrome" id="where" hidden></div>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

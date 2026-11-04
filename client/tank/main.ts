@@ -22,6 +22,7 @@ import { Cover, Glow, loadGlow, type GlowTextures } from './glow.ts';
 import { PORTHOLE, WorldMap, type MapLooks } from './map.ts';
 import { spaceHaze } from './spacescene.ts';
 import { lookOf } from '../../shared/world/looks.ts';
+import { BIOME_NAMES } from '../../shared/world/biomes.ts';
 import { makeEgg } from './babies.ts';
 import { Documentary, aboutOf } from './documentary.ts';
 import { Events } from './events.ts';
@@ -96,6 +97,13 @@ const NIGHT = 0.25;
 const app = new Application();
 await app.init({ resizeTo: window, antialias: true, background: 0x0a3456, autoDensity: true, resolution: devicePixelRatio });
 document.body.append(app.canvas);
+// A TV's browser can drop the graphics card's state (sleep, power saving, memory); Pixi's restore can leave
+// creatures and scenery as scattered shards, so start the screen afresh instead (it remembers its place).
+app.canvas.addEventListener('webglcontextlost', (e) => {
+  e.preventDefault();
+  setTimeout(() => location.reload(), 1500);
+});
+app.canvas.addEventListener('webglcontextrestored', () => location.reload());
 
 const scene = new Scene();
 let mapSummary: MapSummary | null = null;
@@ -1430,6 +1438,29 @@ app.canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   resize(e.deltaY < 0 ? 1.08 : 1 / 1.08);
 }, { passive: false });
+
+// --- 📍 where this is: the place and its world, in the corner with the buttons ---------------------------
+
+const whereBox = document.querySelector<HTMLDivElement>('#where')!;
+let whereShown = '';
+let whereFresh = 0;
+app.ticker.add(() => {
+  const here = zoomTo === 1 && place ? placeById(place) : undefined;
+  const key = here?.id ?? '';
+  if (key === whereShown) return;
+  whereShown = key;
+  whereBox.hidden = !here;
+  if (!here) return;
+  const world = worldOf(here.id);
+  whereBox.replaceChildren(
+    Object.assign(document.createElement('b'), { textContent: `${BIOME_NAMES[here.biome]?.split(' ')[0] ?? '📍'} ${here.name}` }),
+    Object.assign(document.createElement('span'), { textContent: `${world.icon} ${world.name}` }),
+  );
+  // Arriving somewhere, it says where for a few seconds, even on a screen nobody's touching.
+  whereBox.classList.add('fresh');
+  clearTimeout(whereFresh);
+  whereFresh = window.setTimeout(() => whereBox.classList.remove('fresh'), 6000);
+});
 
 // Outlines show what can be moved, and which one is picked.
 app.ticker.add(() => {
