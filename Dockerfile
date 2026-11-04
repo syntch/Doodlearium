@@ -16,6 +16,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY server ./server
 COPY shared ./shared
+COPY bundled ./bundled
 COPY --from=build /app/dist ./dist
 RUN mkdir -p data/drawings && chown -R node:node data
 USER node
