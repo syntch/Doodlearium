@@ -55,11 +55,20 @@ async function withPin(url: string, init: RequestInit): Promise<Response> {
       }
       return res;
     }
+    await leaveFullscreen();
     const answer = prompt(pin ? 'That PIN is not right. Grown-up PIN:' : 'This needs the grown-up PIN:');
     if (!answer) return res;
     pin = answer.trim();
     asked = true;
   }
+}
+
+/**
+ * Out of full screen before asking anything: some browsers (Firefox) hold a question back until
+ * full screen ends, so the screen just seems to freeze.
+ */
+export async function leaveFullscreen() {
+  if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
 }
 
 /** The error a response carries, or a plain one. */

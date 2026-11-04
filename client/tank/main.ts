@@ -15,6 +15,7 @@ import {
   fetchDrawings,
   fetchUpdateInfo,
   layEgg,
+  leaveFullscreen,
   loadWorlds,
   scheduleTankCommand,
   sendTankCommand,
@@ -1293,6 +1294,7 @@ updateCheck.onclick = async () => {
 };
 
 updateNow.onclick = async () => {
+  await leaveFullscreen();
   if (!confirm('Update Doodlearium now? Every screen reloads when it is back, in a minute or so.')) return;
   updateNow.disabled = true;
   try {

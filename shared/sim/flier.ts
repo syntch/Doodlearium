@@ -154,7 +154,10 @@ export class SimFlier implements SimCreature {
     const options: Perch[] = [];
     for (const h of world.hideouts) {
       const top = h.bottom - h.height;
-      if (world.land || top < world.waterTop - 10) options.push({ x: h.x + (Math.random() - 0.5) * h.halfWidth * 0.6, y: top + 4, z: h.z });
+      // Anywhere on its upper part, not only the very top: plants of a height would otherwise line
+      // everyone up in one neat row across the screen.
+      const down = Math.random() < 0.35 ? 4 : 4 + Math.random() * h.height * 0.45;
+      if (world.land || top + down < world.waterTop - 10) options.push({ x: h.x + (Math.random() - 0.5) * h.halfWidth * 1.1, y: top + down, z: h.z });
     }
     const ground = (x: number) => (world.land || world.floorAt(x) < world.waterTop - 8 ? x : null);
     for (let i = 0; i < 4; i++) {
@@ -279,11 +282,15 @@ export class SimFlier implements SimCreature {
       if (!this.perch) this.flyFor = 6;
     }
     if (this.leader?.perch && !this.perch && this.leader.sitting > 0) {
-      // The flock lands together, near its leader.
+      // The flock lands together, near its leader: scattered about it, nearer and further back, not in
+      // one neat row (and now and then on a plant close by).
       const p = this.leader.perch;
-      const x = clamp(p.x + (this.rank + 1) * 40 * (this.rank % 2 ? 1 : -1), 20, world.width - 20);
+      const x = clamp(p.x + (this.rank + 1) * (25 + Math.random() * 35) * (this.rank % 2 ? 1 : -1), 20, world.width - 20);
+      const z = clamp(p.z + (Math.random() - 0.5) * 0.5, 0.02, 0.98);
+      const plant = p.water ? undefined : world.hideouts.find((h) => Math.abs(h.x - x) < h.halfWidth && (world.land || h.bottom - h.height < world.waterTop - 10));
       if (p.water) this.perch = this.onWater(world, x) ? { x, y: world.waterTop, z: p.z, water: true } : null;
-      else this.perch = world.land || world.floorAt(x) < world.waterTop - 8 ? { x, y: sandY(world, p.z, x), z: p.z } : null;
+      else if (plant && Math.random() < 0.4) this.perch = { x, y: plant.bottom - plant.height * (0.55 + Math.random() * 0.4), z: plant.z };
+      else this.perch = world.land || world.floorAt(x) < world.waterTop - 8 ? { x, y: sandY(world, z, x), z } : null;
     }
 
     let tx = this.goal.x;

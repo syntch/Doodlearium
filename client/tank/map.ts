@@ -5,6 +5,7 @@ import { BIOME_NAMES, shapeOf } from '../../shared/world/biomes.ts';
 import { lookOf } from '../../shared/world/looks.ts';
 import { MAP_H, MAP_W, type Place, type WorldDef } from '../../shared/world/places.ts';
 import { biomeBackdrop, sandColor } from './scene.ts';
+import { ringHalf } from './spacescene.ts';
 import { TAU, seededRandom } from './world.ts';
 
 /** A porthole's size on the map, in map units. */
@@ -190,9 +191,11 @@ export class WorldMap {
         for (let i = 4; i > 0; i--) g.circle(p.x, p.y, r + i * 10).fill({ color: look?.accent ?? 0xff7ad9, alpha: 0.06 });
       } else {
         // A planet or a moon, lit from the top left, with a ring for some.
+        const ring = seededRandom(`ring:${p.id}`)() < 0.4 ? { width: 5, color: look?.accent ?? 0xffffff, alpha: 0.7 } : null;
+        if (ring) ringHalf(g, p.x, p.y + 6, r * 1.6, r * 0.32, false, ring);
         g.circle(p.x, p.y, r).fill(color);
         g.circle(p.x + r * 0.25, p.y + r * 0.25, r * 0.85).fill({ color: 0x000000, alpha: 0.18 });
-        if (seededRandom(`ring:${p.id}`)() < 0.4) g.ellipse(p.x, p.y + 6, r * 1.6, r * 0.32).stroke({ width: 5, color: look?.accent ?? 0xffffff, alpha: 0.7 });
+        if (ring) ringHalf(g, p.x, p.y + 6, r * 1.6, r * 0.32, true, ring);
       }
     }
     return g;

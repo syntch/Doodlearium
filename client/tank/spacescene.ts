@@ -1,5 +1,18 @@
 import type { Graphics } from 'pixi.js';
 import type { Look } from '../../shared/world/looks.ts';
+
+/** Half a planet's ring: the back half goes behind the planet (draw it first), the front half over it. */
+export function ringHalf(g: Graphics, x: number, y: number, rx: number, ry: number, front: boolean, stroke: { width: number; color: number; alpha?: number }) {
+  const steps = 32;
+  for (let i = 0; i <= steps; i++) {
+    const a = (front ? 0 : Math.PI) + (i / steps) * Math.PI;
+    const px = x + Math.cos(a) * rx;
+    const py = y + Math.sin(a) * ry;
+    if (i === 0) g.moveTo(px, py);
+    else g.lineTo(px, py);
+  }
+  g.stroke({ ...stroke, cap: 'round' });
+}
 import { TAU, seededRandom, type World } from './world.ts';
 
 /**
@@ -50,10 +63,12 @@ export function drawSpaceBack(g: Graphics, world: World, span: Span, look: Look,
     // A far planet with a ring, and a small moon.
     const px = left + width * 0.78;
     const py = world.height * 0.26;
+    const ring = { width: 9, color: look.accent2, alpha: 0.55 };
+    ringHalf(g, px, py + 8, 170, 26, false, ring);
     g.circle(px, py, 95).fill(mix(look.ground[0], look.accent, 0.35));
     g.circle(px - 22, py - 18, 70).fill({ color: 0xffffff, alpha: 0.08 });
     for (const [dy, a] of [[-30, 0.15], [5, 0.12], [35, 0.1]] as const) g.ellipse(px, py + dy, 92, 10).fill({ color: 0x000000, alpha: a });
-    g.ellipse(px, py + 8, 170, 26).stroke({ width: 9, color: look.accent2, alpha: 0.55 });
+    ringHalf(g, px, py + 8, 170, 26, true, ring);
     g.circle(left + width * 0.2, world.height * 0.18, 22).fill(mix(look.ground[1], 0xffffff, 0.2));
   } else if (biome === 'moon') {
     // A huge planet hanging over the horizon.
