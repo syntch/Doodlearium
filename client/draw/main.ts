@@ -833,6 +833,102 @@ function changed() {
   suggestTimer = window.setTimeout(suggestMotion, 800);
   schedulePreview();
   scheduleParts();
+  scheduleDraft();
+}
+
+// --- 💾 the drawing so far is kept in this browser, so a closed tab (or a crash) doesn't lose it ----------
+
+const DRAFT_KEY = 'doodlearium.draft';
+interface Draft {
+  at: number;
+  paper: string;
+  holes?: string;
+  glow?: { glow: string; uv: string };
+  attachments: PlacedAttachment[];
+  motion: Motion;
+  traits: Traits;
+  name: string;
+  facingLeft: boolean;
+  nocturnal: boolean;
+}
+let draftTimer = 0;
+/** Not while the draft is being put back (that would save it half-loaded). */
+let restoringDraft = false;
+
+function scheduleDraft() {
+  // Changing a saved drawing isn't a draft: it's on the server already.
+  if (editing || restoringDraft) return;
+  clearTimeout(draftTimer);
+  draftTimer = window.setTimeout(saveDraft, 1500);
+}
+
+function saveDraft() {
+  try {
+    const attachments = currentAttachments();
+    if (!inkBounds(paper) && !attachments.length) {
+      localStorage.removeItem(DRAFT_KEY);
+      return;
+    }
+    const glow = inkBounds(glowCanvases.glow) || inkBounds(glowCanvases.uv);
+    const draft: Draft = {
+      at: Date.now(),
+      paper: paper.toDataURL('image/png'),
+      holes: inkBounds(holesCanvas) ? holesCanvas.toDataURL('image/png') : undefined,
+      glow: glow ? { glow: glowCanvases.glow.toDataURL('image/png'), uv: glowCanvases.uv.toDataURL('image/png') } : undefined,
+      attachments,
+      motion: state.motion,
+      traits,
+      name: nameInput.value,
+      facingLeft: state.facingLeft,
+      nocturnal: nocturnalInput.checked,
+    };
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+  } catch {
+    // Private windows, full storage: carry on without one.
+  }
+}
+
+/** Puts back the drawing that was on the paper last time, if there is one. Moving parts come back as plain drawing. */
+async function restoreDraft() {
+  let draft: Draft | null = null;
+  try {
+    draft = JSON.parse(localStorage.getItem(DRAFT_KEY) ?? 'null');
+  } catch {}
+  if (!draft?.paper) return;
+  // Nothing saves over it while it's coming back (the empty page would).
+  clearTimeout(draftTimer);
+  restoringDraft = true;
+  const load = async (src: string) => {
+    const image = new Image();
+    image.src = src;
+    await image.decode();
+    const canvas = Object.assign(document.createElement('canvas'), { width: paper.width, height: paper.height });
+    canvas.getContext('2d')!.drawImage(image, 0, 0);
+    return canvas;
+  };
+  try {
+    base = {
+      image: await load(draft.paper),
+      x: 0,
+      y: 0,
+      holes: draft.holes ? await load(draft.holes) : undefined,
+      glow: draft.glow ? { glow: await load(draft.glow.glow), uv: await load(draft.glow.uv) } : undefined,
+    };
+    baseAttachments = draft.attachments ?? [];
+    setMotion(draft.motion);
+    traits = { ...draft.traits };
+    renderKind();
+    nameInput.value = draft.name ?? '';
+    state.facingLeft = Boolean(draft.facingLeft);
+    nocturnalInput.checked = Boolean(draft.nocturnal);
+    renderGuide();
+    redraw();
+    showToast('🖍️ Welcome back! Here’s the drawing you were working on (🗑 Clear to start a new one).');
+  } catch {
+    base = null;
+  } finally {
+    restoringDraft = false;
+  }
 }
 
 document.querySelector<HTMLButtonElement>('#undo')!.onclick = undo;
@@ -846,6 +942,12 @@ document.querySelector<HTMLButtonElement>('#clear')!.onclick = () => {
   closePhotoPanel();
   if (behindFor) finishBehind();
   redraw();
+  // A cleared paper isn't worth keeping as a draft.
+  clearTimeout(draftTimer);
+  try {
+    localStorage.removeItem(DRAFT_KEY);
+  } catch {}
+  changed();
 };
 const KEY_TOOLS: Record<string, Tool> = { b: 'brush', e: 'eraser', f: 'fill', x: 'extras', s: 'select' };
 addEventListener('keydown', (e) => {
@@ -1901,6 +2003,9 @@ async function refreshPreview() {
 }
 document.querySelector<HTMLInputElement>('#paper-fill')!.addEventListener('change', schedulePreview);
 nocturnalInput.addEventListener('change', schedulePreview);
+// The draft keeps its name and night-time too.
+nameInput.addEventListener('input', scheduleDraft);
+nocturnalInput.addEventListener('change', scheduleDraft);
 explorerInput.addEventListener('change', () => renderWhere());
 homeSelect.addEventListener('change', schedulePreview);
 
@@ -1992,6 +2097,11 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
     showToast(
       `Splash! ${drawing.name} moved into ${where ?? 'the world'}.${drawing.nocturnal ? ' It comes out at night 🌙' : ''}${drawing.explorer ? ' It\u2019ll be off exploring before long 🧭' : ''}`,
     );
+    // It's in the world now, so the draft is done with.
+    clearTimeout(draftTimer);
+    try {
+      localStorage.removeItem(DRAFT_KEY);
+    } catch {}
     ops.length = 0;
     base = null;
     baseAttachments = [];
@@ -2115,4 +2225,6 @@ setWhere(defaultHabitats(state.motion), defaultGroup(state.motion));
 const editId = new URLSearchParams(location.search).get('edit');
 if (editId) {
   loadForEditing(editId).catch(() => showToast('Could not load that drawing.', true));
+} else {
+  void restoreDraft();
 }

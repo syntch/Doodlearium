@@ -40,8 +40,35 @@ async function load() {
   const [all, history] = await Promise.all([fetchDrawings(), fetchHistory(range())]);
   population = await fetchPopulation().catch(() => population);
   for (const d of all) drawings.set(d.id, d);
-  entries = history;
+  entries = [...history, ...birthdays(range())].sort((a, b) => a.at - b.at);
   render();
+}
+
+/**
+ * 🎂 Birthdays: each of the family's creatures (not ones that came with Doodlearium) has one every month for
+ * its first year, then every year, counted from when it was drawn (or, for a baby, hatched).
+ */
+function birthdays({ from, to, who }: { from: number; to: number; who?: string }): HistoryEntry[] {
+  const list: HistoryEntry[] = [];
+  const end = Math.min(to, Date.now());
+  for (const d of drawings.values()) {
+    if (d.artist === 'Doodlearium' || (who && d.id !== who)) continue;
+    const born = new Date(d.parents ? (d.hatchAt ?? d.createdAt) : d.createdAt);
+    for (let months = 1; months <= 12 * 50; months += months < 12 ? 1 : 12) {
+      const day = new Date(born);
+      day.setMonth(born.getMonth() + months);
+      // The 31st in a short month: the last day of that month instead.
+      if (day.getDate() !== born.getDate()) day.setDate(0);
+      const at = day.getTime();
+      if (at > end) break;
+      if (at < from) continue;
+      const years = Math.floor(months / 12);
+      const age = years ? `${years} year${years > 1 ? 's' : ''}` : `${months} month${months > 1 ? 's' : ''}`;
+      const by = d.parents ? '' : ` (drawn by ${d.artist})`;
+      list.push({ at, type: 'birthday', place: population[d.id]?.home ?? '', who: [d.id], text: `🎂 Happy birthday, ${d.name}! ${d.name}${by} is ${age} old today.` });
+    }
+  }
+  return list;
 }
 
 // --- 👥 who: a searchable grid of every creature, by artist ----------------------------------------------
@@ -134,6 +161,7 @@ addEventListener('pointerdown', (e) => {
 /** Kinds of happening, from the server's history types; anything new counts as creature doings. */
 const KINDS = [
   { id: 'family', label: '🍼 Eggs & babies', types: ['egg', 'hatch', 'grown'] },
+  { id: 'birthdays', label: '🎂 Birthdays', types: ['birthday'] },
   { id: 'explorers', label: '🧭 Explorers & travels', types: ['explorer', 'travels'] },
   { id: 'doings', label: '🐟 Creature doings', types: ['school', 'scare', 'chase', 'feed', 'documentary', 'night-out'] },
   { id: 'new', label: '🎨 New drawings & worlds', types: ['joined', 'pack', 'world', 'update'] },

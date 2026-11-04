@@ -493,6 +493,8 @@ export function runCommand(command: TankCommand, value: TankCommandValue, place?
       if (value === true && now_ok('blacklight', 30)) record('blacklight', [], '🟣 Someone switched on the blacklight, and the glowing paint lit up.');
       break;
     case 'film':
+      // A creature asked for by id (the gallery's 🔭 Visit): just that one, if it's out.
+      if (typeof value === 'string') return startDoc(spot, value) ? '🎬 Rolling!' : `🎬 ${nameOf(value, true)} isn't out right now.`;
       return startDoc(spot) ? '🎬 Rolling!' : '🎬 Nobody is out to film right now.';
     case 'visit':
       startVisit(spot, typeof value === 'string' ? value : undefined);
@@ -578,12 +580,13 @@ function startShower(spot: Spot, kind: 'rain' | 'snow' | 'rainbow') {
 /** Who documentary mode can film: anything out and about that moves. */
 const filmable = (spot: Spot) => [...spot.tank.creatures.values()].filter((c) => (c.kind === 'swimmer' || c.kind === 'crawler' || c.kind === 'walker' || c.kind === 'flier') && c.pose.out);
 
-function startDoc(spot: Spot) {
+/** Films a documentary: of the creature asked for (by id), or of someone picked. */
+function startDoc(spot: Spot, id?: string) {
   const candidates = filmable(spot);
   // The named originals get filmed more often than the crowd.
   const named = candidates.filter((c) => isNamed(c.id));
   const pool = named.length && Math.random() < 0.6 ? named : candidates;
-  const pick = pool[Math.floor(Math.random() * pool.length)];
+  const pick = id ? candidates.find((c) => c.id === id) : pool[Math.floor(Math.random() * pool.length)];
   if (!pick) return false;
   if (spot.doc) spot.tank.creatures.get(spot.doc.id)?.star?.(false);
   pick.star?.(true);

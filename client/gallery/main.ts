@@ -38,6 +38,7 @@ const FILTERS: { label: string; type: CreatureType | 'baby' | null }[] = [
 const grid = document.querySelector<HTMLDivElement>('#grid')!;
 const empty = document.querySelector<HTMLParagraphElement>('#empty')!;
 const filtersEl = document.querySelector<HTMLDivElement>('#filters')!;
+const noMatch = document.querySelector<HTMLParagraphElement>('#no-match')!;
 
 let drawings: Drawing[] = [];
 let population: Record<string, SpeciesWhere> = {};
@@ -68,12 +69,20 @@ packFilterButton.onclick = () => {
 };
 filtersEl.append(packFilterButton);
 
+// 🔍 Search by name or artist: every word has to match one or the other.
+const search = Object.assign(document.createElement('input'), { type: 'search', placeholder: '🔍 Search names and artists', className: 'search' });
+search.setAttribute('aria-label', 'Search names and artists');
+search.oninput = () => render();
+filtersEl.append(search);
+const words = () => search.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+
 /** The drawings the filters show, newest first (ones away from the world after the rest). */
 function shownDrawings() {
   const pack = packs.find((p) => p.id === packFilter);
   return drawings
     .filter((d) => !filter || (filter === 'baby' ? !!d.parents : d.type === filter))
     .filter((d) => !pack || pack.drawings.includes(d.id))
+    .filter((d) => words().every((w) => `${d.name} ${d.artist}`.toLowerCase().includes(w)))
     .sort((a, b) => Number(!!awayBecause(a)) - Number(!!awayBecause(b)) || b.createdAt - a.createdAt);
 }
 
@@ -83,8 +92,10 @@ function render() {
   packFilterButton.hidden = !pack;
   if (pack) packFilterButton.textContent = `📦 ${pack.name} ✕`;
   empty.hidden = drawings.length > 0;
+  const shown = shownDrawings();
+  noMatch.hidden = !drawings.length || shown.length > 0;
   grid.classList.toggle('choosing', !!choosing);
-  grid.replaceChildren(...shownDrawings().map(card));
+  grid.replaceChildren(...shown.map(card));
   renderPacks();
   renderChooser();
 }
@@ -238,6 +249,17 @@ function card(d: Drawing) {
   };
   const actions = document.createElement('div');
   actions.className = 'actions';
+  // 🔭 Visit: the world opens where it lives (the original's place), and films it.
+  const home = where && (where.home ?? Object.keys(where.places)[0]);
+  if (home && placeById(home)) {
+    const visit = document.createElement('a');
+    visit.className = 'button';
+    const films = !['plant', 'decor'].includes(d.type);
+    visit.href = `/tank/?place=${encodeURIComponent(home)}${films ? `&film=${encodeURIComponent(d.id)}` : ''}`;
+    visit.textContent = '🔭 Visit';
+    visit.title = `Go to ${placeById(home)!.name}${films ? ' and film it' : ''}`;
+    actions.append(visit);
+  }
   actions.append(edit, toggle, remove);
 
   el.append(art, ...lines, actions);

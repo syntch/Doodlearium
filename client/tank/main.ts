@@ -985,6 +985,8 @@ let lastActive = performance.now();
 let nextIdleFilm = 0;
 /** This screen asked for the documentary that's on (⚙️ or D), so it follows it even while in use. */
 let filmAsked = false;
+/** When it asked: the film takes a moment to start, so filmAsked holds until then. */
+let filmAskedAt = 0;
 const idle = () => performance.now() - lastActive >= IDLE_MS;
 for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'touchstart'] as const) {
   addEventListener(type, () => {
@@ -996,7 +998,7 @@ for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'touchstar
 
 /** Once the screen has been left alone a while, films a documentary where it is, and another every so often. */
 function filmWhenIdle(doc: { id: string } | null) {
-  if (!doc) filmAsked = false;
+  if (!doc && performance.now() - filmAskedAt > 5000) filmAsked = false;
   if (!idle() || doc || zoomTo !== 1 || !place || follow.busy) return;
   const now = performance.now();
   if (now < nextIdleFilm) return;
@@ -1092,6 +1094,22 @@ const clock = (d: Date) => d.toLocaleTimeString([], { hour: 'numeric', minute: '
 
 /** A menu button: done in the tank now (every screen sees it), or at the time picked. */
 /** Commands that happen in one place (the rest are for the whole world). */
+// 🔭 Visit from the gallery (?place=…&film=<id>): once the place is in, film that creature.
+{
+  const star = new URLSearchParams(location.search).get('film');
+  const where = place;
+  if (star && where) {
+    setTimeout(async () => {
+      filmAsked = true;
+      filmAskedAt = performance.now();
+      const text = await sendTankCommand('film', star, where).catch(() => '');
+      if (text && !text.startsWith('🎬 Rolling')) say(text);
+    }, 2500);
+    // Not again on a reload.
+    history.replaceState(null, '', `/tank/?place=${encodeURIComponent(where)}`);
+  }
+}
+
 const LOCAL: string[] = ['film', 'visit', 'current', 'school', 'puff', 'egg', 'show', 'rain', 'snow', 'rainbow', 'explorer'];
 
 async function command(cmd: TankCommand, value: TankCommandValue = null) {
@@ -1100,7 +1118,10 @@ async function command(cmd: TankCommand, value: TankCommandValue = null) {
     say('🗺️ Pick a place on the map first.');
     return;
   }
-  if (cmd === 'film' && !later.checked) filmAsked = true;
+  if (cmd === 'film' && !later.checked) {
+    filmAsked = true;
+    filmAskedAt = performance.now();
+  }
   try {
     if (later.checked && laterTime.value) {
       const at = nextTime(laterTime.value);
