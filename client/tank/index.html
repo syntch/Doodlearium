@@ -34,14 +34,19 @@
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
       }
       .info b { display: block; color: #fff; font-size: 17px; }
-      .menu {
-        position: fixed; z-index: 10; top: 56px; left: 12px; width: min(380px, calc(100vw - 24px));
-        max-height: calc(100vh - 72px); overflow-y: auto; box-sizing: border-box; padding: 12px 14px 14px;
-        border-radius: 16px; background: rgba(6, 36, 59, 0.92); color: #fff; font: 15px 'Trebuchet MS', sans-serif;
-        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4); backdrop-filter: blur(6px);
+      /* ⚙️ Controls: a short list of categories, each opening its panel beside it (over it, on a phone). */
+      .menu { position: fixed; z-index: 10; top: var(--menu-top, 56px); left: 12px; display: flex; gap: 8px; align-items: flex-start; font: 15px 'Trebuchet MS', sans-serif; color: #fff; }
+      .menu-main, .menu-panel {
+        box-sizing: border-box; max-height: calc(100vh - var(--menu-top, 56px) - 16px); overflow-y: auto; padding: 12px 14px 14px;
+        border-radius: 16px; background: rgba(6, 36, 59, 0.92); box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4); backdrop-filter: blur(6px);
       }
-      .menu h2 { margin: 0 0 4px; font-size: 18px; display: flex; justify-content: space-between; align-items: center; }
+      .menu-main { width: 290px; }
+      .menu-panel { width: 380px; }
+      .menu h2 { margin: 0 0 8px; font-size: 18px; display: flex; gap: 6px; align-items: center; }
+      .menu h2 > span, .menu-main h2 { flex: 1; }
+      .menu-main h2 { justify-content: space-between; }
       .menu h3 { margin: 12px 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #9cc9e6; }
+      .menu section > h3:first-child { margin-top: 2px; }
       .menu .row { display: flex; flex-wrap: wrap; gap: 6px; }
       .menu button {
         padding: 7px 11px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.15);
@@ -49,12 +54,33 @@
       }
       .menu button:hover { background: rgba(255, 255, 255, 0.18); }
       .menu button[aria-pressed='true'] { background: #2e86c1; border-color: #7cc4f0; }
+      .menu .cats { display: flex; flex-direction: column; gap: 6px; }
+      .menu .cat { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; text-align: left; }
+      .menu .cat .icon { font-size: 22px; }
+      .menu .cat .what { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+      .menu .cat small { color: #9cc9e6; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .menu .cat .go { font-size: 22px; color: #9cc9e6; }
+      .menu .cat.open { background: #2e86c1; border-color: #7cc4f0; }
+      .menu .cat.open small, .menu .cat.open .go { color: #e3f3ff; }
+      .menu .cat .badge { color: #ffd98a; }
+      .menu .quick { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.12); }
+      .menu .quick button { text-align: left; }
       .menu label { display: flex; gap: 8px; align-items: center; color: #cfe7f7; font-size: 14px; cursor: pointer; }
       .menu .status { min-height: 1.2em; margin: 10px 0 0; color: #ffd98a; font-size: 14px; }
-      .menu .close { padding: 2px 10px; }
-      .menu .later { margin-top: 12px; padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.06); }
+      .menu .status:empty { min-height: 0; margin: 0; }
+      .menu .close, .menu .back { padding: 2px 10px; }
+      .menu .back { display: none; font-size: 20px; line-height: 1; }
+      .menu .later { margin-top: 14px; padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.06); }
       .menu .later input[type='time'] { font: inherit; border-radius: 6px; border: 0; padding: 2px 4px; }
-      .menu .note { margin: 4px 0 0; color: #9cc9e6; font-size: 13px; }
+      .menu[hidden], .menu-panel[hidden], .menu .later[hidden] { display: none; }
+      .menu .note { margin: 8px 0 0; color: #9cc9e6; font-size: 13px; }
+      /* Not room for both side by side: the panel takes the list's place, with ‹ to go back. */
+      @media (max-width: 700px) {
+        .menu { right: 12px; }
+        .menu-main, .menu-panel { width: 100%; }
+        .menu.panel-open .menu-main { display: none; }
+        .menu .back { display: inline-block; }
+      }
       .follow-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 6px; }
       .follow-row span { flex: 1 0 100%; color: #cfe7f7; font-size: 14px; }
       .follow-row button { padding: 4px 9px; font-size: 13px; }
@@ -140,79 +166,101 @@
       <button id="arrange-done" class="done">✓ Done</button>
     </div>
     <div class="menu" id="menu" hidden>
-      <h2>⚙️ Controls <button class="close" id="menu-close" title="Close">✕</button></h2>
-      <p class="note">There's one world: changes show on every screen watching that place (so a phone can control the TV).</p>
-      <label class="later" title="Instead of now, do the next thing you pick at this time">
-        <input type="checkbox" id="later" /> ⏰ Do it later, at <input type="time" id="later-time" value="19:30" />
-      </label>
-
-      <h3>🎯 Follow the action</h3>
-      <label title="Just this screen: the TV and a laptop can choose differently">
-        <input type="checkbox" id="follow-on" /> When nobody's touched this screen for a minute, fly to what's happening
-      </label>
-      <div id="follow-kinds"></div>
-
-      <h3>Time of day</h3>
-      <div class="row" data-group="time">
-        <button data-cmd="time" data-value="auto" aria-pressed="true">🕒 Real time</button>
-        <button data-cmd="time" data-value="7">🌅 Morning</button>
-        <button data-cmd="time" data-value="12">☀️ Day</button>
-        <button data-cmd="time" data-value="19.5">🌇 Evening</button>
-        <button data-cmd="time" data-value="23">🌙 Night</button>
+      <div class="menu-main">
+        <h2>⚙️ Controls <button class="close" id="menu-close" title="Close (Esc)">✕</button></h2>
+        <div class="cats">
+          <button class="cat" data-panel="happen"><span class="icon">🎬</span><span class="what"><b>Make something happen</b><small>Documentary, feeding, eggs…</small></span><span class="go">›</span></button>
+          <button class="cat" data-panel="visitors"><span class="icon">🐋</span><span class="what"><b>Bring a visitor</b><small>Whale, ducks, a balloon…</small></span><span class="go">›</span></button>
+          <button class="cat" data-panel="sky"><span class="icon">🌤️</span><span class="what"><b>Sky, weather &amp; holidays</b><small id="sky-summary"></small></span><span class="go">›</span></button>
+          <button class="cat" data-panel="follow"><span class="icon">🎯</span><span class="what"><b>Follow the action</b><small id="follow-summary"></small></span><span class="go">›</span></button>
+          <button class="cat" data-panel="doodlearium"><span class="icon">🔄</span><span class="what"><b>Doodlearium</b><small id="update-summary">Updates</small></span><span class="go">›</span></button>
+        </div>
+        <div class="quick">
+          <button data-cmd="show" title="Every screen (the TV too) goes to the place this one is showing">📺 Show this place everywhere</button>
+          <button id="arrange-button" title="Drag plants and decorations where you like, and make them bigger or smaller">✋ Move plants &amp; decorations</button>
+        </div>
+        <p class="note">Changes show on every screen watching that place, so a phone can control the TV.</p>
+        <p class="status" id="menu-status" role="status"></p>
       </div>
 
-      <h3>Holiday</h3>
-      <div class="row" data-group="season">
-        <button data-cmd="season" data-value="auto" aria-pressed="true">📅 By the date</button>
-        <button data-cmd="season" data-value="none">None</button>
-        <button data-cmd="season" data-value="halloween">🎃 Halloween</button>
-        <button data-cmd="season" data-value="christmas">🎄 Christmas</button>
-        <button data-cmd="season" data-value="snow">❄️ Snow</button>
-        <button data-cmd="season" data-value="valentine">💕 Valentine's</button>
-      </div>
+      <div class="menu-panel" id="menu-panel" hidden>
+        <h2><button class="back" id="panel-back" title="Back to the controls">‹</button><span id="panel-title"></span><button class="close" id="panel-close" title="Close (Esc)">✕</button></h2>
 
-      <h3>Blacklight</h3>
-      <div class="row" data-group="blacklight">
-        <button data-cmd="blacklight" data-value="off" aria-pressed="true">💡 Off</button>
-        <button data-cmd="blacklight" data-value="on">🟣 On</button>
-      </div>
+        <section data-panel="happen" data-title="🎬 Make something happen" hidden>
+          <div class="row">
+            <button data-cmd="film">🎬 Documentary</button>
+            <button data-cmd="feed">🍤 Feed</button>
+            <button data-cmd="egg">🥚 Lay an egg</button>
+            <button data-cmd="explorer" title="An explorer travels here and puts on a show">🧭 An explorer drops in</button>
+          </div>
+          <h3>In the water</h3>
+          <div class="row">
+            <button data-cmd="school">🐟 School of fish</button>
+            <button data-cmd="current">🌊 Current</button>
+            <button data-cmd="puff">🐡 Puff the puffers</button>
+          </div>
+        </section>
 
-      <h3>Make something happen</h3>
-      <div class="row">
-        <button data-cmd="film">🎬 Documentary</button>
-        <button data-cmd="feed">🍤 Feed</button>
-        <button data-cmd="school">🐟 School of fish</button>
-        <button data-cmd="current">🌊 Current</button>
-        <button data-cmd="puff">🐡 Puff the puffers</button>
-        <button data-cmd="egg">🥚 Lay an egg</button>
-        <button data-cmd="explorer" title="An explorer travels here and puts on a show">🧭 An explorer drops in</button>
-        <button data-cmd="rain">☔ Rain</button>
-        <button data-cmd="snow">❄️ Snow</button>
-        <button data-cmd="rainbow">🌈 Rainbow</button>
-        <button data-cmd="show" title="Every screen (the TV too) goes to the place this one is showing">📺 Show this place on every screen</button>
-        <button id="arrange-button" title="Drag plants and decorations where you like, and make them bigger or smaller">✋ Move &amp; resize plants and decorations</button>
+        <section data-panel="visitors" data-title="🐋 Bring a visitor" hidden>
+          <div class="row"><button data-cmd="visit">🎲 Any that suits this place (V)</button></div>
+          <h3>Suits this place</h3>
+          <div class="row" id="visit-here"></div>
+          <h3>From somewhere else, but they'll come anyway</h3>
+          <div class="row" id="visit-other"></div>
+        </section>
+
+        <section data-panel="sky" data-title="🌤️ Sky, weather &amp; holidays" hidden>
+          <h3>Time of day</h3>
+          <div class="row" data-group="time">
+            <button data-cmd="time" data-value="auto" aria-pressed="true">🕒 Real time</button>
+            <button data-cmd="time" data-value="7">🌅 Morning</button>
+            <button data-cmd="time" data-value="12">☀️ Day</button>
+            <button data-cmd="time" data-value="19.5">🌇 Evening</button>
+            <button data-cmd="time" data-value="23">🌙 Night</button>
+          </div>
+          <h3>Weather here</h3>
+          <div class="row">
+            <button data-cmd="rain">☔ Rain</button>
+            <button data-cmd="snow">❄️ Snow</button>
+            <button data-cmd="rainbow">🌈 Rainbow</button>
+          </div>
+          <h3>Holiday</h3>
+          <div class="row" data-group="season">
+            <button data-cmd="season" data-value="auto" aria-pressed="true">📅 By the date</button>
+            <button data-cmd="season" data-value="none">None</button>
+            <button data-cmd="season" data-value="halloween">🎃 Halloween</button>
+            <button data-cmd="season" data-value="christmas">🎄 Christmas</button>
+            <button data-cmd="season" data-value="snow">❄️ Snow</button>
+            <button data-cmd="season" data-value="valentine">💕 Valentine's</button>
+          </div>
+          <h3>Blacklight</h3>
+          <div class="row" data-group="blacklight">
+            <button data-cmd="blacklight" data-value="off" aria-pressed="true">💡 Off</button>
+            <button data-cmd="blacklight" data-value="on">🟣 On (B)</button>
+          </div>
+        </section>
+
+        <section data-panel="follow" data-title="🎯 Follow the action" hidden>
+          <label title="Just this screen: the TV and a laptop can choose differently">
+            <input type="checkbox" id="follow-on" /> When nobody's touched this screen for a minute, fly to what's happening
+          </label>
+          <p class="note">Just this screen: the TV and a laptop can choose differently. How much each sort of happening matters:</p>
+          <div id="follow-kinds"></div>
+        </section>
+
+        <section data-panel="doodlearium" data-title="🔄 Doodlearium" hidden>
+          <div class="row">
+            <button id="update-check" title="See if there's a newer version of Doodlearium on GitHub">🔄 Check for updates</button>
+            <button id="update-now" hidden>⬇️ Update now</button>
+          </div>
+          <p class="note" id="update-note"></p>
+        </section>
+
+        <label class="later" id="later-box" title="Instead of now, do the next thing you pick at this time">
+          <input type="checkbox" id="later" /> ⏰ Do it later, at <input type="time" id="later-time" value="19:30" />
+        </label>
+        <p class="status" id="panel-status" role="status"></p>
       </div>
-      <h3>Visitors</h3>
-      <div class="row">
-        <button data-cmd="visit" data-value="whale">🐋 Whale</button>
-        <button data-cmd="visit" data-value="diver">🤿 Diver</button>
-        <button data-cmd="visit" data-value="ghost">👻 Ghost</button>
-        <button data-cmd="visit" data-value="ducks">🦆 Ducks</button>
-        <button data-cmd="visit" data-value="heron">🪶 Heron</button>
-        <button data-cmd="visit" data-value="gulls">🐦 Gulls</button>
-        <button data-cmd="visit" data-value="tractor">🚜 Tractor</button>
-        <button data-cmd="visit" data-value="kite">🪁 Kite</button>
-        <button data-cmd="visit" data-value="balloon">🎈 Balloon</button>
-        <button data-cmd="visit" data-value="deer">🦌 Deer</button>
-        <button data-cmd="visit" data-value="owl">🦉 Owl</button>
-      </div>
-      <h3>Doodlearium</h3>
-      <div class="row">
-        <button id="update-check" title="See if there's a newer version of Doodlearium on GitHub">🔄 Check for updates</button>
-        <button id="update-now" hidden>⬇️ Update now</button>
-      </div>
-      <p class="note" id="update-note"></p>
-      <p class="status" id="menu-status" role="status"></p>
     </div>
     <div class="coming chrome" id="coming" hidden></div>
     <div class="where chrome" id="where" hidden></div>

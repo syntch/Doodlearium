@@ -26,6 +26,7 @@ import { PORTHOLE, WorldMap, type MapLooks } from './map.ts';
 import { spaceHaze } from './spacescene.ts';
 import { lookOf } from '../../shared/world/looks.ts';
 import { BIOME_NAMES } from '../../shared/world/biomes.ts';
+import { ALL_VISITORS } from '../../shared/sim/visitors.ts';
 import { makeEgg } from './babies.ts';
 import { Documentary, aboutOf } from './documentary.ts';
 import { Events } from './events.ts';
@@ -1018,9 +1019,11 @@ setInterval(() => {
 function renderFollow() {
   const on = document.querySelector<HTMLInputElement>('#follow-on')!;
   on.checked = follow.settings.on;
+  document.querySelector('#follow-summary')!.textContent = follow.settings.on ? '✓ On for this screen' : 'Off for this screen';
   on.onchange = () => {
     follow.settings.on = on.checked;
     saveFollow(follow.settings);
+    renderFollow();
   };
   document.querySelector('#follow-kinds')!.replaceChildren(
     ...UPCOMING_KINDS.map((kind) => {
@@ -1054,7 +1057,8 @@ addEventListener('keydown', (e) => {
     else enterPlace(focus);
   }
   else if (e.key === 'Escape') {
-    showMenu(false);
+    if (panelOpen && matchMedia('(max-width: 700px)').matches) openPanel(null);
+    else showMenu(false);
     if (arranging) arrange(false);
   }
 });
@@ -1067,18 +1071,83 @@ const later = document.querySelector<HTMLInputElement>('#later')!;
 const laterTime = document.querySelector<HTMLInputElement>('#later-time')!;
 laterTime.oninput = () => (later.checked = true);
 
+const panel = document.querySelector<HTMLDivElement>('#menu-panel')!;
+const panelStatus = document.querySelector<HTMLParagraphElement>('#panel-status')!;
+const laterBox = document.querySelector<HTMLLabelElement>('#later-box')!;
+/** Panels whose buttons make something happen, so they can be planned for later. */
+const PLANNABLE = ['happen', 'visitors', 'sky'];
+let panelOpen: string | null = null;
+
 function showMenu(open: boolean) {
   menu.hidden = !open;
+  if (!open) openPanel(null);
+  else placeMenu();
   wake();
 }
+/** Just under the buttons, which wrap onto more rows on a phone. */
+function placeMenu() {
+  const bar = document.querySelector('nav')!.getBoundingClientRect();
+  menu.style.setProperty('--menu-top', `${Math.round(bar.bottom + 8)}px`);
+}
+addEventListener('resize', () => {
+  if (!menu.hidden) placeMenu();
+});
 document.querySelector<HTMLButtonElement>('#menu-toggle')!.onclick = () => showMenu(Boolean(menu.hidden));
 document.querySelector<HTMLButtonElement>('#menu-close')!.onclick = () => showMenu(false);
+document.querySelector<HTMLButtonElement>('#panel-close')!.onclick = () => showMenu(false);
+document.querySelector<HTMLButtonElement>('#panel-back')!.onclick = () => openPanel(null);
+
+/** Opens one category's panel beside the list (over it, on a phone), or closes it (null). */
+function openPanel(id: string | null) {
+  panelOpen = id;
+  panel.hidden = !id;
+  menu.classList.toggle('panel-open', Boolean(id));
+  for (const cat of menu.querySelectorAll<HTMLButtonElement>('.cat')) {
+    cat.classList.toggle('open', cat.dataset.panel === id);
+    cat.setAttribute('aria-expanded', String(cat.dataset.panel === id));
+  }
+  for (const section of panel.querySelectorAll<HTMLElement>('section')) {
+    const on = section.dataset.panel === id;
+    section.hidden = !on;
+    if (on) document.querySelector('#panel-title')!.textContent = section.dataset.title ?? '';
+  }
+  laterBox.hidden = !id || !PLANNABLE.includes(id);
+  if (id === 'visitors') renderVisitors();
+  panel.scrollTop = 0;
+}
+for (const cat of menu.querySelectorAll<HTMLButtonElement>('.cat')) {
+  cat.onclick = () => openPanel(panelOpen === cat.dataset.panel ? null : cat.dataset.panel!);
+}
+
+/** A visitor's button name: "a hot-air balloon" → "Hot-air balloon". */
+const visitorLabel = (text: string) => {
+  const bare = text.replace(/^(a|an|some|the) /, '');
+  return bare[0].toUpperCase() + bare.slice(1);
+};
+
+/** Visitors that suit the place showing come first; any of them can be called anywhere, though. */
+function renderVisitors() {
+  const biome = zoomTo === 1 && place ? placeById(place)?.biome : undefined;
+  const suits = (v: (typeof ALL_VISITORS)[number]) => Boolean(biome) && (!v.biomes || v.biomes.includes(biome!));
+  const button = (v: (typeof ALL_VISITORS)[number]) => {
+    const b = Object.assign(document.createElement('button'), { textContent: `${v.icon} ${visitorLabel(v.text)}` });
+    b.dataset.cmd = 'visit';
+    b.dataset.value = v.name;
+    if (v.night) b.title = 'Usually only comes after dark';
+    return b;
+  };
+  const here = ALL_VISITORS.filter(suits);
+  document.querySelector('#visit-here')!.replaceChildren(
+    ...(here.length ? here.map(button) : [Object.assign(document.createElement('span'), { className: 'note', textContent: biome ? 'None in particular.' : 'Pick a place on the map first.' })]),
+  );
+  document.querySelector('#visit-other')!.replaceChildren(...ALL_VISITORS.filter((v) => !suits(v)).map(button));
+}
 
 let statusTimer = 0;
 function say(text: string) {
-  menuStatus.textContent = text;
+  menuStatus.textContent = panelStatus.textContent = text;
   clearTimeout(statusTimer);
-  statusTimer = window.setTimeout(() => (menuStatus.textContent = ''), 6000);
+  statusTimer = window.setTimeout(() => (menuStatus.textContent = panelStatus.textContent = ''), 6000);
 }
 
 /** The next time the clock shows hh:mm (today, or tomorrow if that's passed). */
@@ -1140,8 +1209,10 @@ async function command(cmd: TankCommand, value: TankCommandValue = null) {
 const parseValue = (v: string | undefined): TankCommandValue =>
   v === undefined || v === 'auto' ? null : v === 'on' ? true : v === 'off' ? false : Number.isFinite(Number(v)) ? Number(v) : v;
 
-menu.querySelectorAll<HTMLButtonElement>('[data-cmd]').forEach((b) => {
-  b.onclick = () => {
+menu.addEventListener('click', (e) => {
+  const b = (e.target as Element).closest<HTMLButtonElement>('[data-cmd]');
+  if (!b) return;
+  {
     const cmd = b.dataset.cmd!;
     const here = zoomTo === 1 ? (place ?? undefined) : undefined;
     if (cmd === 'feed') {
@@ -1159,7 +1230,7 @@ menu.querySelectorAll<HTMLButtonElement>('[data-cmd]').forEach((b) => {
       return;
     }
     void command(cmd as TankCommand, parseValue(b.dataset.value));
-  };
+  }
 });
 
 /** Keeps the menu showing what's on in the tank. */
@@ -1172,11 +1243,16 @@ function showSettings(settings: Settings) {
     season: settings.season ?? 'auto',
     blacklight: settings.blacklight ? 'on' : 'off',
   };
+  const names: string[] = [];
   for (const [group, value] of Object.entries(shown)) {
     for (const b of menu.querySelectorAll(`[data-group="${group}"] button`)) {
-      b.setAttribute('aria-pressed', String((b as HTMLElement).dataset.value === value));
+      const on = (b as HTMLElement).dataset.value === value;
+      b.setAttribute('aria-pressed', String(on));
+      if (on) names.push(b.textContent!.replace(/ \(B\)$/, ''));
     }
   }
+  // The category says what's on, so a glance at the list is enough.
+  document.querySelector('#sky-summary')!.textContent = names.filter((n) => n !== '💡 Off').join(' · ');
 }
 
 // --- 🔄 updates: a newer version from GitHub, in one tap --------------------------------------------------
@@ -1184,6 +1260,7 @@ function showSettings(settings: Settings) {
 const updateCheck = document.querySelector<HTMLButtonElement>('#update-check')!;
 const updateNow = document.querySelector<HTMLButtonElement>('#update-now')!;
 const updateNote = document.querySelector<HTMLParagraphElement>('#update-note')!;
+const updateSummary = document.querySelector<HTMLElement>('#update-summary')!;
 
 const day = (iso: string) => new Date(iso).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
 
@@ -1203,6 +1280,7 @@ updateCheck.onclick = async () => {
       if (changes.length > 6) lines.push(`…and ${changes.length - 6} more`);
       if (info.dirty) lines.push('(Some files were changed by hand on the server. If they get in the way, the update says so and nothing changes.)');
       updateNow.hidden = false;
+      updateSummary.innerHTML = '<span class="badge">✨ A new version is ready</span>';
     }
     const last = info.last;
     if (last && !last.ok && Date.now() - last.at < 7 * 24 * 3600_000) lines.push(`Last time: ${last.message}`);
@@ -1221,6 +1299,7 @@ updateNow.onclick = async () => {
     await startUpdate();
     updateNow.hidden = true;
     updateNote.textContent = '🔄 Updating… every screen reloads when it is back.';
+    updateSummary.textContent = '🔄 Updating…';
   } catch (err) {
     updateNote.textContent = err instanceof Error ? err.message : 'Update failed.';
   } finally {

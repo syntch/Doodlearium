@@ -89,9 +89,17 @@ Four land places: the Meadow (long grass, wildflowers and a little pond at one s
 
 ### Controls (⚙️)
 
-The ⚙️ button on the world page opens a menu that works with a mouse or a finger, so a phone or tablet can run it too. It changes the **time of day**, the **holiday** decorations, turns the **blacklight** on or off (for the whole world), and makes things happen in the place on screen: a documentary, feeding, a school of fish, a current, puffers puffing, an egg or a baby (any time, skipping the usual wait), ☔ rain, ❄️ snow, a 🌈 rainbow, **🧭 An explorer drops in** (one that can live there comes straight away and puts on its show) and visitors. Every screen showing that place sees it: open the same place on your phone and control the TV. **📺 Show this place on every screen** sends every screen (the TV too) to the place yours is showing. **✋ Move & resize plants and decorations** lets you tidy up the place on screen: tap a plant or decoration and drag it (left and right, or up and down to set it further back or nearer the front), and make it **➕ Bigger** or **➖ Smaller** (or scroll). It stays just there, on every screen and after a restart, and isn't swapped out when the place's residents change; **↺ Put back** returns it to where (and how big) it grew by itself. The menu shows what's on, and the time, holiday and blacklight stay as set (even after a restart) until changed back to 🕒 Real time, 📅 By the date and 💡 Off.
+The ⚙️ button on the world page opens a short list of controls that works with a mouse or a finger, so a phone or tablet can run it too. Each category opens its own panel beside the list (on a phone, in its place, with **‹** to go back), and each line says what's on, so a glance is enough:
 
-**⏰ Do it later** plans the next thing you pick for a time instead of now, say the whale at 7:30 pm or nightfall at bedtime. It shows in the **Coming up** card and the server does it on time, whether or not a screen is open.
+- **🎬 Make something happen** in the place on screen: a documentary, feeding, an egg or a baby (any time, skipping the usual wait), **🧭 An explorer drops in** (one that can live there comes straight away and puts on its show), and in the water a school of fish, a current or puffers puffing.
+- **🐋 Bring a visitor**: the ones that suit the place on screen come first, then the rest, who come anyway if asked for by name (🎲 picks one that suits).
+- **🌤️ Sky, weather & holidays**: the **time of day**, ☔ rain, ❄️ snow or a 🌈 rainbow here, the **holiday** decorations and the **blacklight** (for the whole world). They stay as set (even after a restart) until changed back to 🕒 Real time, 📅 By the date and 💡 Off.
+- **🎯 Follow the action**: whether this screen flies to what's happening when it's left alone, and how much each sort of happening matters.
+- **🔄 Doodlearium**: check for updates and **⬇️ Update now**.
+
+Every screen showing that place sees what happens: open the same place on your phone and control the TV. Under the list, **📺 Show this place everywhere** sends every screen (the TV too) to the place yours is showing, and **✋ Move plants & decorations** lets you tidy up the place on screen: tap a plant or decoration and drag it (left and right, or up and down to set it further back or nearer the front), and make it **➕ Bigger** or **➖ Smaller** (or scroll). It stays just there, on every screen and after a restart, and isn't swapped out when the place's residents change; **↺ Put back** returns it to where (and how big) it grew by itself.
+
+**⏰ Do it later** (at the bottom of the panels that make things happen) plans the next thing you pick for a time instead of now, say the whale at 7:30 pm or nightfall at bedtime. It shows in the **Coming up** card and the server does it on time, whether or not a screen is open.
 
 Keys on the tank: M for the map, D for a documentary, V for a visitor, B for the blacklight, S for sound.
 
