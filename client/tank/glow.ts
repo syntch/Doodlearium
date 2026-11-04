@@ -169,10 +169,14 @@ export class Glow {
 /**
  * Glows are drawn above the night tint, so without this they'd shine through creatures passing in front.
  * A Cover is a copy of a creature's body, dimmed as the night tint dims it, drawn in the glow layer at the
- * creature's depth: a creature in front covers the glow of one behind, just as it covers its body.
+ * creature's depth: a creature in front covers the glow of one behind, just as it covers its body. What's
+ * drawn on top of the body (moving parts, eyes and other extras) moves into the glow layer too while the
+ * cover's on, just above the copy, or the copy would hide it (a shell's lid under the patch it lifts off).
  */
 export class Cover {
   private node: Container & { tint: number };
+  /** The things on top of the body, while they're lifted into the glow layer. */
+  private lifted: Container[] = [];
 
   constructor(
     private body: Container & { tint: number; texture: Texture },
@@ -186,15 +190,44 @@ export class Cover {
   /** dim: how much the night tint darkens it (0 = not at all). */
   update(on: boolean, z: number, dim: number) {
     this.node.visible = on;
-    if (!on) return;
-    this.node.zIndex = z;
-    const t = this.body.tint;
+    if (!on) {
+      this.drop();
+      return;
+    }
+    if (!this.lifted.length) this.lift();
     const k = 1 - dim;
-    const ch = (shift: number) => Math.round(((t >> shift) & 255) * k) << shift;
-    this.node.tint = ch(16) | ch(8) | ch(0);
+    const dimmed = (t: number) => {
+      const ch = (shift: number) => Math.round(((t >> shift) & 255) * k) << shift;
+      return ch(16) | ch(8) | ch(0);
+    };
+    this.node.zIndex = z;
+    this.node.tint = dimmed(this.body.tint);
+    for (const extra of this.lifted) {
+      extra.zIndex = z;
+      extra.tint = dimmed(0xffffff);
+    }
+  }
+
+  /** Everything after the body in its parent that isn't already in a layer (the glow's copies are). */
+  private lift() {
+    const parent = this.body.parent;
+    if (!parent) return;
+    this.lifted = parent.children.slice(parent.getChildIndex(this.body) + 1).filter((c) => !c.parentRenderLayer);
+    // Attached after the copy, so at the same depth they're drawn over it.
+    for (const extra of this.lifted) this.layer.attach(extra);
+  }
+
+  private drop() {
+    for (const extra of this.lifted) {
+      if (extra.destroyed) continue;
+      this.layer.detach(extra);
+      extra.tint = 0xffffff;
+    }
+    this.lifted = [];
   }
 
   destroy() {
+    this.drop();
     if (this.node.destroyed) return;
     this.layer.detach(this.node);
     this.node.destroy();
