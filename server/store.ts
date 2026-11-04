@@ -95,6 +95,16 @@ export async function updateDrawing(
   return drawing;
 }
 
+/** Switches a drawing off (away from the world, but kept) or back on. */
+export async function switchDrawing(id: string, off: boolean): Promise<Drawing | null> {
+  const drawing = drawings.find((d) => d.id === id);
+  if (!drawing) return null;
+  if (off) drawing.off = true;
+  else delete drawing.off;
+  await save();
+  return drawing;
+}
+
 /** Links a baby from a drawing pack to its parents, once they're in too. */
 export async function setParents(id: string, parents: [string, string]) {
   const drawing = drawings.find((d) => d.id === id);

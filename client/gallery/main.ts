@@ -1,4 +1,4 @@
-import { imageUrl, type CreatureType, type Drawing, type Pack, type PackFile, type SpeciesWhere } from '../../shared/types.ts';
+import { imageUrl, type CreatureType, type Drawing, type Pack, type PackFile, type SpeciesWhere, type WorldPack } from '../../shared/types.ts';
 import { BIOME_NAMES } from '../../shared/world/biomes.ts';
 import { allWorlds, placeById, worldById } from '../../shared/world/places.ts';
 import {
@@ -14,11 +14,13 @@ import {
   makePack,
   removePack,
   setupFeedButton,
+  switchOff,
 } from '../shared/api.ts';
 import { compareVersions } from '../../shared/versions.ts';
 
 // Which worlds (and places) there are, before anything looks a place up.
-await loadWorlds().catch(() => {});
+let worldPacks: WorldPack[] = await loadWorlds(true).catch(() => []);
+const worldIsOff = (id: string) => worldPacks.some((w) => w.id === id && w.off);
 
 setupFeedButton(document.querySelector<HTMLButtonElement>('#feed')!);
 
@@ -66,13 +68,13 @@ packFilterButton.onclick = () => {
 };
 filtersEl.append(packFilterButton);
 
-/** The drawings the filters show, newest first. */
+/** The drawings the filters show, newest first (ones away from the world after the rest). */
 function shownDrawings() {
   const pack = packs.find((p) => p.id === packFilter);
   return drawings
     .filter((d) => !filter || (filter === 'baby' ? !!d.parents : d.type === filter))
     .filter((d) => !pack || pack.drawings.includes(d.id))
-    .sort((a, b) => b.createdAt - a.createdAt);
+    .sort((a, b) => Number(!!awayBecause(a)) - Number(!!awayBecause(b)) || b.createdAt - a.createdAt);
 }
 
 function render() {
@@ -87,9 +89,25 @@ function render() {
   renderChooser();
 }
 
+/**
+ * Why a drawing is away from the world (as the server works it out: see isPresent in server/packs.ts), or
+ * undefined if it's in it.
+ */
+function awayBecause(d: Drawing): string | undefined {
+  if (d.off) return '💤 Switched off';
+  const inPacks = packs.filter((p) => p.drawings.includes(d.id));
+  if (inPacks.length && inPacks.every((p) => p.off)) return `💤 Away: ${inPacks.map((p) => p.name).join(' and ')} ${inPacks.length > 1 ? 'are' : 'is'} switched off`;
+  const wanted = d.worlds?.length ? d.worlds : [...new Set(inPacks.filter((p) => !p.off).flatMap((p) => p.worlds ?? []))];
+  const known = wanted.filter((w) => worldPacks.some((x) => x.id === w));
+  if (known.length && known.every(worldIsOff)) return `💤 Away: ${known.map((w) => worldById(w)?.name ?? w).join(' and ')} ${known.length > 1 ? 'are' : 'is'} switched off`;
+  return undefined;
+}
+
 function card(d: Drawing) {
   const el = document.createElement('article');
   el.className = 'card';
+  const away = awayBecause(d);
+  el.classList.toggle('away', !!away);
   if (choosing) {
     // Choosing drawings for a pack: a tap ticks it (or unticks it).
     const chosen = choosing.chosen;
@@ -126,6 +144,10 @@ function card(d: Drawing) {
   img.loading = 'lazy';
   art.append(img);
 
+  if (away) {
+    const line = Object.assign(document.createElement('div'), { className: 'away-note', textContent: away });
+    art.append(line);
+  }
   const name = document.createElement('div');
   name.className = 'name';
   name.textContent = `${d.name}${d.nocturnal ? ' 🌙' : ''}${d.explorer ? ' 🧭' : ''}`;
@@ -141,7 +163,7 @@ function card(d: Drawing) {
     baby.textContent = `${(d.hatchAt ?? 0) > Date.now() ? '🥚 Hatching soon!' : '🐣'} Baby of ${names.join(' & ')}`;
     lines.push(baby);
   }
-  const where = population[d.id];
+  const where = away ? undefined : population[d.id];
   if (where) {
     // Where it lives: the original's place first (🏠), then wherever else there are more of it.
     const places = Object.entries(where.places).sort(([a, x], [b, y]) => Number(b === where.home) - Number(a === where.home) || y - x);
@@ -198,9 +220,25 @@ function card(d: Drawing) {
   edit.className = 'button';
   edit.href = `/draw/?edit=${d.id}`;
   edit.textContent = '✏️ Edit';
+  // Off and on again: the drawing stays here, but it's away from the world while it's off.
+  const toggle = document.createElement('button');
+  toggle.textContent = d.off ? '✅ Switch on' : '💤 Switch off';
+  toggle.title = d.off ? 'Bring it back into the world' : 'Keep it, but take it out of the world for now';
+  toggle.onclick = async () => {
+    toggle.disabled = true;
+    try {
+      const changed: Drawing = await switchOff('drawings', d.id, !d.off);
+      drawings = drawings.map((x) => (x.id === d.id ? changed : x));
+      render();
+      refreshPopulationSoon();
+    } catch (err) {
+      toggle.disabled = false;
+      alert(problem(err, 'Switching it failed'));
+    }
+  };
   const actions = document.createElement('div');
   actions.className = 'actions';
-  actions.append(edit, remove);
+  actions.append(edit, toggle, remove);
 
   el.append(art, ...lines, actions);
   return el;
@@ -228,6 +266,7 @@ function renderPacks() {
       .map((pack) => {
         const row = document.createElement('div');
         row.className = 'pack';
+        row.classList.toggle('off', !!pack.off);
         const title = document.createElement('span');
         title.className = 'title';
         title.textContent = pack.name;
@@ -238,6 +277,8 @@ function renderPacks() {
         meta.className = 'meta';
         const notes = [plural(pack.drawings.length, 'drawing'), pack.installed ? 'installed' : 'made here'];
         if (pack.exported && pack.changed) notes.push('✨ changed since it was exported');
+        if (pack.off) notes.push('💤 switched off: its drawings are away');
+        else if (pack.worlds?.length && pack.worlds.every(worldIsOff)) notes.push('💤 its world is switched off (on the Worlds page)');
         meta.textContent = notes.join(' · ');
 
         const button = (text: string, hint: string, onclick: () => void) => {
@@ -252,6 +293,23 @@ function renderPacks() {
           render();
         });
         show.setAttribute('aria-pressed', String(packFilter === pack.id));
+        const power = button(
+          pack.off ? '✅ Switch on' : '💤 Switch off',
+          pack.off ? 'Bring its drawings back into the world' : 'Keep it, but take its drawings out of the world for now (ones another pack that’s on has too stay)',
+          async () => {
+            power.disabled = true;
+            try {
+              await switchOff('packs', pack.id, !pack.off);
+              packsNote.textContent = pack.off ? `✅ ${pack.name} is back on: its drawings are moving back in.` : `💤 ${pack.name} is switched off: its drawings are away until you switch it back on.`;
+              await refreshPacks();
+              refreshPopulationSoon();
+            } catch (err) {
+              power.disabled = false;
+              packsNote.textContent = problem(err, 'Switching it failed.');
+            }
+          },
+        );
+        power.setAttribute('aria-pressed', String(!pack.off));
         const change = button('✏️ Change', 'Choose which drawings are in it, or rename it', () => startChoosing(pack));
         // Which worlds its drawings live in (unless a drawing has its own choice): a row of world chips.
         const homes = pack.worlds?.length ? pack.worlds : ['earth'];
@@ -298,7 +356,7 @@ function renderPacks() {
           },
         );
         remove.className = 'danger';
-        row.append(title, version, meta, worldsButton, show, change, share, remove);
+        row.append(title, version, meta, power, worldsButton, show, change, share, remove);
         if (worldsOpen === pack.id && allWorlds().length > 1) row.append(worldChips(pack, homes));
         return row;
       }),
@@ -316,7 +374,7 @@ function worldChips(pack: Pack, homes: string[]) {
   for (const w of allWorlds()) {
     const on = homes.includes(w.id);
     const chip = document.createElement('button');
-    chip.textContent = `${on ? '✓ ' : ''}${w.icon} ${w.name}`;
+    chip.textContent = `${on ? '✓ ' : ''}${w.icon} ${w.name}${worldIsOff(w.id) ? ' 💤' : ''}`;
     chip.setAttribute('aria-pressed', String(on));
     chip.disabled = on && homes.length === 1;
     chip.title = chip.disabled ? 'It has to live somewhere' : on ? `Take it out of ${w.name}` : `Its drawings move into ${w.name} too`;
@@ -470,7 +528,8 @@ connectLive(
       drawings = drawings.filter((d) => d.id !== msg.id);
       choosing?.chosen.delete(msg.id);
     } else if (msg.type === 'packs' || msg.type === 'worlds') {
-      void refreshPacks();
+      if (msg.type === 'worlds') void loadWorlds(true).then((list) => (worldPacks = list), () => {}).then(refreshPacks);
+      else void refreshPacks();
       return;
     } else {
       return;

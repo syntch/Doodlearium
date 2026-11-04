@@ -136,6 +136,8 @@ export interface Drawing {
    * puts on a show wherever it arrives (see shared/sim/explorers.ts).
    */
   explorer?: boolean;
+  /** Switched off in the gallery: kept, but away from the world until it's switched back on. */
+  off?: boolean;
 }
 
 /** A named group of drawings to share with another Doodlearium (see server/packs.ts). */
@@ -157,6 +159,8 @@ export interface Pack {
   changed?: boolean;
   /** The worlds its drawings live in (unless a drawing says otherwise). Unset: Earth. */
   worlds?: string[];
+  /** Switched off: its drawings are away from the world (unless another pack that's on has them too). */
+  off?: boolean;
 }
 
 /** One drawing in a pack file: its details as the draw page sends them, and its key (see Drawing.origin). */
@@ -192,6 +196,8 @@ export interface WorldPack extends WorldDef {
   exported?: { version: string; at: number; signature: string };
   /** Sent with the list: something's changed since the last export. */
   changed?: boolean;
+  /** Switched off: its places close (and its creatures are away) until it's switched back on. */
+  off?: boolean;
 }
 
 /** What's saved in a .doodleworld file. */

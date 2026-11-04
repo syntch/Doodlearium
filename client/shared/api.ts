@@ -7,12 +7,25 @@ import type { Biome } from '../../shared/world/biomes.ts';
 const PIN_KEY = 'doodlearium-pin';
 
 /** Learns which worlds (and so which places) there are: call before anything looks up a place. */
-export async function loadWorlds(): Promise<WorldPack[]> {
+/**
+ * Loads every world (switched-off ones too, marked off). Their places are looked up only where the page
+ * asks for them all (the gallery, history and worlds pages, which name every place); elsewhere, only the
+ * worlds that are on are open.
+ */
+export async function loadWorlds(all = false): Promise<WorldPack[]> {
   const res = await fetch('/api/worlds');
   if (!res.ok) throw await failure(res, 'Failed to load the worlds');
   const worlds: WorldPack[] = await res.json();
-  setWorlds(worlds as WorldDef[]);
+  if (all) setWorlds(worlds as WorldDef[]);
+  else setWorlds(worlds as WorldDef[], worlds.filter((w) => w.off).map((w) => w.id));
   return worlds;
+}
+
+/** Switches a drawing, a pack or a world off (kept, but away from the world) or back on. */
+export async function switchOff(kind: 'drawings' | 'packs' | 'worlds', id: string, off: boolean) {
+  const res = kind === 'packs' ? await fetch(`/api/packs/${id}`, asJson('PUT', { off })) : await fetch(`/api/${kind}/${id}/switch`, asJson('POST', { off }));
+  if (!res.ok) throw await failure(res, `Switching it ${off ? 'off' : 'on'} failed`);
+  return res.json();
 }
 
 function storedPin() {

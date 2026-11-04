@@ -21,7 +21,7 @@ import { habitatOf, motionOf, type Drawing, type SpeciesWhere, type TankCommand,
 import { hasWeather } from '../shared/world/biomes.ts';
 import { LIVE_PLACES, allWorlds, placeById, placeName, worldOf, type Place } from '../shared/world/places.ts';
 import { populate, tourOf, turnover, type Individual, type PinnedOf } from '../shared/world/population.ts';
-import { chosenWorldsOf, worldsOfDrawing } from './packs.ts';
+import { chosenWorldsOf, isPresent, worldsOfDrawing } from './packs.ts';
 import { record } from './history.ts';
 import { DATA_DIR, listDrawings } from './store.ts';
 import { UPDATE_EXIT, freshUpdate } from './update.ts';
@@ -160,6 +160,8 @@ const lastLogged: Record<string, number> = {};
 let wasNight = false;
 
 const drawingOf = (id: string) => listDrawings().find((d) => d.id === id);
+/** The drawings in the world: not switched off, nor away with their pack or world (see isPresent). */
+const present = () => listDrawings().filter(isPresent);
 /** Members' ids are the species' id, a ~, and a few letters. */
 const speciesOf = (id: string) => id.split('~')[0];
 const isNamed = (id: string) => !id.includes('~');
@@ -205,7 +207,7 @@ export async function startWorld() {
   applySettings();
 
   openSpots();
-  individuals = populate(listDrawings(), individuals, undefined, worldsOfDrawing, pinnedOf);
+  individuals = populate(present(), individuals, undefined, worldsOfDrawing, pinnedOf);
   for (const spot of spots.values()) {
     const ps = places[spot.id];
     spot.tank.world.time = ps?.time ?? 0;
@@ -263,7 +265,7 @@ function specsFor(place: string): Spec[] {
 /** Re-works out who lives where (after a drawing comes, goes or changes) and brings every place in line. */
 function resync(fresh = new Set<string>()) {
   const before = new Map(individuals.filter((i) => i.named).map((i) => [i.id, i.place]));
-  individuals = populate(listDrawings(), individuals, fresh, worldsOfDrawing, pinnedOf);
+  individuals = populate(present(), individuals, fresh, worldsOfDrawing, pinnedOf);
   for (const i of individuals) {
     const was = before.get(i.id);
     // (Explorers' trips have lines of their own.)
@@ -619,7 +621,7 @@ function updateVisit(spot: Spot, now: number) {
 // --- explorers ----------------------------------------------------------------------------------------
 
 /** The explorers there are (an egg has to hatch before it can go anywhere). */
-const explorers = () => listDrawings().filter((d) => d.explorer && !((d.hatchAt ?? 0) > Date.now()));
+const explorers = () => present().filter((d) => d.explorer && !((d.hatchAt ?? 0) > Date.now()));
 
 /** Everywhere an explorer can go: the worlds picked for it (or its packs), or else every world there is. */
 function tour(d: Drawing) {

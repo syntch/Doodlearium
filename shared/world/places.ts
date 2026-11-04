@@ -48,14 +48,17 @@ export const MAP_W = 1000;
 export const MAP_H = 700;
 
 let worlds: WorldDef[] = [EARTH];
+/** Worlds that are here but switched off: none of their places are open. */
+let switchedOff = new Set<string>();
 /** Every place in every world. (These change as worlds are installed: always read them, never keep a copy.) */
 export let PLACES: LivePlace[] = [];
 export let LIVE_PLACES: LivePlace[] = [];
 export let REGIONS: Region[] = [];
 
-/** The worlds there are: Earth first, then the ones installed or made here. */
-export function setWorlds(list: WorldDef[]) {
-  worlds = [EARTH, ...list.filter((w) => w.id !== EARTH.id)];
+/** The worlds there are: Earth first, then the ones installed or made here (off: the ids of those switched off). */
+export function setWorlds(list: WorldDef[], off: string[] = []) {
+  switchedOff = new Set(off);
+  worlds = [EARTH, ...list.filter((w) => w.id !== EARTH.id && !switchedOff.has(w.id))];
   PLACES = worlds.flatMap((w) => w.places.map((p) => ({ ...p, world: w.id, live: true as const })));
   LIVE_PLACES = PLACES;
   REGIONS = worlds.flatMap((w) => w.regions);
@@ -63,6 +66,8 @@ export function setWorlds(list: WorldDef[]) {
 setWorlds([]);
 
 export const allWorlds = () => worlds;
+/** A world that's here, but switched off. */
+export const isWorldOff = (id: string) => switchedOff.has(id);
 export const worldById = (id: string | undefined) => worlds.find((w) => w.id === id);
 export const placeById = (id: string | undefined) => PLACES.find((p) => p.id === id);
 export const placeName = (id: string | undefined) => placeById(id)?.name ?? 'the tank';

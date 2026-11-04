@@ -2,7 +2,7 @@ import type { WorldFile, WorldPack } from '../../shared/types.ts';
 import { BIOMES, BIOME_NAMES, type Biome } from '../../shared/world/biomes.ts';
 import { LOOKS } from '../../shared/world/looks.ts';
 import { MAP_H, MAP_W, type MapStyle, type WorldDef } from '../../shared/world/places.ts';
-import { changeWorld, connectLive, exportWorld, installWorld, loadWorlds, makeWorld, removeWorld, type WorldChange } from '../shared/api.ts';
+import { changeWorld, connectLive, exportWorld, installWorld, loadWorlds, makeWorld, removeWorld, switchOff, type WorldChange } from '../shared/api.ts';
 import { compareVersions } from '../../shared/versions.ts';
 import { createMapPanel } from '../tank/mappanel.ts';
 
@@ -39,14 +39,37 @@ function renderList() {
     ...worlds.map((w) => {
       const row = document.createElement('div');
       row.className = 'world';
+      row.classList.toggle('off', !!w.off);
       const title = Object.assign(document.createElement('span'), { className: 'title', textContent: `${w.icon} ${w.name}` });
       const version = Object.assign(document.createElement('span'), { className: 'version', textContent: `v${w.version}` });
       const notes = [plural(w.places.length, 'place'), w.builtin ? 'built in' : w.installed ? 'installed' : 'made here'];
       if (w.exported && w.changed) notes.push('✨ changed since it was exported');
+      if (w.off) notes.push('💤 switched off: its places are closed');
       const meta = Object.assign(document.createElement('span'), { className: 'meta', textContent: notes.join(' · ') });
       const button = (text: string, hint: string, onclick: () => void) => Object.assign(document.createElement('button'), { textContent: text, title: hint, onclick });
       const visit = Object.assign(document.createElement('a'), { className: 'button', href: `/tank/?world=${encodeURIComponent(w.id)}`, textContent: '🚀 Visit', title: `See ${w.name}'s map` });
-      row.append(title, version, meta, visit);
+      row.append(title, version, meta);
+      if (!w.builtin) {
+        // Off and on again: kept, but its places close (and creatures that only live there are away) while it's off.
+        const power = button(
+          w.off ? '✅ Switch on' : '💤 Switch off',
+          w.off ? 'Open its places again' : 'Keep it, but close its places for now',
+          async () => {
+            power.disabled = true;
+            try {
+              await switchOff('worlds', w.id, !w.off);
+              note.textContent = w.off ? `✅ ${w.name} is back on: its places are open again.` : `💤 ${w.name} is switched off. Screens there go back to Earth, and creatures that only live there are away until it's back on.`;
+              await refresh();
+            } catch (err) {
+              power.disabled = false;
+              note.textContent = problem(err, 'Switching it failed.');
+            }
+          },
+        );
+        power.setAttribute('aria-pressed', String(!w.off));
+        row.append(power);
+      }
+      if (!w.off) row.append(visit);
       if (!w.builtin) row.append(button('✏️ Change', 'Rename it, or change its places', () => startEditing(w)));
       const nextUp = w.exported && w.changed ? ' (as a new version)' : '';
       const share = button('⬆️ Export', `Save it as a file to share${nextUp}`, async () => {
@@ -84,7 +107,7 @@ function renderList() {
 }
 
 async function refresh() {
-  worlds = await loadWorlds().catch(() => worlds);
+  worlds = await loadWorlds(true).catch(() => worlds);
   renderList();
 }
 

@@ -29,8 +29,9 @@ import { readPhoto, removePaper } from './photo.ts';
 import { Selection, applyTransform, maskHas, type TransformOp } from './selection.ts';
 import { PART_INFO, behindArea, carryParts, cloneCanvas, findHinge, partsFromImage, type EditorPart } from './parts.ts';
 
-// Which worlds (and places) there are, before anything looks a place up.
-await loadWorlds().catch(() => {});
+// Which worlds (and places) there are, before anything looks a place up. Switched-off ones too, so a
+// drawing that lives in one keeps it when it's saved.
+const offWorlds = new Set((await loadWorlds(true).catch(() => [])).filter((w) => w.off).map((w) => w.id));
 
 /** Colour and the name shown when hovering it. 'clear' paints and fills see-through. */
 const COLORS: [string, string][] = [
@@ -616,9 +617,9 @@ function renderWhere(home = homeSelect.value) {
       const b = document.createElement('button');
       b.type = 'button';
       const on = livesIn().includes(w.id);
-      b.textContent = `${w.icon} ${w.name}`;
+      b.textContent = `${w.icon} ${w.name}${offWorlds.has(w.id) ? ' 💤' : ''}`;
       b.setAttribute('aria-pressed', String(on));
-      b.title = chosenWorlds.length ? 'Chosen for this drawing' : packWorlds.length ? 'From its drawing packs' : 'Where new drawings live';
+      b.title = offWorlds.has(w.id) ? 'Switched off for now (on the Worlds page)' : chosenWorlds.length ? 'Chosen for this drawing' : packWorlds.length ? 'From its drawing packs' : 'Where new drawings live';
       b.onclick = () => {
         const next = on ? livesIn().filter((id) => id !== w.id) : [...livesIn(), w.id];
         // Always somewhere to live.

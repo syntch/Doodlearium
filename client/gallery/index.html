@@ -14,7 +14,13 @@
       .card img { max-width: 90%; max-height: 90%; }
       .card .name { font-weight: bold; overflow-wrap: anywhere; }
       .card .meta { color: var(--muted); font-size: 0.85rem; }
-      .card .actions { display: flex; gap: 8px; }
+      .card .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+      /* Switched off (or away with its pack or world): faded, with why on the picture. */
+      .card .art { position: relative; }
+      .card.away .art img { opacity: 0.35; filter: grayscale(0.7); }
+      .card .away-note { position: absolute; left: 6px; right: 6px; bottom: 6px; padding: 3px 8px; border-radius: 8px; background: rgba(12, 47, 74, 0.85); font-size: 0.8rem; text-align: center; }
+      .pack.off { background: var(--panel); }
+      .pack.off .title { color: var(--muted); }
       .card .actions > * { padding: 4px 10px; font-size: 0.85rem; }
       .card a.button {
         background: var(--panel-2); border: 2px solid transparent; border-radius: 10px;

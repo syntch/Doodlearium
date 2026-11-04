@@ -9,7 +9,7 @@ import type { Drawing, Pack, PackFile, PackFileDrawing, PackInstall } from '../s
 import { record } from './history.ts';
 import { DATA_DIR, DRAWINGS_DIR, addDrawing, listDrawings, removeDrawing, setParents, updateDrawing, type ExtraImages } from './store.ts';
 import { drawingAdded, drawingRemoved, drawingUpdated } from './world.ts';
-import { allWorlds } from '../shared/world/places.ts';
+import { allWorlds, isWorldOff, worldById } from '../shared/world/places.ts';
 import { broadcast } from './ws.ts';
 
 const PACKS_FILE = join(DATA_DIR, 'packs.json');
@@ -59,6 +59,19 @@ export function worldsOfDrawing(d: Drawing): string[] {
   return chosen.length ? chosen : ['earth'];
 }
 
+/**
+ * Whether a drawing is in the world: it isn't switched off, it isn't only in packs that are all switched
+ * off, and its worlds aren't all switched off.
+ */
+export function isPresent(d: Drawing): boolean {
+  if (d.off) return false;
+  const inPacks = packs.filter((p) => p.drawings.includes(d.id));
+  if (inPacks.length && inPacks.every((p) => p.off)) return false;
+  const wanted = d.worlds?.length ? d.worlds : [...new Set(inPacks.filter((p) => !p.off).flatMap((p) => p.worlds ?? []))];
+  const known = wanted.filter((w) => worldById(w) || isWorldOff(w));
+  return !(known.length && known.every(isWorldOff));
+}
+
 /** The worlds picked for a drawing (by itself, else by its packs), or none. */
 export function chosenWorldsOf(d: Drawing): string[] {
   const here = new Set(allWorlds().map((w) => w.id));
@@ -91,13 +104,18 @@ export async function makePack(name: string, drawings: string[]) {
   return pack;
 }
 
-export async function changePack(id: string, change: { name?: string; version?: string; drawings?: string[]; worlds?: string[] }) {
+export async function changePack(id: string, change: { name?: string; version?: string; drawings?: string[]; worlds?: string[]; off?: boolean }) {
   const pack = packs.find((p) => p.id === id);
   if (!pack) return null;
-  Object.assign(pack, change, { updatedAt: Date.now() });
+  const switched = change.off !== undefined && change.off !== Boolean(pack.off);
+  const { off, ...rest } = change;
+  Object.assign(pack, rest, { updatedAt: Date.now() });
+  if (off) pack.off = true;
+  else if (off === false) delete pack.off;
   await save();
-  // Its drawings may live somewhere else now.
-  if (change.worlds || change.drawings) drawingRemoved();
+  if (switched) record('pack', [], off ? `💤 The ${pack.name} pack was switched off for now.` : `📦 The ${pack.name} pack was switched back on.`);
+  // Its drawings may live somewhere else now (or be away, or back).
+  if (change.worlds || change.drawings || switched) drawingRemoved();
   return tidy(pack);
 }
 

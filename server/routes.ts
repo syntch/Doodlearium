@@ -17,7 +17,7 @@ import {
   type Part,
 } from '../shared/types.ts';
 import { addStory, historyBetween, listStories, record } from './history.ts';
-import { addDrawing, listDrawings, removeDrawing, updateDrawing } from './store.ts';
+import { addDrawing, listDrawings, removeDrawing, switchDrawing, updateDrawing } from './store.ts';
 import { BIOMES, type Biome } from '../shared/world/biomes.ts';
 import { placeById, placeName } from '../shared/world/places.ts';
 import { EGG_GAP, HATCH_TIME, arrange, drawingAdded, drawingRemoved, drawingUpdated, feed, runCommand, schedule, stopForUpdate, whereSpecies } from './world.ts';
@@ -26,7 +26,7 @@ import { rateLimit, requirePin } from './security.ts';
 import { updateInfo } from './update.ts';
 import { cleanText } from './text.ts';
 import { MAX_PACK_DRAWINGS, changePack, exportPack, forgetPack, installPack, listPacks, makePack, type PackItem } from './packs.ts';
-import { changeWorld, exportWorld, forgetWorld, installWorld, isWorldInstalled, listWorlds, makeWorld, newWorldId, parseWorld } from './worlds.ts';
+import { changeWorld, exportWorld, switchWorld, forgetWorld, installWorld, isWorldInstalled, listWorlds, makeWorld, newWorldId, parseWorld } from './worlds.ts';
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const MAX_DIMENSION = 1024;
@@ -216,6 +216,22 @@ api.put('/drawings/:id', uploads, async (req: express.Request<{ id: string }>, r
   }
   broadcast({ type: 'drawing:updated', drawing });
   drawingUpdated(drawing);
+  res.json(drawing);
+});
+
+/** Switches a drawing off (it's kept, but away from the world) or back on: { off }. */
+api.post('/drawings/:id/switch', async (req: express.Request<{ id: string }>, res) => {
+  if (typeof req.body?.off !== 'boolean') {
+    res.status(400).json({ error: 'off must be true or false' });
+    return;
+  }
+  const drawing = await switchDrawing(req.params.id, req.body.off);
+  if (!drawing) {
+    res.status(404).json({ error: 'not found' });
+    return;
+  }
+  broadcast({ type: 'drawing:updated', drawing });
+  drawingRemoved();
   res.json(drawing);
 });
 
@@ -410,7 +426,7 @@ api.post('/packs', async (req, res) => {
   res.status(201).json(await makePack(cleanText(req.body.name, 'My pack', 60), drawings));
 });
 
-/** Renames a pack, sets its version, changes which drawings are in it or which worlds it's for: { name?, version?, drawings?, worlds? }. */
+/** Renames a pack, sets its version, changes which drawings are in it or which worlds it's for, or switches it off or on: { name?, version?, drawings?, worlds?, off? }. */
 api.put('/packs/:id', async (req: express.Request<{ id: string }>, res) => {
   const { name, version } = req.body ?? {};
   const drawings = req.body?.drawings === undefined ? undefined : parsePackDrawings(req.body.drawings);
@@ -423,6 +439,7 @@ api.put('/packs/:id', async (req: express.Request<{ id: string }>, res) => {
     ...(version !== undefined && { version: cleanText(version, '1', 20) }),
     ...(drawings && { drawings }),
     ...(req.body?.worlds !== undefined && { worlds: keyList(req.body.worlds, 20) ?? [] }),
+    ...(typeof req.body?.off === 'boolean' && { off: req.body.off as boolean }),
   };
   const pack = await changePack(req.params.id, change);
   if (!pack) res.status(404).json({ error: 'no such pack' });
@@ -494,6 +511,17 @@ api.post('/worlds', async (req, res) => {
     return;
   }
   res.status(201).json(await makeWorld(parsed.world));
+});
+
+/** Switches a world off (its places close) or back on: { off }. Earth is always on. */
+api.post('/worlds/:id/switch', async (req: express.Request<{ id: string }>, res) => {
+  if (typeof req.body?.off !== 'boolean') {
+    res.status(400).json({ error: 'off must be true or false' });
+    return;
+  }
+  const world = req.params.id === 'earth' ? null : await switchWorld(req.params.id, req.body.off);
+  if (!world) res.status(404).json({ error: 'no such world (and Earth is always on)' });
+  else res.json(world);
 });
 
 /** Changes a world: its name, map, or places (places keep their id; new ones get one). */

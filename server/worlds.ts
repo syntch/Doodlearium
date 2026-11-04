@@ -24,7 +24,9 @@ const MAX_REGIONS = 6;
 let worlds: WorldPack[] = [];
 let writing = Promise.resolve();
 
-const defs = (): WorldDef[] => worlds.map(({ id, name, icon, mapStyle, regions, places }) => ({ id, name, icon, mapStyle, regions, places }));
+const offIds = () => worlds.filter((w) => w.off).map((w) => w.id);
+/** The worlds that are on. */
+const defs = (): WorldDef[] => worlds.filter((w) => !w.off).map(({ id, name, icon, mapStyle, regions, places }) => ({ id, name, icon, mapStyle, regions, places }));
 
 export async function loadWorlds() {
   try {
@@ -33,12 +35,12 @@ export async function loadWorlds() {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
     worlds = [];
   }
-  setWorlds(defs());
+  setWorlds(defs(), offIds());
 }
 
 /** Saves, opens and closes places to match, and tells every screen. */
 function save() {
-  setWorlds(defs());
+  setWorlds(defs(), offIds());
   worldsChanged();
   writing = writing.then(async () => {
     await writeFile(`${WORLDS_FILE}.tmp`, JSON.stringify(worlds, null, 2));
@@ -164,6 +166,19 @@ export async function installWorld(def: WorldDef, version: string) {
       : `🌍 A new world arrived: ${world.name} (version ${version}), with ${world.places.length} places to visit.`,
   );
   return { world, opened, closed, updated: Boolean(had) };
+}
+
+/** Switches a world off (its places close, and creatures that only live there are away) or back on. */
+export async function switchWorld(id: string, off: boolean) {
+  const world = worlds.find((w) => w.id === id);
+  if (!world) return null;
+  if (Boolean(world.off) === off) return world;
+  if (off) world.off = true;
+  else delete world.off;
+  world.updatedAt = Date.now();
+  await save();
+  record('world', [], off ? `💤 ${world.name} was switched off for now.` : `🌍 ${world.name} was switched back on.`);
+  return world;
 }
 
 /** Removes a world (its creatures move to places that suit them elsewhere). Earth always stays. */
