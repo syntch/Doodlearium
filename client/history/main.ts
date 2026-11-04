@@ -1,5 +1,6 @@
 import { imageUrl, motionOf, type Drawing, type HistoryEntry, type Motion, type SpeciesWhere, type Story } from '../../shared/types.ts';
-import { REGIONS, placeById, placeName } from '../../shared/world/places.ts';
+import { placeById, placeName, worldOf } from '../../shared/world/places.ts';
+import { lookOf } from '../../shared/world/looks.ts';
 import { connectLive, loadWorlds, fetchDrawings, fetchHistory, fetchPopulation, fetchStories, saveStory } from '../shared/api.ts';
 
 // Which worlds (and places) there are, before anything looks a place up.
@@ -118,8 +119,11 @@ const STYLES: Record<Motion, string> = {
 };
 
 function describe(d: Drawing) {
-  const bits = [`${d.name}: ${STYLES[motionOf(d)]}, drawn by ${d.artist}`];
-  if (d.parents) bits.push(`baby of ${d.parents.map((id) => drawings.get(id)?.name ?? 'a fish that has since left').join(' and ')}`);
+  // Drawings from the packs that come with Doodlearium are signed "Doodlearium", not by someone in the family.
+  const by = d.artist === 'Doodlearium' ? 'one of the creatures that came with Doodlearium' : `drawn by ${d.artist}`;
+  const bits = [`${d.name}: ${STYLES[motionOf(d)]}, ${by}`];
+  if (d.explorer) bits.push('an explorer: the only one of its kind, who travels from place to place and world to world and puts on a show wherever it arrives');
+  if (d.parents) bits.push(`baby of ${d.parents.map((id) => drawings.get(id)?.name ?? 'a creature that has since left').join(' and ')}`);
   if (d.nocturnal) bits.push('only comes out at night');
   if (d.glow) bits.push('has glowing paint');
   const where = population[d.id];
@@ -143,13 +147,20 @@ const BIOME_WORDS: Record<string, string> = {
   farm: 'a farm with a red barn, a fence, hay bales and a ploughed field',
   hills: 'green rolling hills',
   forest: 'quiet woods full of tall trees, ferns and toadstools',
+  space: 'open space among the stars, with drifting asteroids and swirly nebula clouds, where creatures float as if swimming',
+  station: 'a space station, a city under a big roof with glowing signs, market stalls and windows onto the stars',
+  moon: 'a rocky moon with craters and a big planet in the sky, where hoppers bounce high and slow',
+  garden: 'an alien garden of giant glowing plants and floating spores under two suns',
 };
 
-/** The places a story happens in. */
+/** The places a story happens in, with the world each is in. */
 function describePlace(id: string) {
   const p = placeById(id)!;
-  const region = REGIONS.find((r) => r.id === p.region)?.name;
-  return `- ${p.name}: ${BIOME_WORDS[p.biome] ?? p.biome}${region ? `, in ${region}` : ''}`;
+  const world = worldOf(id);
+  const look = lookOf(p.biome, p.look);
+  const region = world.regions.length > 1 ? world.regions.find((r) => r.id === p.region)?.name : undefined;
+  const kind = `${BIOME_WORDS[p.biome] ?? p.biome}${look ? ` (${look.name.toLowerCase()})` : ''}`;
+  return `- ${p.name}, in the ${world.name} world${region ? `, ${region}` : ''}: ${kind}`;
 }
 
 function storyPrompt() {
@@ -161,11 +172,17 @@ function storyPrompt() {
   const people = [...cast].map((id) => drawings.get(id)).filter((d): d is Drawing => Boolean(d));
   const star = who ? drawings.get(who) : undefined;
   const span = dayTitle(from) === dayTitle(to) ? `on ${dayTitle(from)}` : `from ${dayTitle(from)} to ${dayTitle(to)}`;
+  const places = [...new Set(entries.map((e) => e.place).filter((p) => placeById(p)))];
+  const worlds = [...new Set(places.map((p) => worldOf(p).name))];
+  const these = worlds.length > 1 ? `This story visits ${worlds.length} worlds: ${worlds.slice(0, -1).join(', ')} and ${worlds.at(-1)}.` : worlds.length ? `This story happens in the ${worlds[0]} world.` : '';
+  const family = people.some((d) => d.artist !== 'Doodlearium');
   return [
-    `Please write a short story for a young reader about what happened in our family's aquarium, Doodlearium, ${span}.`,
+    `Please write a short story for a young reader about what happened in Doodlearium, our family's world of drawings, ${span}.`,
     '',
-    "Doodlearium is a little world on our TV: a lake, a pond, the ocean and a beach underwater, and a meadow, a farm, hills and woods up on land. Every creature in it was drawn by someone in our family (the artist's name is given), so they'll love seeing their creatures as characters.",
-    'Each drawing is a kind of creature: the one that was drawn has its own name, and there can be more of its kind around the world, called things like "a Clowny".',
+    "Doodlearium is a living picture on our TV made of whole worlds you can travel between in a little rocket, each with its own places to zoom into (the ones in this story are described below). Creatures swim, walk, hop and fly there, grow up, make friends, lay eggs and visit each other's places. Day turns to night, the seasons change, and the weather comes and goes.",
+    family ? "Most of the creatures were drawn by someone in our family (the artist's name is given), so they'll love seeing their creatures as characters. A few came with Doodlearium itself." : "These creatures came with Doodlearium itself, ready for our family to meet.",
+    'Each drawing is a kind of creature: the one that was drawn has its own name, and there can be more of its kind around, called things like "a Clowny". Explorers are different: there is only ever one of each, and they travel between places and worlds putting on shows.',
+    these,
     star ? `The story is about ${star.name}.` : '',
     '',
     'Please:',
@@ -173,10 +190,11 @@ function storyPrompt() {
     '- Use the real events below in order, and fill in the gaps with gentle, funny, curious moments. It is fine to imagine what the creatures were thinking.',
     '- Give each creature a bit of personality that matches what it did.',
     '- Keep it kind: chases end with everyone safe, nobody gets eaten except fish food and seeds.',
+    ...(worlds.length > 1 ? ['- When the story moves to another world, show the trip (a rocket ride, a zoom across the stars).'] : []),
     '- Put the title on the first line.',
     '',
     'The places:',
-    ...[...new Set(entries.map((e) => e.place).filter((p) => placeById(p)))].map(describePlace),
+    ...places.map(describePlace),
     '',
     'The creatures:',
     ...people.map(describe),
