@@ -18,7 +18,8 @@ const noLooks: MapLooks = { use: () => null };
 /** The whole map fits the panel (which should be about MAP_W × MAP_H in shape), centred. */
 export async function createMapPanel(container: HTMLElement, looks: MapLooks = noLooks): Promise<MapPanel> {
   const app = new Application();
-  await app.init({ resizeTo: container, antialias: true, background: 0x070b24, autoDensity: true, resolution: devicePixelRatio });
+  await app.init({ resizeTo: container, antialias: true, background: 0x070b24, autoDensity: true, resolution: Math.min(devicePixelRatio, 2) });
+  app.ticker.maxFPS = 60;
   container.append(app.canvas);
   let map: WorldMap | null = null;
   let time = 0;

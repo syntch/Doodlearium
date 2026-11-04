@@ -95,7 +95,9 @@ const FADE_SECONDS = 1.5;
 const NIGHT = 0.25;
 
 const app = new Application();
-await app.init({ resizeTo: window, antialias: true, background: 0x0a3456, autoDensity: true, resolution: devicePixelRatio });
+await app.init({ resizeTo: window, antialias: true, background: 0x0a3456, autoDensity: true, resolution: Math.min(devicePixelRatio, 2) });
+// 60 frames a second is plenty for drifting creatures; fast screens would otherwise draw 120-240.
+app.ticker.maxFPS = 60;
 document.body.append(app.canvas);
 // A TV's browser can drop the graphics card's state (sleep, power saving, memory); Pixi's restore can leave
 // creatures and scenery as scattered shards, so start the screen afresh instead (it remembers its place).
@@ -303,6 +305,8 @@ function releaseLook(look: Look) {
     for (const t of loaded.glowTextures ? [loaded.glowTextures, ...loaded.glowTextures.pieces] : []) {
       t.glow?.destroy(true);
       t.uv?.destroy(true);
+      t.halo?.glow?.destroy(true);
+      t.halo?.uv?.destroy(true);
     }
     loaded.whole?.destroy(true);
     if (loaded.cutout) loaded.cutout.destroy();

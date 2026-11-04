@@ -1,4 +1,4 @@
-import { BlurFilter, Container, Mesh, MeshPlane, Sprite, Texture, type RenderLayer } from 'pixi.js';
+import { BlurFilter, Container, Mesh, MeshPlane, PlaneGeometry, Sprite, Texture, type Buffer, type RenderLayer } from 'pixi.js';
 import { glowUrl, partsUrl, type Drawing } from '../../shared/types.ts';
 import type { Parts } from './parts.ts';
 
@@ -10,8 +10,34 @@ import type { Parts } from './parts.ts';
 export interface GlowTextures {
   glow?: Texture;
   uv?: Texture;
+  /** The soft halos, blurred once here rather than by a filter every frame (unset: the browser can't). */
+  halo?: { pad: number; glow?: Texture; uv?: Texture };
   /** Glowing paint on moving parts, cut out so it can move with them (positions in drawing pixels). */
-  pieces: { index: number; x: number; y: number; glow?: Texture; uv?: Texture }[];
+  pieces: { index: number; x: number; y: number; glow?: Texture; uv?: Texture; halo?: { x: number; y: number; glow?: Texture; uv?: Texture } }[];
+}
+
+/** How soft a drawing's halo is: a little blurrier for bigger drawings. */
+export const haloBlur = (width: number) => Math.max(6, width * 0.03);
+
+/** Whether this browser can blur on a canvas (ctx.filter); without it, halos fall back to a live filter. */
+const canBlur = (() => {
+  const c = document.createElement('canvas').getContext('2d');
+  if (!c || !('filter' in c)) return false;
+  c.filter = 'blur(2px)';
+  return c.filter === 'blur(2px)';
+})();
+
+/** A blurred copy of a canvas, with `pad` pixels of room around it for the blur to spread into. */
+function blurred(source: HTMLCanvasElement, radius: number, pad: number) {
+  const canvas = Object.assign(document.createElement('canvas'), { width: source.width + pad * 2, height: source.height + pad * 2 });
+  const c = canvas.getContext('2d')!;
+  c.filter = `blur(${radius}px)`;
+  c.drawImage(source, pad, pad);
+  // Drawn twice, so the halo is about as bright as the filter's was.
+  c.globalCompositeOperation = 'lighter';
+  c.globalAlpha = 0.6;
+  c.drawImage(source, pad, pad);
+  return Texture.from(canvas);
 }
 
 const loadImage = async (src: string) => {
@@ -55,8 +81,12 @@ export function glowTextures(picture: CanvasImageSource, mask: CanvasImageSource
     if (!any) return undefined;
     const canvas = Object.assign(document.createElement('canvas'), { width: w, height: h });
     canvas.getContext('2d')!.putImageData(out, 0, 0);
-    return Texture.from(canvas);
+    return canvas;
   };
+  const radius = haloBlur(width);
+  const tex = (c?: HTMLCanvasElement) => (c ? Texture.from(c) : undefined);
+  const pad = Math.ceil(radius * 3);
+  const halo = (c?: HTMLCanvasElement) => (c && canBlur ? blurred(c, radius, pad) : undefined);
   // Each part's box, so its glow textures stay small.
   const boxes = new Map<number, { left: number; top: number; right: number; bottom: number }>();
   if (parts) {
@@ -74,9 +104,13 @@ export function glowTextures(picture: CanvasImageSource, mask: CanvasImageSource
     const h = b.bottom - b.top + 1;
     const glow = make(0, index, b.left, b.top, w, h);
     const uv = make(1, index, b.left, b.top, w, h);
-    return glow || uv ? [{ index, x: b.left, y: b.top, glow, uv }] : [];
+    if (!glow && !uv) return [];
+    const halos = canBlur ? { x: b.left - pad, y: b.top - pad, glow: halo(glow), uv: halo(uv) } : undefined;
+    return [{ index, x: b.left, y: b.top, glow: tex(glow), uv: tex(uv), halo: halos }];
   });
-  return { glow: make(0, -1), uv: make(1, -1), pieces };
+  const glow = make(0, -1);
+  const uv = make(1, -1);
+  return { glow: tex(glow), uv: tex(uv), halo: canBlur ? { pad, glow: halo(glow), uv: halo(uv) } : undefined, pieces };
 }
 
 export async function loadGlow(drawing: Drawing): Promise<GlowTextures | null> {
@@ -95,6 +129,8 @@ export async function loadGlow(drawing: Drawing): Promise<GlowTextures | null> {
  */
 export class Glow {
   private nodes: { node: Container; kind: 'glow' | 'uv'; halo: boolean }[] = [];
+  /** Halos with room for their blur, which follow the body's bend each frame. */
+  private follows: (() => void)[] = [];
 
   constructor(
     body: Container,
@@ -106,9 +142,9 @@ export class Glow {
     let at = parent.getChildIndex(body) + 1;
     // The halo's blur is sized by the whole drawing, so parts glow just as softly as the body.
     const width = (body as Container & { texture?: Texture }).texture?.width ?? 200;
-    const add = (node: Container, kind: 'glow' | 'uv', halo: boolean) => {
+    const add = (node: Container, kind: 'glow' | 'uv', halo: boolean, baked: boolean) => {
       node.blendMode = 'add';
-      if (halo) node.filters = [new BlurFilter({ strength: Math.max(6, width * 0.03), quality: 3 })];
+      if (halo && !baked) node.filters = [new BlurFilter({ strength: haloBlur(width), quality: 3 })];
       layer.attach(node);
       this.nodes.push({ node, kind, halo });
     };
@@ -116,9 +152,11 @@ export class Glow {
       const texture = textures[kind];
       if (!texture) continue;
       for (const halo of [true, false]) {
-        const node = copyOf(body, texture);
+        const baked = halo ? textures.halo?.[kind] : undefined;
+        const padded = baked && this.haloOf(body, baked, textures.halo!.pad);
+        const node = padded || copyOf(body, texture);
         parent.addChildAt(node, at++);
-        add(node, kind, halo);
+        add(node, kind, halo, Boolean(padded));
       }
     }
     // Glowing paint on a moving part rides in the part's own holder, so it moves with it.
@@ -129,12 +167,56 @@ export class Glow {
         const texture = piece[kind];
         if (!texture) continue;
         for (const halo of [true, false]) {
-          const node = new Sprite({ texture, position: { x: piece.x, y: piece.y } });
+          const baked = halo ? piece.halo?.[kind] : undefined;
+          const node = baked
+            ? new Sprite({ texture: baked, position: { x: piece.halo!.x, y: piece.halo!.y } })
+            : new Sprite({ texture, position: { x: piece.x, y: piece.y } });
           holder.addChild(node);
-          add(node, kind, halo);
+          add(node, kind, halo, Boolean(baked));
         }
       }
     }
+  }
+
+  /**
+   * A halo with `pad` pixels of blur around the drawing. On a bending body it's a mesh of its own, a little
+   * bigger, whose points follow the body's points; undefined if the body's shape is one it can't follow.
+   */
+  private haloOf(body: Container, texture: Texture, pad: number): (Sprite | Mesh) | undefined {
+    if (body instanceof MeshPlane || body instanceof Mesh) {
+      const plane = body.geometry;
+      if (!(plane instanceof PlaneGeometry)) return undefined;
+      const { verticesX: vx, verticesY: vy } = plane;
+      const mesh = new MeshPlane({ texture, verticesX: vx, verticesY: vy });
+      mesh.pivot.set(body.pivot.x + pad, body.pivot.y + pad);
+      mesh.position.copyFrom(body.position);
+      // Each point sits further out than the body's by up to `pad`, the edges most (in the halo's own pixels).
+      const out = new Float32Array(vx * vy * 2);
+      for (let k = 0; k < vx * vy; k++) {
+        out[k * 2] = pad + (-pad + (2 * pad * (k % vx)) / (vx - 1));
+        out[k * 2 + 1] = pad + (-pad + (2 * pad * Math.floor(k / vx)) / (vy - 1));
+      }
+      const to = mesh.geometry.getAttribute('aPosition').buffer as Buffer;
+      const from = plane.getAttribute('aPosition').buffer as Buffer;
+      const follow = () => {
+        const a = from.data as Float32Array;
+        const b = to.data as Float32Array;
+        if (a.length !== b.length) return;
+        for (let i = 0; i < a.length; i++) b[i] = a[i] + out[i];
+        to.update();
+      };
+      follow();
+      this.follows.push(follow);
+      return mesh;
+    }
+    if (body instanceof Sprite) {
+      const w = body.texture.width;
+      const h = body.texture.height;
+      const sprite = new Sprite({ texture, anchor: { x: (body.anchor.x * w + pad) / (w + pad * 2), y: (body.anchor.y * h + pad) / (h + pad * 2) } });
+      sprite.position.copyFrom(body.position);
+      return sprite;
+    }
+    return undefined;
   }
 
   /** Where it sits among the glows and covers in the glow layer (see Cover). */
@@ -144,6 +226,7 @@ export class Glow {
 
   /** How brightly each kind glows right now (0 = not at all). */
   update(glow: number, uv: number) {
+    if (glow > 0.01 || uv > 0.01) for (const follow of this.follows) follow();
     for (const { node, kind, halo } of this.nodes) {
       const level = kind === 'glow' ? glow : uv;
       node.visible = level > 0.01;
@@ -162,6 +245,8 @@ export class Glow {
     for (const t of [this.textures, ...this.textures.pieces]) {
       t.glow?.destroy(true);
       t.uv?.destroy(true);
+      t.halo?.glow?.destroy(true);
+      t.halo?.uv?.destroy(true);
     }
   }
 }

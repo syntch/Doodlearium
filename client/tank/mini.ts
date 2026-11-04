@@ -35,7 +35,8 @@ export interface Preview {
  */
 export async function createPreview(container: HTMLElement): Promise<Preview> {
   const app = new Application();
-  await app.init({ resizeTo: container, antialias: true, background: 0x0a3456, autoDensity: true, resolution: devicePixelRatio });
+  await app.init({ resizeTo: container, antialias: true, background: 0x0a3456, autoDensity: true, resolution: Math.min(devicePixelRatio, 2) });
+  app.ticker.maxFPS = 60;
   container.append(app.canvas);
 
   let tank = new Tank();
