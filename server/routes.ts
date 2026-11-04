@@ -7,6 +7,8 @@ import {
   MOTIONS,
   PART_MOTIONS,
   TANK_COMMANDS,
+  TRAITS,
+  type Traits,
   habitatOf,
   isAttachmentColor,
   motionOf,
@@ -105,11 +107,23 @@ function parseDrawing(body: any) {
     group: typeof body.group === 'boolean' ? body.group : undefined,
     home: typeof body.home === 'string' && placeById(body.home)?.live ? body.home : undefined,
     size: body.size === 'small' || body.size === 'big' ? body.size : undefined,
+    traits: parseTraits(body.traits),
     // Which worlds, and exactly which places (ones not here yet are kept, for when their world arrives).
     worlds: keyList(body.worlds, 20),
     places: keyList(body.places, 60),
   };
   return { meta, png: png.bytes, extra: { parts: partsPng?.bytes ?? null, glow: glowPng?.bytes ?? null, behind: behindPng?.bytes ?? null } };
+}
+
+/** Swimmer behaviours switched on or off (see TRAITS), or undefined for the usual. */
+function parseTraits(value: unknown): Traits | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const traits: Traits = {};
+  for (const t of TRAITS) {
+    const v = (value as Record<string, unknown>)[t];
+    if (typeof v === 'boolean') traits[t] = v;
+  }
+  return Object.keys(traits).length ? traits : undefined;
 }
 
 /** A short list of ids (worlds, places), or undefined for none. */

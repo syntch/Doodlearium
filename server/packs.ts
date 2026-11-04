@@ -175,6 +175,7 @@ export async function exportPack(id: string): Promise<PackFile | null> {
       group: d.group,
       home: d.home,
       size: d.size,
+      traits: d.traits,
       worlds: d.worlds,
       places: d.places,
       parents: parents?.[0] && parents[1] ? [parents[0], parents[1]] : undefined,

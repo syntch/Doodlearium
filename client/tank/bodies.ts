@@ -1,4 +1,4 @@
-import type { Motion } from '../../shared/types.ts';
+import { motionOf, type Drawing, type Motion } from '../../shared/types.ts';
 import { TAU } from './world.ts';
 
 /** What a body style needs to bend the drawing this frame. */
@@ -115,3 +115,11 @@ const vessel: BodyStyle = {
 };
 
 export const BODY_STYLES: Partial<Record<Motion, BodyStyle>> = { fish, puffer, eel, jelly, seahorse, flapper, vessel, slitherer: eel };
+
+/** Its body's style; one ticked to puff up gets enough grid to round out into a ball. */
+export function bodyStyleOf(drawing: Pick<Drawing, 'motion' | 'type' | 'traits'>): BodyStyle {
+  const style = BODY_STYLES[motionOf(drawing)] ?? BODY_STYLES.fish!;
+  const puffs = drawing.traits?.puffs ?? Boolean(style.puffs);
+  if (puffs === Boolean(style.puffs)) return style;
+  return puffs ? { ...style, puffs, columns: Math.max(style.columns, 12), rows: Math.max(style.rows, 10) } : { ...style, puffs };
+}

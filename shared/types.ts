@@ -13,6 +13,14 @@ export const MOTIONS = [
 ] as const;
 export type Motion = (typeof MOTIONS)[number];
 
+/**
+ * Things a swimmer does or doesn't do, whatever its body (unset: the usual for its body, see SWIM_STYLES):
+ * puff up into a spiky ball, join schools, dart off, or behave like a machine (patrol, tidy the sand).
+ */
+export const TRAITS = ['puffs', 'schools', 'darts', 'machine'] as const;
+export type Trait = (typeof TRAITS)[number];
+export type Traits = Partial<Record<Trait, boolean>>;
+
 /** Land animals that get about on the ground (walking, hopping or slithering). */
 export const LAND_MOTIONS: Motion[] = ['walker', 'hopper', 'slitherer'];
 
@@ -112,6 +120,8 @@ export interface Drawing {
   home?: string;
   /** Roughly how big its kind grows (unset: medium). Each one still varies around it. */
   size?: SpeciesSize;
+  /** Swimmers: what it does differently from the usual for its body (see TRAITS). */
+  traits?: Traits;
   /**
    * Came in a drawing pack: its id where it was first drawn, so a newer version of the pack updates it
    * rather than adding it again (see server/packs.ts).
@@ -222,6 +232,8 @@ export interface NewDrawing {
   group?: boolean;
   home?: string;
   size?: SpeciesSize;
+  /** Swimmers: what it does differently from the usual for its body (see TRAITS). */
+  traits?: Traits;
   worlds?: string[];
   places?: string[];
 }

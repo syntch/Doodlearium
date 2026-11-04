@@ -2,7 +2,7 @@ import { motionOf, type Drawing } from '../types.ts';
 import { newPose, type Personality, type Saved, type SimCreature } from './creature.ts';
 import type { Flake } from './food.ts';
 import { TAU, clamp, depthScale, growScale, seededRandom } from './math.ts';
-import { SWIM_STYLES, sizeFactor, type SwimStyle } from './styles.ts';
+import { sizeFactor, swimStyleOf, type SwimStyle } from './styles.ts';
 import { bubble, heart, waterY, type World } from './world.ts';
 
 /** How close to the glass a curious fish comes (negative depth is in front of everything). */
@@ -100,7 +100,7 @@ export class SimSwimmer implements SimCreature {
     this.phase = rand(0, TAU);
     this.bubbleIn = rand(2, 10);
 
-    this.style = SWIM_STYLES[motionOf(drawing)] ?? SWIM_STYLES.fish!;
+    this.style = swimStyleOf(drawing);
     // Some of the bigger easygoing fish (and eels) are hunters: they prowl after smaller fish, which hide.
     const hunts = motionOf(drawing) === 'fish' || motionOf(drawing) === 'eel';
     if (hunts && roll >= 0.5 && roll < 0.64 && vary > 1) personality = 'hunter';

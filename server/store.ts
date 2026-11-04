@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Attachment, CreatureType, Drawing, Motion, Part, SpeciesSize } from '../shared/types.ts';
+import type { Attachment, CreatureType, Drawing, Motion, Part, SpeciesSize, Traits } from '../shared/types.ts';
 import type { Biome } from '../shared/world/biomes.ts';
 
 export const DATA_DIR = join(import.meta.dirname, '..', 'data');
@@ -48,6 +48,7 @@ type DrawingMeta = {
   group?: boolean;
   home?: string;
   size?: SpeciesSize;
+  traits?: Traits;
   parents?: [string, string];
   hatchAt?: number;
   nest?: number;

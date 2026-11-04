@@ -13,8 +13,12 @@ import {
   type Motion,
   type PartMotion,
   type SpeciesSize,
+  type Trait,
+  type Traits,
   LAND_MOTIONS,
+  TRAITS,
 } from '../../shared/types.ts';
+import { SWIM_STYLES } from '../../shared/sim/styles.ts';
 import { fetchDrawings, fetchPacks, loadWorlds, setupFeedButton, submitDrawing, updateDrawing } from '../shared/api.ts';
 import { BIOMES, BIOME_NAMES, defaultGroup, defaultHabitats, suits, type Biome } from '../../shared/world/biomes.ts';
 import { LIVE_PLACES, allWorlds, placeById, worldById } from '../../shared/world/places.ts';
@@ -314,7 +318,7 @@ function setTool(tool: Tool) {
   materialsEl.hidden = tool !== 'fill';
   extrasEl.hidden = tool !== 'extras';
   selectBar.hidden = tool !== 'select';
-  colorsEl.hidden = tool === 'select';
+  colorsEl.hidden = tool === 'select' || tool === 'eraser';
   paper.style.cursor = tool === 'fill' ? 'cell' : tool === 'extras' ? 'copy' : tool === 'select' ? 'crosshair' : 'none';
   renderSelectBar();
   renderMaterials();
@@ -404,12 +408,145 @@ const hasFacing = (motion: Motion) => motion !== 'jelly' && motion !== 'plant' &
 function setMotion(motion: Motion) {
   const restyled = motion !== state.motion;
   state.motion = motion;
-  press(document.querySelectorAll('.kinds [data-motion]'), (b) => b.dataset.motion === motion);
-  if (restyled) setWhere(defaultHabitats(motion), defaultGroup(motion), '', speciesSize);
+  if (restyled) {
+    traits = {};
+    setWhere(defaultHabitats(motion), defaultGroup(motion), '', speciesSize);
+  }
+  renderKind();
   suggestEl.hidden = true;
   renderGuide();
   changed();
 }
+
+
+// --- what is it: how it gets about, its body, and what else it does -------------------------------------
+
+type Base = 'swim' | 'crawl' | 'land' | 'fly' | 'plant' | 'decor';
+/** Bodies are the stored styles; one that has none to pick is just its style. */
+const BASES: { id: Base; icon: string; label: string; title: string; first: Motion; bodies: [Motion, string, string][] }[] = [
+  {
+    id: 'swim',
+    icon: '🐟',
+    label: 'Swims',
+    title: 'Lives in the water',
+    first: 'fish',
+    bodies: [
+      ['fish', '🐟 Wiggly tail', 'Swims with a wiggly tail'],
+      ['eel', '🐍 Long and wavy', 'Long and skinny, the whole body waves'],
+      ['jelly', '🪼 Pulses like a jelly', 'Pulses upward, tentacles trailing'],
+      ['seahorse', '🦄 Upright', 'Upright and hovering'],
+      ['flapper', '🐢 Glides', 'Glides smoothly, edges rippling (turtles, rays). Give flippers their own flap with ⬚ Select → ✨ Make it move'],
+      ['vessel', '🚢 Stays stiff', 'Stays rigid (submarines, boats); extras still animate'],
+    ],
+  },
+  { id: 'crawl', icon: '🦀', label: 'Crawls', title: 'Walks along the sand (crabs, snails)', first: 'crawler', bodies: [] },
+  {
+    id: 'land',
+    icon: '🐕',
+    label: 'On land',
+    title: 'Gets about on land (and along the bottom of ponds)',
+    first: 'walker',
+    bodies: [
+      ['walker', '🐕 Walks', 'Walks about, grazing and napping (dogs, cows, chickens). Mark its legs with ⬚ Select → ✨ Make it move → 🦵 Leg'],
+      ['hopper', '🐇 Hops', 'Hops along (bunnies, frogs, grasshoppers)'],
+      ['slitherer', '🐍 Slithers', 'Slides along in ripples (snakes, worms, caterpillars); swims like an eel in the water'],
+    ],
+  },
+  {
+    id: 'fly',
+    icon: '🐦',
+    label: 'Flies',
+    title: 'Flies through the sky and lands to rest (birds, butterflies, bees). Give wings their own flap with ⬚ Select → ✨ Make it move',
+    first: 'flier',
+    bodies: [],
+  },
+  { id: 'plant', icon: '🌿', label: 'Plant', title: 'Grows from the ground and sways', first: 'plant', bodies: [] },
+  { id: 'decor', icon: '🏰', label: 'Decoration', title: 'Sits still on the ground', first: 'decor', bodies: [] },
+];
+const baseOf = (m: Motion): Base =>
+  m === 'crawler' ? 'crawl' : m === 'plant' ? 'plant' : m === 'decor' ? 'decor' : m === 'flier' || m === 'waterfowl' ? 'fly' : LAND_MOTIONS.includes(m) ? 'land' : 'swim';
+
+const TRAIT_INFO: Record<Trait, [string, string]> = {
+  puffs: ['🐡 Puffs up into a spiky ball', 'Now and then (and when a hunter comes near) it blows up into a round, spiky ball'],
+  schools: ['🐟🐟 Swims in schools', 'Joins up with others to swim along together'],
+  darts: ['⚡ Darts off quickly', 'Sometimes zooms off, and hides when a hunter prowls'],
+  machine: ['⚙️ Is a machine', 'Patrols rather than wanders, tidies food off the sand, and puffs exhaust bubbles'],
+};
+/** What it does differently from the usual for its body (swimmers only; reset when the body changes). */
+let traits: Traits = {};
+const usualTraits = () => SWIM_STYLES[state.motion] ?? SWIM_STYLES.fish!;
+const hasTrait = (t: Trait) => traits[t] ?? Boolean(usualTraits()[t]);
+
+const kindButton = document.querySelector<HTMLButtonElement>('#kind-button')!;
+const kindLabel = document.querySelector<HTMLElement>('#kind-label')!;
+const kindPicker = document.querySelector<HTMLDivElement>('#kind-picker')!;
+const kindBases = document.querySelector<HTMLDivElement>('#kind-bases')!;
+const kindBodiesWrap = document.querySelector<HTMLDivElement>('#kind-bodies-wrap')!;
+const kindBodies = document.querySelector<HTMLDivElement>('#kind-bodies')!;
+const swimTraits = document.querySelector<HTMLSpanElement>('#kind-swim-traits')!;
+const paddlesInput = document.querySelector<HTMLInputElement>('#paddles')!;
+
+function renderKind() {
+  const base = baseOf(state.motion);
+  const info = BASES.find((b) => b.id === base)!;
+  kindBases.replaceChildren(
+    ...BASES.map((b) => {
+      const button = document.createElement('button');
+      button.innerHTML = `<b>${b.icon}</b>${b.label}`;
+      button.title = b.title;
+      button.setAttribute('aria-pressed', String(b.id === base));
+      button.onclick = () => b.id !== base && setMotion(b.first);
+      return button;
+    }),
+  );
+  kindBodiesWrap.hidden = !info.bodies.length;
+  document.querySelector('#kind-bodies-title')!.textContent = base === 'land' ? 'How it moves' : 'Its body';
+  kindBodies.replaceChildren(
+    ...info.bodies.map(([motion, label, title]) => {
+      const button = document.createElement('button');
+      // An old Puffer is a wiggly-tailed swimmer that puffs.
+      const on = motion === state.motion || (motion === 'fish' && state.motion === 'puffer');
+      button.textContent = label;
+      button.title = title;
+      button.setAttribute('aria-pressed', String(on));
+      button.onclick = () => !on && setMotion(motion);
+      return button;
+    }),
+  );
+  swimTraits.replaceChildren(
+    ...(base === 'swim'
+      ? TRAITS.map((t) => {
+          const label = document.createElement('label');
+          label.title = TRAIT_INFO[t][1];
+          const box = Object.assign(document.createElement('input'), { type: 'checkbox', checked: hasTrait(t) });
+          box.onchange = () => {
+            if (box.checked === Boolean(usualTraits()[t])) delete traits[t];
+            else traits[t] = box.checked;
+            renderKind();
+            changed();
+          };
+          label.append(box, ` ${TRAIT_INFO[t][0]}`);
+          return label;
+        })
+      : []),
+  );
+  document.querySelector<HTMLLabelElement>('#paddles-label')!.hidden = base !== 'fly';
+  paddlesInput.checked = state.motion === 'waterfowl';
+  // "🐟 Fish + 🐡": the style, and anything it does that its body usually doesn't.
+  const extra = TRAITS.filter((t) => traits[t] === true).map((t) => TRAIT_INFO[t][0].split(' ')[0]);
+  kindLabel.textContent = [MOTION_LABELS[state.motion], ...extra].join(' + ');
+}
+paddlesInput.onchange = () => setMotion(paddlesInput.checked ? 'waterfowl' : 'flier');
+
+function openKinds(open: boolean) {
+  kindPicker.hidden = !open;
+  kindButton.setAttribute('aria-expanded', String(open));
+}
+kindButton.onclick = () => openKinds(kindPicker.hidden === true);
+document.querySelector<HTMLButtonElement>('#kind-done')!.onclick = () => openKinds(false);
+addEventListener('pointerdown', (e) => {
+  if (!kindPicker.hidden && !(e.target as Element).closest('.kind-wrap')) openKinds(false);
+});
 
 // --- where it lives: its habitats, whether it comes in a group, and (optionally) the original's home ------
 
@@ -615,9 +752,6 @@ function wherePayload() {
     places: chosenPlaces.length ? chosenPlaces : undefined,
   };
 }
-document.querySelectorAll<HTMLButtonElement>('.kinds [data-motion]').forEach((b) => {
-  b.onclick = () => setMotion(b.dataset.motion as Motion);
-});
 
 function renderGuide() {
   const m = state.motion;
@@ -712,12 +846,25 @@ document.querySelector<HTMLButtonElement>('#clear')!.onclick = () => {
   if (behindFor) finishBehind();
   redraw();
 };
+const KEY_TOOLS: Record<string, Tool> = { b: 'brush', e: 'eraser', f: 'fill', x: 'extras', s: 'select' };
 addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (!kindPicker.hidden) openKinds(false);
+    else if (behindFor) finishBehind();
+  }
+  // Typing a name, or naming it on the Ready step: the keys are for that.
+  if ((e.target as Element).closest?.('input, select, textarea') || drawStep.hidden) return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
     e.preventDefault();
     undo();
+    return;
   }
-  if (e.key === 'Escape' && behindFor) finishBehind();
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const tool = KEY_TOOLS[e.key.toLowerCase()];
+  if (tool) setTool(tool);
+  else if (e.key === '[' || e.key === ']') {
+    sizeButtons[Math.max(0, Math.min(SIZES.length - 1, state.sizeIndex + (e.key === ']' ? 1 : -1)))].click();
+  }
 });
 
 function undo() {
@@ -1741,6 +1888,7 @@ async function refreshPreview() {
       height: exported.height,
       attachments: exported.attachments,
       nocturnal: nocturnalInput.checked,
+      traits,
       parts: exported.parts,
       glow: Boolean(glow),
       size: speciesSize,
@@ -1754,6 +1902,43 @@ document.querySelector<HTMLInputElement>('#paper-fill')!.addEventListener('chang
 nocturnalInput.addEventListener('change', schedulePreview);
 explorerInput.addEventListener('change', () => renderWhere());
 homeSelect.addEventListener('change', schedulePreview);
+
+// --- Ready ➜: naming it and choosing where it lives, while watching it move ----------------------------------
+
+const drawStep = document.querySelector<HTMLElement>('#draw-step')!;
+const readyStep = document.querySelector<HTMLElement>('#ready-step')!;
+const readyLook = document.querySelector<HTMLDivElement>('#ready-look')!;
+/** Whether the preview was open while drawing (it always is on the Ready step). */
+let previewWasOpen = false;
+
+function showReady(open: boolean) {
+  if (open === drawStep.hidden) return;
+  if (open) {
+    finishSelection();
+    if (!exportCurrent()) {
+      showToast('Draw something first!', true);
+      return;
+    }
+    openKinds(false);
+  }
+  drawStep.hidden = open;
+  readyStep.hidden = !open;
+  // The one preview moves between the steps.
+  if (open) {
+    previewWasOpen = !previewEl.hidden;
+    readyLook.prepend(previewEl);
+    if (previewEl.hidden) previewToggle.click();
+    else void refreshPreview();
+  } else {
+    workspace.append(previewEl);
+    if (!previewWasOpen && !previewEl.hidden) previewToggle.click();
+  }
+  dispatchEvent(new Event('resize'));
+  scrollTo({ top: 0 });
+  if (open && !nameInput.value) nameInput.focus();
+}
+document.querySelector<HTMLButtonElement>('#ready')!.onclick = () => showReady(true);
+document.querySelector<HTMLButtonElement>('#back')!.onclick = () => showReady(false);
 
 // --- submit --------------------------------------------------------------
 
@@ -1782,6 +1967,7 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
     attachments: exported.attachments,
     nocturnal: nocturnalInput.checked,
     explorer: explorerInput.checked || undefined,
+    traits: Object.keys(traits).length ? traits : undefined,
     parts: exported.parts,
     partsImage: exported.partsImage,
     glowImage: exported.glowImage,
@@ -1816,6 +2002,7 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
     suggestDismissed = false;
     closePhotoPanel();
     redraw();
+    showReady(false);
   } catch (err) {
     showToast(err instanceof Error ? err.message : 'Upload failed', true);
   } finally {
@@ -1892,6 +2079,8 @@ async function loadForEditing(id: string) {
     );
   }
   setMotion(motionOf(drawing));
+  traits = { ...drawing.traits };
+  renderKind();
   nameInput.value = drawing.name;
   artistInput.value = drawing.artist;
   nocturnalInput.checked = drawing.nocturnal === true;
@@ -1919,6 +2108,7 @@ press(materialButtons, (b) => b === materialButtons[0]);
 press(extraButtons, (b) => b === extraButtons[0]);
 setTool('brush');
 renderGuide();
+renderKind();
 setWhere(defaultHabitats(state.motion), defaultGroup(state.motion));
 
 const editId = new URLSearchParams(location.search).get('edit');

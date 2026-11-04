@@ -1,4 +1,4 @@
-import type { Drawing, Motion, SpeciesSize } from '../types.ts';
+import { TRAITS, motionOf, type Drawing, type Motion, type SpeciesSize } from '../types.ts';
 
 const SIZE_FACTORS: Record<SpeciesSize, number> = { small: 0.65, big: 1.5 };
 
@@ -159,3 +159,10 @@ const vessel: SwimStyle = {
 
 // Slitherers that also live in the water (water snakes) swim like eels there.
 export const SWIM_STYLES: Partial<Record<Motion, SwimStyle>> = { fish, puffer, eel, jelly, seahorse, flapper, vessel, slitherer: eel };
+
+/** Its body's usual style, with what the family ticked or unticked for it (see TRAITS). */
+export function swimStyleOf(drawing: Pick<Drawing, 'motion' | 'type' | 'traits'>): SwimStyle {
+  const style = SWIM_STYLES[motionOf(drawing)] ?? SWIM_STYLES.fish!;
+  const changes = Object.fromEntries(TRAITS.filter((t) => typeof drawing.traits?.[t] === 'boolean').map((t) => [t, drawing.traits![t]]));
+  return Object.keys(changes).length ? { ...style, ...changes } : style;
+}

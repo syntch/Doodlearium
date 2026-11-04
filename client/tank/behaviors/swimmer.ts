@@ -1,9 +1,9 @@
 import { Container, Graphics, MeshPlane, type Texture } from 'pixi.js';
-import { motionOf, type Drawing } from '../../../shared/types.ts';
+import type { Drawing } from '../../../shared/types.ts';
 import type { Pose } from '../../../shared/sim/creature.ts';
 import { Attachments } from '../attachments.ts';
 import { Parts, type Cutout } from '../parts.ts';
-import { BODY_STYLES, type BodyState, type BodyStyle } from '../bodies.ts';
+import { bodyStyleOf, type BodyState, type BodyStyle } from '../bodies.ts';
 import { TAU, clamp, depthOrder, depthTint, type Creature, type World } from '../world.ts';
 
 /**
@@ -34,7 +34,7 @@ export class Swimmer implements Creature {
     texture: Texture,
     pieces: Cutout['pieces'] = [],
   ) {
-    this.style = BODY_STYLES[motionOf(drawing)] ?? BODY_STYLES.fish!;
+    this.style = bodyStyleOf(drawing);
     this.mesh = new MeshPlane({ texture, verticesX: this.style.columns, verticesY: this.style.rows });
     this.texW = texture.width;
     this.texH = texture.height;

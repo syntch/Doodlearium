@@ -17,137 +17,163 @@
     </nav>
     <main class="draw">
       <p class="editing" id="editing" hidden></p>
-      <div class="kinds" role="group" aria-label="How does it move?">
-        <button data-motion="fish" aria-pressed="true" title="Swims with a wiggly tail">🐟 Fish</button>
-        <button data-motion="puffer" aria-pressed="false" title="Swims like a fish, then puffs up into a spiky ball and tumbles about">🐡 Puffer</button>
-        <button data-motion="eel" aria-pressed="false" title="Long and skinny, the whole body waves">🐍 Eel</button>
-        <button data-motion="jelly" aria-pressed="false" title="Pulses upward, tentacles trailing">🪼 Jellyfish</button>
-        <button data-motion="seahorse" aria-pressed="false" title="Upright and hovering">🦄 Seahorse</button>
-        <button data-motion="flapper" aria-pressed="false" title="Glides smoothly, edges rippling (turtles, rays, birds). Give flippers their own flap with ⬚ Select → ✨ Animate">🐢 Glider</button>
-        <button data-motion="vessel" aria-pressed="false" title="Stays rigid (submarines, boats); extras still animate">🚢 Vessel</button>
-        <button data-motion="crawler" aria-pressed="false" title="Walks along the sand (crabs, snails)">🦀 Crawler</button>
-        <button data-motion="plant" aria-pressed="false" title="Grows from the sand and sways">🌿 Plant</button>
-        <button data-motion="decor" aria-pressed="false" title="Sits still on the ground">🏰 Decoration</button>
-        <span class="kinds-break" aria-hidden="true"></span>
-        <button data-motion="walker" aria-pressed="false" title="Walks about on land, grazing and napping (dogs, cows, chickens). Mark its legs with ⬚ Select → ✨ Animate → 🦵 Leg">🐕 Walker</button>
-        <button data-motion="hopper" aria-pressed="false" title="Hops along (bunnies, frogs, grasshoppers)">🐇 Hopper</button>
-        <button data-motion="slitherer" aria-pressed="false" title="Slides along the ground in ripples (snakes, worms, caterpillars)">🐍 Slitherer</button>
-        <button data-motion="flier" aria-pressed="false" title="Flies through the sky and lands to rest (birds, butterflies, bees). Give wings their own Flap with ⬚ Select → ✨ Animate">🐦 Flier</button>
-        <button data-motion="waterfowl" aria-pressed="false" title="Flies like a flier, then lands on the water to paddle about and dabble (ducks, geese, swans). On land it lands on the ground">🦆 Waterfowl</button>
-      </div>
-      <p class="suggest" id="suggest" hidden>
-        <span id="suggest-text"></span>
-        <span id="suggest-options"></span>
-        <button id="suggest-dismiss" title="No thanks" aria-label="Dismiss suggestion">✕</button>
-      </p>
 
-      <div class="workspace" id="workspace">
-        <div class="stage">
-          <div class="holes" id="holes" aria-hidden="true"></div>
-          <canvas id="paper" width="1000" height="750"></canvas>
-          <canvas class="glow-view" id="glow-view" width="1000" height="750" aria-hidden="true"></canvas>
-          <canvas class="glow-view uv" id="uv-view" width="1000" height="750" aria-hidden="true"></canvas>
-          <div class="guide" id="guide" aria-hidden="true"></div>
-          <canvas class="selection-overlay" id="behind-view" width="1000" height="750" aria-hidden="true"></canvas>
-          <canvas class="selection-overlay" id="parts-overlay" width="1000" height="750" aria-hidden="true"></canvas>
-          <canvas class="selection-overlay" id="selection-overlay" width="1000" height="750" aria-hidden="true"></canvas>
-          <div class="markers" id="markers" aria-hidden="true"></div>
-          <div class="brush-cursor" id="brush-cursor" hidden></div>
+      <!-- Step 1: drawing it -->
+      <section class="draw-step" id="draw-step">
+        <div class="topbar">
+          <div class="kind-wrap">
+            <button id="kind-button" aria-expanded="false" title="What kind of creature is it, and how does it behave?">
+              <span class="label">What is it?</span> <b id="kind-label">🐟 Fish</b> ▾
+            </button>
+            <div class="kind-picker" id="kind-picker" hidden>
+              <h3>How does it get about?</h3>
+              <div class="kind-bases" id="kind-bases" role="group" aria-label="How does it get about?"></div>
+              <div id="kind-bodies-wrap">
+                <h3 id="kind-bodies-title">Its body</h3>
+                <div class="kind-row" id="kind-bodies" role="group"></div>
+              </div>
+              <h3>It also…</h3>
+              <div class="kind-row" id="kind-traits">
+                <span id="kind-swim-traits" class="kind-row"></span>
+                <label id="paddles-label" title="Lands on ponds and the sea to paddle about and dabble (ducks, geese, swans)">
+                  <input type="checkbox" id="paddles" /> 🦆 Lands on water to paddle
+                </label>
+                <label title="More of them turn up together, as a school, flock or herd">
+                  <input type="checkbox" id="group" /> 🐟🐟 Comes in a group
+                </label>
+                <label title="Only comes out after dark, and stays bright while the water dims">
+                  <input type="checkbox" id="nocturnal" /> 🌙 Night creature
+                </label>
+              </div>
+              <div class="kind-done"><button class="primary" id="kind-done">✓ Done</button></div>
+            </div>
+          </div>
+          <span class="spacer"></span>
+          <button id="undo" title="Undo (Ctrl+Z)">↶ <span class="label">Undo</span></button>
+          <button id="mirror" title="Mirror drawing">🪞 Mirror: off</button>
+          <button id="facing" title="Which way is your creature facing?">Facing →</button>
+          <button id="clear" title="Clear the whole drawing">🗑 <span class="label">Clear</span></button>
+          <button id="preview-toggle" aria-pressed="false" title="See it move like it will in the world">▶ Preview</button>
+          <button id="photo" title="Use a photo of a drawing on paper (or paste a picture with Ctrl+V)">📷 <span class="label">Photo</span></button>
+          <input type="file" id="photo-input" accept="image/*" hidden />
+          <button class="primary" id="ready" title="Name it and choose where it lives">Ready ➜</button>
         </div>
-        <div class="preview" id="preview" hidden aria-label="Preview of how it moves in the world">
-          <button class="preview-blacklight" id="preview-blacklight" aria-pressed="false" title="See blacklight paint glow">🟣 Blacklight</button>
+        <p class="suggest" id="suggest" hidden>
+          <span id="suggest-text"></span>
+          <span id="suggest-options"></span>
+          <button id="suggest-dismiss" title="No thanks" aria-label="Dismiss suggestion">✕</button>
+        </p>
+        <div class="photo-panel" id="photo-panel" hidden>
+          <label for="photo-strength">Paper removal: background only</label>
+          <input type="range" id="photo-strength" min="0" max="10" value="5" />
+          <span>strong</span>
+          <button id="photo-done">Done</button>
         </div>
-      </div>
 
-      <div class="tools" role="group" aria-label="Tool">
-        <button data-tool="brush" aria-pressed="true">🖍️ Brush</button>
-        <button data-tool="eraser" aria-pressed="false">🧽 Eraser</button>
-        <button data-tool="fill" aria-pressed="false">🪣 Fill</button>
-        <button data-tool="extras" aria-pressed="false">✨ Extras</button>
-        <button data-tool="select" aria-pressed="false" title="Paint over a part to move, resize, turn, copy or delete it">⬚ Select</button>
-        <span class="divider"></span>
-        <button id="mirror" title="Mirror drawing">🪞 Mirror: off</button>
-        <button id="facing" title="Which way is your fish facing?">Facing →</button>
-        <button id="undo" title="Undo (Ctrl+Z)">↶ Undo</button>
-        <button id="clear">🗑 Clear</button>
-        <button id="preview-toggle" aria-pressed="false" title="See it move like it will in the world">▶ Preview</button>
-        <button id="photo" title="Use a photo of a drawing on paper (or paste a picture with Ctrl+V)">📷 Photo</button>
-        <input type="file" id="photo-input" accept="image/*" hidden />
-      </div>
-      <div class="photo-panel" id="photo-panel" hidden>
-        <label for="photo-strength">Paper removal: background only</label>
-        <input type="range" id="photo-strength" min="0" max="10" value="5" />
-        <span>strong</span>
-        <button id="photo-done">Done</button>
-      </div>
-      <div class="colors" id="colors"></div>
-      <div class="paint-kind" id="paint-kind" role="group" aria-label="Kind of paint">
-        <button data-paint="normal" aria-pressed="true" title="Ordinary paint">🎨 Normal paint</button>
-        <button data-paint="glow" aria-pressed="false" title="Glows softly, brightest at night">💡 Glow paint</button>
-        <button data-paint="uv" aria-pressed="false" title="Looks normal, but glows when the blacklight is on">🟣 Blacklight paint</button>
-      </div>
-      <div class="options">
-        <div class="sizes" id="sizes"></div>
-        <div class="materials" id="materials"></div>
-        <div class="extras" id="extras"></div>
-        <div class="select-bar" id="select-bar" hidden>
-          <span class="group" role="group" aria-label="Selection brush">
-            <button data-select-mode="add" aria-pressed="true" title="Paint over a part to select it">🖌️ Select</button>
-            <button data-select-mode="remove" aria-pressed="false" title="Paint to unselect">🧽 Unselect</button>
-            <button data-select="all" title="Select the whole drawing">⬚ All</button>
-            <button data-select="none" title="Unselect everything">✕ Unselect all</button>
-          </span>
-          <span class="group" role="group" aria-label="Change the selected part">
-            <button data-select="bigger" title="Bigger">➕ Bigger</button>
-            <button data-select="smaller" title="Smaller">➖ Smaller</button>
-            <button data-select="left" title="Turn left">↺</button>
-            <button data-select="right" title="Turn right">↻</button>
-            <button data-select="flip" title="Flip it around">⇋ Flip</button>
-            <button data-select="animate" title="Make this part move on its own">✨ Animate</button>
-            <button data-select="copy" title="Make a copy (then drag it)">📄 Copy</button>
-            <button data-select="delete" title="Delete the selected part">🗑 Delete</button>
-            <button data-select="done" class="primary" title="Finish and unselect">✓ Done</button>
-          </span>
-        </div>
-      </div>
-      <div class="animate-panel" id="animate-panel" hidden>
-        <span>Make the selected part:</span>
-      </div>
-      <p class="hint" id="hint"></p>
-      <div class="parts-list" id="parts-list" hidden></div>
+        <div class="desk">
+          <div class="rail tools" role="group" aria-label="Tool">
+            <button data-tool="brush" aria-pressed="true" title="Brush (B)"><b>🖍️</b>Brush</button>
+            <button data-tool="eraser" aria-pressed="false" title="Eraser (E)"><b>🧽</b>Eraser</button>
+            <button data-tool="fill" aria-pressed="false" title="Fill (F)"><b>🪣</b>Fill</button>
+            <button data-tool="extras" aria-pressed="false" title="Extras: bubbles, googly eyes... (X)"><b>✨</b>Extras</button>
+            <button data-tool="select" aria-pressed="false" title="Paint over a part to move, resize, turn, copy, delete or animate it (S)"><b>⬚</b>Select</button>
+          </div>
 
-      <form class="submit" id="submit-form">
-        <input type="text" id="name" placeholder="Name it (e.g. Bubbles)" maxlength="40" />
-        <input type="text" id="artist" placeholder="Your name" maxlength="40" />
-        <label class="fill"><input type="checkbox" id="paper-fill" checked /> Fill inside white</label>
-        <label class="fill" title="Only comes out after dark, and stays bright while the water dims">
-          <input type="checkbox" id="nocturnal" /> 🌙 Night creature
-        </label>
-        <label class="fill" id="explorer-label" title="One of a kind: it travels from place to place, and puts on a show wherever it arrives. It visits every world, unless you pick its worlds here.">
-          <input type="checkbox" id="explorer" /> 🧭 Explorer
-        </label>
-        <div class="where">
-          <span class="fill" id="worlds-label" title="Which worlds it lives in (none ticked: wherever its drawing packs are)">Worlds:</span>
-          <span class="habitats" id="worlds"></span>
-          <span class="fill">Lives in:</span>
-          <span class="habitats" id="habitats"></span>
-          <label class="fill" title="More of them turn up together, as a school, flock or herd">
-            <input type="checkbox" id="group" /> 🐟🐟 Comes in a group
-          </label>
-          <span class="fill" title="Roughly how big its kind grows (each one still comes out a little different)">Size:</span>
-          <span class="habitats" id="species-size"></span>
-          <label class="fill" title="Where the one you drew lives (the world adds more of its kind wherever they suit)">
-            🏠 <select id="home"></select>
-          </label>
-          <button type="button" id="choose-places" title="Pick exactly which places it lives in, on the map">📍 Choose places…</button>
+          <div class="middle">
+            <div class="workspace" id="workspace">
+              <div class="stage">
+                <div class="holes" id="holes" aria-hidden="true"></div>
+                <canvas id="paper" width="1000" height="750"></canvas>
+                <canvas class="glow-view" id="glow-view" width="1000" height="750" aria-hidden="true"></canvas>
+                <canvas class="glow-view uv" id="uv-view" width="1000" height="750" aria-hidden="true"></canvas>
+                <div class="guide" id="guide" aria-hidden="true"></div>
+                <canvas class="selection-overlay" id="behind-view" width="1000" height="750" aria-hidden="true"></canvas>
+                <canvas class="selection-overlay" id="parts-overlay" width="1000" height="750" aria-hidden="true"></canvas>
+                <canvas class="selection-overlay" id="selection-overlay" width="1000" height="750" aria-hidden="true"></canvas>
+                <div class="markers" id="markers" aria-hidden="true"></div>
+                <div class="brush-cursor" id="brush-cursor" hidden></div>
+              </div>
+              <div class="preview" id="preview" hidden aria-label="Preview of how it moves in the world">
+                <button class="preview-blacklight" id="preview-blacklight" aria-pressed="false" title="See blacklight paint glow">🟣 Blacklight</button>
+              </div>
+            </div>
+            <p class="hint" id="hint"></p>
+            <div class="parts-list" id="parts-list" hidden></div>
+          </div>
+
+          <aside class="side" aria-label="Tool options">
+            <div class="sizes" id="sizes"><h3>Size <span class="keys">[ ]</span></h3></div>
+            <div class="colors" id="colors"><h3>Colour</h3></div>
+            <div class="paint-kind" id="paint-kind" role="group" aria-label="Kind of paint">
+              <h3>Paint</h3>
+              <button data-paint="normal" aria-pressed="true" title="Ordinary paint">🎨 Normal</button>
+              <button data-paint="glow" aria-pressed="false" title="Glows softly, brightest at night">💡 Glow</button>
+              <button data-paint="uv" aria-pressed="false" title="Looks normal, but glows when the blacklight is on">🟣 Blacklight</button>
+            </div>
+            <div class="materials" id="materials"><h3>Pattern</h3></div>
+            <div class="extras" id="extras"><h3>Add</h3></div>
+            <div class="select-bar" id="select-bar" hidden>
+              <h3>Pick a part</h3>
+              <span class="group" role="group" aria-label="Selection brush">
+                <button data-select-mode="add" aria-pressed="true" title="Paint over a part to select it">🖌️ Select</button>
+                <button data-select-mode="remove" aria-pressed="false" title="Paint to unselect">🧽 Unselect</button>
+                <button data-select="all" title="Select the whole drawing">⬚ All</button>
+                <button data-select="none" title="Unselect everything">✕ None</button>
+              </span>
+              <h3>Change it</h3>
+              <span class="group" role="group" aria-label="Change the selected part">
+                <button data-select="bigger" title="Bigger">➕</button>
+                <button data-select="smaller" title="Smaller">➖</button>
+                <button data-select="left" title="Turn left">↺</button>
+                <button data-select="right" title="Turn right">↻</button>
+                <button data-select="flip" title="Flip it around">⇋</button>
+                <button data-select="copy" title="Make a copy (then drag it)">📄</button>
+                <button data-select="delete" title="Delete the selected part">🗑</button>
+              </span>
+              <button data-select="animate" class="wide" title="Make this part move on its own">✨ Make it move…</button>
+              <button data-select="done" class="primary wide" title="Finish and unselect">✓ Done</button>
+            </div>
+            <div class="animate-panel" id="animate-panel" hidden>
+              <h3>Make the selected part:</h3>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- Step 2: naming it and choosing where it lives -->
+      <section class="ready-step" id="ready-step" hidden>
+        <div class="ready-look" id="ready-look">
+          <button type="button" id="back">← Back to drawing</button>
+        </div>
+        <form class="submit" id="submit-form">
+          <h3>Name it</h3>
+          <input type="text" id="name" placeholder="Name it (e.g. Bubbles)" maxlength="40" />
+          <h3>Your name</h3>
+          <input type="text" id="artist" placeholder="Your name" maxlength="40" />
+          <label class="fill"><input type="checkbox" id="paper-fill" checked /> Fill inside white</label>
+          <h3 id="worlds-label" title="Which worlds it lives in (none ticked: wherever its drawing packs are)">Worlds</h3>
+          <div class="habitats" id="worlds"></div>
+          <h3>Lives in</h3>
+          <div class="habitats" id="habitats"></div>
+          <div class="habitats">
+            <button type="button" id="choose-places" title="Pick exactly which places it lives in, on the map">📍 Choose places…</button>
+          </div>
           <div class="place-picker" id="place-picker" hidden>
             <div class="habitats" id="picker-worlds" role="group" aria-label="Which world's map"></div>
             <div class="picker-map" id="picker-map"></div>
             <p class="picker-hint" id="picker-hint"></p>
           </div>
-        </div>
-        <button class="primary" type="submit" id="send">Add to the world 🌊</button>
-      </form>
+          <label class="fill" title="Where the one you drew lives (the world adds more of its kind wherever they suit)">
+            🏠 <select id="home"></select>
+          </label>
+          <h3 title="Roughly how big its kind grows (each one still comes out a little different)">Size</h3>
+          <div class="habitats" id="species-size"></div>
+          <label class="fill" id="explorer-label" title="One of a kind: it travels from place to place, and puts on a show wherever it arrives. It visits every world, unless you pick its worlds here.">
+            <input type="checkbox" id="explorer" /> 🧭 Explorer: one of a kind, travels and puts on shows
+          </label>
+          <button class="primary" type="submit" id="send">Add to the world 🌊</button>
+        </form>
+      </section>
       <p class="toast" id="toast" role="status"></p>
     </main>
     <script type="module" src="./main.ts"></script>
