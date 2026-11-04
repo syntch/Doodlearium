@@ -262,6 +262,8 @@ export class Cover {
   private node: Container & { tint: number };
   /** The things on top of the body, while they're lifted into the glow layer. */
   private lifted: Container[] = [];
+  /** Glow inside what's lifted, taken out of the layer meanwhile (see lift). */
+  private nested: Container[] = [];
 
   constructor(
     private body: Container & { tint: number; texture: Texture },
@@ -298,6 +300,11 @@ export class Cover {
     const parent = this.body.parent;
     if (!parent) return;
     this.lifted = parent.children.slice(parent.getChildIndex(this.body) + 1).filter((c) => !c.parentRenderLayer);
+    // Glow on a moving part is in the layer already, inside a part that's about to be. Pixi would draw it
+    // twice (once with its part, once by itself), and only one copy follows the part: the other is left
+    // where the part was, like a ghost fin. So while lifted it's drawn with its part only.
+    for (const extra of this.lifted) this.nested.push(...inLayer(extra, this.layer));
+    for (const node of this.nested) this.layer.detach(node);
     // Attached after the copy, so at the same depth they're drawn over it.
     for (const extra of this.lifted) this.layer.attach(extra);
   }
@@ -308,7 +315,9 @@ export class Cover {
       this.layer.detach(extra);
       extra.tint = 0xffffff;
     }
+    for (const node of this.nested) if (!node.destroyed) this.layer.attach(node);
     this.lifted = [];
+    this.nested = [];
   }
 
   destroy() {
@@ -317,6 +326,16 @@ export class Cover {
     this.layer.detach(this.node);
     this.node.destroy();
   }
+}
+
+/** What's inside `node` (not node itself) that's attached to `layer`. */
+function inLayer(node: Container, layer: RenderLayer): Container[] {
+  const found: Container[] = [];
+  for (const child of node.children) {
+    if (child.parentRenderLayer === layer) found.push(child);
+    found.push(...inLayer(child, layer));
+  }
+  return found;
 }
 
 /** A copy of the body (a bent mesh or a sprite) showing another texture, moving exactly with it. */
