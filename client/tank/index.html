@@ -55,6 +55,9 @@
       .menu .later { margin-top: 12px; padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.06); }
       .menu .later input[type='time'] { font: inherit; border-radius: 6px; border: 0; padding: 2px 4px; }
       .menu .note { margin: 4px 0 0; color: #9cc9e6; font-size: 13px; }
+      .follow-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 6px; }
+      .follow-row span { flex: 1 0 100%; color: #cfe7f7; font-size: 14px; }
+      .follow-row button { padding: 4px 9px; font-size: 13px; }
       #update-note { white-space: pre-line; }
       /* What's coming up: shows with the buttons, and stays up on its own once something is about to happen. */
       .coming {
@@ -142,6 +145,12 @@
       <label class="later" title="Instead of now, do the next thing you pick at this time">
         <input type="checkbox" id="later" /> ⏰ Do it later, at <input type="time" id="later-time" value="19:30" />
       </label>
+
+      <h3>🎯 Follow the action</h3>
+      <label title="Just this screen: the TV and a laptop can choose differently">
+        <input type="checkbox" id="follow-on" /> When nobody's touched this screen for a minute, fly to what's happening
+      </label>
+      <div id="follow-kinds"></div>
 
       <h3>Time of day</h3>
       <div class="row" data-group="time">

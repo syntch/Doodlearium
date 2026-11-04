@@ -434,27 +434,34 @@ export function whereSpecies(): Record<string, SpeciesWhere> {
   return where;
 }
 
-/** What's coming up anywhere, soonest first: visitors, documentaries, hatching eggs and anything scheduled. */
+/** An explorer's arrival and its longest show, in seconds. */
+const LONGEST_SHOW = Math.max(...SHOW_KINDS.map(showSeconds));
+
+/** What's coming up anywhere, soonest first: visitors, explorers, hatching eggs and anything scheduled. */
 function upcoming(): Upcoming[] {
   const now = Date.now();
   const items: Upcoming[] = [];
   for (const spot of spots.values()) {
     const visitor = spot.nextVisit.name ? pickVisitor(season(), spot.nextVisit.name) : undefined;
-    if (visitor && !spot.visit) items.push({ at: spot.nextVisit.at, icon: visitor.icon, text: `${capital(visitor.text)} drops by ${placeName(spot.id)}`, place: spot.id });
+    if (visitor && !spot.visit) items.push({ at: spot.nextVisit.at, icon: visitor.icon, text: `${capital(visitor.text)} ${visitor.text.startsWith('some ') ? 'drop' : 'drops'} by ${placeName(spot.id)}`, place: spot.id, kind: 'visitor', seconds: visitor.seconds });
   }
   for (const i of individuals) {
     const d = drawingOf(i.species);
     const hatchAt = i.hatchAt ?? (i.named ? d?.hatchAt : undefined);
     if (!d || !hatchAt || hatchAt <= now) continue;
     const parents = i.hatchAt ? `two ${d.name}s` : listNames((d.parents ?? []).map((id) => nameOf(id)));
-    items.push({ at: hatchAt, icon: '🐣', text: `The egg from ${parents} hatches ${at(spots.get(i.place)!)}`, place: i.place });
+    items.push({ at: hatchAt, icon: '🐣', text: `The egg from ${parents} hatches ${at(spots.get(i.place)!)}`, place: i.place, kind: 'egg', seconds: 15 });
   }
-  for (const s of scheduled) items.push({ at: s.at, icon: '⏰', text: describe(s.command, s.value, s.place), ...(s.place ? { place: s.place } : {}) });
+  for (const s of scheduled) {
+    const seconds = s.command === 'explorer' ? LONGEST_SHOW : s.command === 'visit' ? 40 : 25;
+    items.push({ at: s.at, icon: '⏰', text: describe(s.command, s.value, s.place), ...(s.place ? { place: s.place } : {}), kind: 'planned', seconds });
+  }
   for (const [id, j] of Object.entries(journeys)) {
     const d = drawingOf(id);
-    if (d && placeById(j.next.to)) items.push({ at: j.next.at, icon: '🧭', text: `${d.name} arrives at ${placeName(j.next.to)}`, place: j.next.to });
+    if (d && placeById(j.next.to)) items.push({ at: j.next.at, icon: '🧭', text: `${d.name} arrives at ${placeName(j.next.to)}`, place: j.next.to, kind: 'explorer', seconds: LONGEST_SHOW });
   }
-  return items.sort((a, b) => a.at - b.at).slice(0, 8);
+  // Plenty, so a screen following the action can see what's worth waiting for (Coming up shows the first few).
+  return items.sort((a, b) => a.at - b.at).slice(0, 40);
 }
 
 // --- the ⚙️ menu --------------------------------------------------------------------------------------

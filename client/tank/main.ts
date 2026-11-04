@@ -1,5 +1,7 @@
 import { Application, Assets, Container, Graphics, RenderLayer, Text, Texture } from 'pixi.js';
 import { NO_GC } from './nogc.ts';
+import { FOLLOW_IDLE_MS, Follow, KIND_NAMES, PRIORITIES, loadFollow, saveFollow } from './follow.ts';
+import { UPCOMING_KINDS } from '../../shared/sim/protocol.ts';
 import { imageUrl, motionOf, type Drawing, type Motion, type TankCommand, type TankCommandValue } from '../../shared/types.ts';
 import { newPose, type Kind, type Personality, type Pose } from '../../shared/sim/creature.ts';
 import { unpackPose, type MapSummary, type RosterEntry, type Settings, type Show, type Upcoming } from '../../shared/sim/protocol.ts';
@@ -100,6 +102,8 @@ await app.init({ resizeTo: window, antialias: true, background: 0x0a3456, autoDe
 // 60 frames a second is plenty for drifting creatures; fast screens would otherwise draw 120-240.
 app.ticker.maxFPS = 60;
 document.body.append(app.canvas);
+/** 🎯 Following the action (see the section below). */
+const follow = new Follow(loadFollow());
 // A TV's browser can drop the graphics card's state (sleep, power saving, memory); Pixi's restore can leave
 // creatures and scenery as scattered shards, so start the screen afresh instead (it remembers its place).
 app.canvas.addEventListener('webglcontextlost', (e) => {
@@ -606,7 +610,7 @@ app.ticker.add((ticker) => {
 
   filmWhenIdle(frame?.doc ?? null);
   // The camera only follows the star on a screen nobody is using, or one that asked for the film.
-  const starring = frame?.doc && (idle() || filmAsked) ? entries.get(frame.doc.id) : undefined;
+  const starring = frame?.doc && ((idle() && !follow.busy) || filmAsked) ? entries.get(frame.doc.id) : undefined;
   documentary.update(dt, world, screenSize, starring && !starring.removing ? starring.creature : null, cardLines, cardName);
   if (documentary.filming) for (const l of labels) l.remaining = Math.min(l.remaining, 0.5);
   updateLabels(dt);
@@ -986,18 +990,55 @@ for (const type of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'touchstar
   addEventListener(type, () => {
     lastActive = performance.now();
     nextIdleFilm = 0;
+    follow.stop();
   }, { passive: true, capture: true });
 }
 
 /** Once the screen has been left alone a while, films a documentary where it is, and another every so often. */
 function filmWhenIdle(doc: { id: string } | null) {
   if (!doc) filmAsked = false;
-  if (!idle() || doc || zoomTo !== 1 || !place) return;
+  if (!idle() || doc || zoomTo !== 1 || !place || follow.busy) return;
   const now = performance.now();
   if (now < nextIdleFilm) return;
   nextIdleFilm = now + (6 + Math.random() * 8) * 60_000;
   void sendTankCommand('film', null, place).catch(() => {});
 }
+
+// --- 🎯 following the action: a screen left alone flies to what's about to happen -------------------------
+
+setInterval(() => {
+  if (!follow.settings.on || performance.now() - lastActive < FOLLOW_IDLE_MS || arranging || !menu.hidden) return;
+  const to = follow.next(upcoming, zoomTo === 1 ? place : null, (p) => Boolean(placeById(p)?.live));
+  if (to) enterPlace(to);
+}, 1000);
+
+/** The ⚙️ menu's choices for it: on or off, and how much each sort of happening matters. */
+function renderFollow() {
+  const on = document.querySelector<HTMLInputElement>('#follow-on')!;
+  on.checked = follow.settings.on;
+  on.onchange = () => {
+    follow.settings.on = on.checked;
+    saveFollow(follow.settings);
+  };
+  document.querySelector('#follow-kinds')!.replaceChildren(
+    ...UPCOMING_KINDS.map((kind) => {
+      const row = Object.assign(document.createElement('div'), { className: 'follow-row' });
+      row.append(Object.assign(document.createElement('span'), { textContent: KIND_NAMES[kind] }));
+      for (const p of PRIORITIES) {
+        const b = Object.assign(document.createElement('button'), { textContent: p.label, title: p.title });
+        b.setAttribute('aria-pressed', String(follow.settings.priorities[kind] === p.id));
+        b.onclick = () => {
+          follow.settings.priorities[kind] = p.id;
+          saveFollow(follow.settings);
+          renderFollow();
+        };
+        row.append(b);
+      }
+      return row;
+    }),
+  );
+}
+renderFollow();
 
 // Keys for trying things out: D films a documentary, V brings a visitor, S toggles sound, B the blacklight.
 addEventListener('keydown', (e) => {

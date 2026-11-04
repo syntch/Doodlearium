@@ -51,7 +51,15 @@ export interface Upcoming {
   text: string;
   /** Where (unset: everywhere). */
   place?: string;
+  /** What sort of happening, so a screen following the action can choose (see UPCOMING_KINDS). */
+  kind: UpcomingKind;
+  /** About how long it lasts once it starts (seconds). */
+  seconds: number;
 }
+
+/** The sorts of happening on Coming up: an explorer arriving, a visitor, an egg hatching, or one planned in ⚙️. */
+export const UPCOMING_KINDS = ['explorer', 'visitor', 'egg', 'planned'] as const;
+export type UpcomingKind = (typeof UPCOMING_KINDS)[number];
 
 /** A glance at every place, for the map: how many live there and a few of their species. */
 export type MapSummary = Record<string, { count: number; species: string[] }>;
