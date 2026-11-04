@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import express from 'express';
+import { installBundled } from './bundled.ts';
 import { loadHistory } from './history.ts';
 import { loadPacks } from './packs.ts';
 import { loadWorlds } from './worlds.ts';
@@ -20,6 +21,7 @@ await loadHistory();
 await loadPacks();
 await loadWorlds();
 await startWorld();
+await installBundled();
 
 const app = express();
 app.disable('x-powered-by');

@@ -143,6 +143,14 @@ The map with the Lake, the Meadow and the rest is **🌍 Earth**, built in. A se
   - **🌺 Alien garden**: giant glowing plants under two suns, with spores drifting up. Looks: lush and bright, deep jungle, golden fields, mossy forest.
   - There's no weather in open space or in a station. A comet, a cargo ship and a flying saucer drop by now and then.
 
+### 🪐 The Whimsy Galaxy (comes with Doodlearium)
+
+Doodlearium brings one world besides Earth, and a drawing pack to fill it, from the `bundled/` folder. The server installs them by itself the first time it starts, and updates them when a newer version comes with an update. Uninstall either one and it stays uninstalled (`data/bundled.json` remembers what's been seen).
+
+- **The Cozy Core**: **The Saucer Diner** (a neon diner station, with a rocket jukebox and walking waffles), **Teacup Palace** (a golden palace where teapot tortoises potter about), **Hiccup Comet** (out in space, full of hiccupping fish), **Marshmallow Meadows** (marshmallow sheep, gumdrops and lollipop trees) and **The Giant's Greenhouse**.
+- **The Wobbly Rim**: the **Lost Sock Junkyard** (where every odd sock ends up, guarded by the Sockodile and the lint bunnies), **Jellybean Moon**, **Snowcone Moon** (home of the Snowcone Yeti), **The Bubblegum Rings** (bubblegum jellies and comet tadpoles) and **Puddle Planet**, one big puddle.
+- **Whimsy Galaxy Critters**: 22 drawings, including three 🧭 explorers who visit Earth too: **Admiral Quackers**, a rubber duck captain with a spyglass; **Pip the Penguinaut**, in a fishbowl helmet, planting flags; and the **Bumble Blimp**.
+
 ## Keeping it to the family
 
 Doodlearium is made for a home network, and it's open on it: anyone in the house can draw and play without signing in. To keep it that way:

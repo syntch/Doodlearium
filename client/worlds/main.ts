@@ -3,7 +3,7 @@ import { BIOMES, BIOME_NAMES, type Biome } from '../../shared/world/biomes.ts';
 import { LOOKS } from '../../shared/world/looks.ts';
 import { MAP_H, MAP_W, type MapStyle, type WorldDef } from '../../shared/world/places.ts';
 import { changeWorld, connectLive, exportWorld, installWorld, loadWorlds, makeWorld, removeWorld, type WorldChange } from '../shared/api.ts';
-import { compareVersions } from '../shared/versions.ts';
+import { compareVersions } from '../../shared/versions.ts';
 import { createMapPanel } from '../tank/mappanel.ts';
 
 /**

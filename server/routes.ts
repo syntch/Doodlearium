@@ -445,20 +445,26 @@ api.post('/packs/install', requirePin, uploads, express.json({ limit: '200mb' })
   if (!Array.isArray(file.drawings) || !file.drawings.length || file.drawings.length > MAX_PACK_DRAWINGS) {
     return fail(`A pack has between 1 and ${MAX_PACK_DRAWINGS} drawings.`);
   }
+  const parsed = parsePackFile(file);
+  if ('error' in parsed) return fail(parsed.error);
+  res.json(await installPack(parsed.pack, parsed.items));
+});
+
+/** Checks every drawing in a pack file (whose format, id and size have been checked): an error, or what to install. */
+export function parsePackFile(file: any): { error: string } | { pack: { id: string; name: string; version: string; worlds?: string[] }; items: PackItem[] } {
   const items: PackItem[] = [];
   const keys = new Set<string>();
   for (const d of file.drawings) {
     const parsed = parseDrawing(d);
     const what = `"${cleanText(d?.name, 'A drawing')}" in the pack`;
-    if ('error' in parsed) return fail(`${what} isn't right: ${parsed.error}`);
-    if (!isKey(d.key) || keys.has(d.key)) return fail(`${what} is missing its key.`);
+    if ('error' in parsed) return { error: `${what} isn't right: ${parsed.error}` };
+    if (!isKey(d.key) || keys.has(d.key)) return { error: `${what} is missing its key.` };
     keys.add(d.key);
     const parents = Array.isArray(d.parents) && d.parents.length === 2 && d.parents.every(isKey) ? ([d.parents[0], d.parents[1]] as [string, string]) : undefined;
     items.push({ key: d.key, meta: parsed.meta, png: parsed.png, extra: parsed.extra, parents });
   }
-  const pack = { id: file.id, name: cleanText(file.name, 'A pack', 60), version: cleanText(file.version, '1', 20), worlds: keyList(file.worlds, 20) };
-  res.json(await installPack(pack, items));
-});
+  return { pack: { id: file.id, name: cleanText(file.name, 'A pack', 60), version: cleanText(file.version, '1', 20), worlds: keyList(file.worlds, 20) }, items };
+}
 
 // --- 🌍 worlds (see worlds.ts) ----------------------------------------------------------------------------
 

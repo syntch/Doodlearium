@@ -15,7 +15,7 @@ import {
   removePack,
   setupFeedButton,
 } from '../shared/api.ts';
-import { compareVersions } from '../shared/versions.ts';
+import { compareVersions } from '../../shared/versions.ts';
 
 // Which worlds (and places) there are, before anything looks a place up.
 await loadWorlds().catch(() => {});
