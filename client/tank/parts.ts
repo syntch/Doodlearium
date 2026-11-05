@@ -77,20 +77,63 @@ export function splitParts(picture: CanvasImageSource, partsImage: CanvasImageSo
   const behind = behindImage ? read(behindImage).data : null;
   const px = body.data;
 
+  // Which part each pixel was marked as (its number, or 0). Where two parts' marks blend along their edges
+  // (a colour between theirs), it goes to the later one, the one on top.
+  const owner = new Uint8Array(width * height);
+  for (let i = 0; i < width * height; i++) {
+    if (marks[i * 4 + 3] < 128) continue;
+    const red = marks[i * 4];
+    const k = Math.abs(red - Math.round(red / 30) * 30) <= 10 ? Math.round(red / 30) : Math.ceil(red / 30);
+    if (k >= 1 && k <= parts.length) owner[i] = k;
+  }
+  // The soft pixels along a part's outline, just outside its marks, belong to it too (by which part they're
+  // next to). Left on the body, they'd stay put as a faint dotted outline as it moves.
+  const fringeOf = new Uint8Array(width * height);
+  const FRINGE = 2;
+
   const pieces: Piece[] = [];
   parts.forEach((part, index) => {
     const value = (index + 1) * 30;
+    const mine = index + 1;
     let left = width, top = height, right = -1, bottom = -1;
-    for (let i = 0; i < width * height; i++) {
-      if (marks[i * 4 + 3] < 128 || Math.abs(marks[i * 4] - value) > 10 || px[i * 4 + 3] === 0) continue;
-      const x = i % width;
-      const y = (i - x) / width;
+    const include = (x: number, y: number) => {
       if (x < left) left = x;
       if (x > right) right = x;
       if (y < top) top = y;
       if (y > bottom) bottom = y;
+    };
+    for (let i = 0; i < width * height; i++) {
+      if (owner[i] !== mine || px[i * 4 + 3] === 0) continue;
+      const x = i % width;
+      include(x, (i - x) / width);
     }
     if (right < 0) return;
+    const painted = part.behind && behind;
+    const [l0, t0, r0, b0] = [Math.max(0, left - FRINGE), Math.max(0, top - FRINGE), Math.min(width - 1, right + FRINGE), Math.min(height - 1, bottom + FRINGE)];
+    for (let y = t0; y <= b0; y++) {
+      for (let x = l0; x <= r0; x++) {
+        const i = y * width + x;
+        const a = px[i * 4 + 3];
+        if (a === 0 || owner[i] || fringeOf[i]) continue;
+        let near = false;
+        for (let dy = -FRINGE; dy <= FRINGE && !near; dy++) {
+          for (let dx = -FRINGE; dx <= FRINGE && !near; dx++) {
+            const nx = x + dx, ny = y + dy;
+            if (nx >= 0 && ny >= 0 && nx < width && ny < height && owner[ny * width + nx] === mine) near = true;
+          }
+        }
+        if (!near) continue;
+        if (a < 255) {
+          fringeOf[i] = mine;
+          include(x, y);
+        } else if (painted && behind[i * 4 + 3] >= 128) {
+          // A solid pixel next to it (the body, with a hint of its outline blended in): what's painted behind
+          // there is the clean version.
+          for (let k = 0; k < 4; k++) px[i * 4 + k] = behind[i * 4 + k];
+        }
+      }
+    }
+    const inside = (i: number) => owner[i] === mine || fringeOf[i] === mine;
     const w = right - left + 1;
     const h = bottom - top + 1;
     const canvas = Object.assign(document.createElement('canvas'), { width: w, height: h });
@@ -99,16 +142,16 @@ export function splitParts(picture: CanvasImageSource, partsImage: CanvasImageSo
     for (let y = top; y <= bottom; y++) {
       for (let x = left; x <= right; x++) {
         const i = y * width + x;
-        if (marks[i * 4 + 3] < 128 || Math.abs(marks[i * 4] - value) > 10) continue;
+        if (!inside(i)) continue;
         const o = ((y - top) * w + (x - left)) * 4;
         for (let k = 0; k < 4; k++) out.data[o + k] = px[i * 4 + k];
         // Under the part: what was painted there, or the same shape in shadow.
-        if (part.behind && behind) for (let k = 0; k < 4; k++) px[i * 4 + k] = behind[i * 4 + k];
+        if (painted) for (let k = 0; k < 4; k++) px[i * 4 + k] = behind[i * 4 + k];
         else if (part.motion !== 'front') for (let k = 0; k < 3; k++) px[i * 4 + k] *= 0.4;
       }
     }
     c.putImageData(out, 0, 0);
-    if (part.motion === 'arm' && !(part.behind && behind)) fillArmGap(px, marks, value, width, height, left, top, right, bottom);
+    if (part.motion === 'arm' && !painted) fillArmGap(px, marks, value, width, height, left, top, right, bottom);
     // Where the rest of the drawing is, sampled sparsely.
     let sx = 0, sy = 0, n = 0;
     for (let i = 0; i < width * height; i += 7) {
