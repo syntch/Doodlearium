@@ -1944,6 +1944,8 @@ document.querySelector<HTMLButtonElement>('#photo-done')!.onclick = closePhotoPa
 const previewEl = document.querySelector<HTMLDivElement>('#preview')!;
 const previewToggle = document.querySelector<HTMLButtonElement>('#preview-toggle')!;
 const workspace = document.querySelector<HTMLDivElement>('#workspace')!;
+/** Tools, paper, options and (when it's out) the preview: beside the options on a wide screen, under the paper on a tall one. */
+const desk = document.querySelector<HTMLDivElement>('.desk')!;
 /** Loaded on first open, so the tank code (and Pixi) only downloads when someone wants a preview. */
 let preview: Promise<import('../tank/mini.ts').Preview> | null = null;
 let previewTimer = 0;
@@ -1960,6 +1962,7 @@ previewToggle.onclick = () => {
   previewEl.hidden = !open;
   workspace.classList.toggle('previewing', open);
   workspace.closest('.draw-step')?.classList.toggle('previewing', open);
+  desk.classList.toggle('previewing', open);
   previewToggle.setAttribute('aria-pressed', String(open));
   previewToggle.textContent = open ? '⏹ Preview' : '▶ Preview';
   renderMarkers();
@@ -2068,7 +2071,7 @@ function showReady(open: boolean) {
     if (previewEl.hidden) previewToggle.click();
     else void refreshPreview();
   } else {
-    workspace.append(previewEl);
+    desk.append(previewEl);
     if (!previewWasOpen && !previewEl.hidden) previewToggle.click();
   }
   dispatchEvent(new Event('resize'));
@@ -2266,7 +2269,14 @@ const editId = new URLSearchParams(location.search).get('edit');
 // 🏠 Draw its den (from a creature in the gallery): a decoration, already that creature's home.
 const denOf = new URLSearchParams(location.search).get('den');
 if (editId) {
-  loadForEditing(editId).catch(() => showToast('Could not load that drawing.', true));
+  loadForEditing(editId)
+    .then(() => {
+      // From a creature's 🏠 Its den: straight to where who lives in it is chosen.
+      if (new URLSearchParams(location.search).get('step') !== 'den') return;
+      showReady(true);
+      denBox.scrollIntoView({ block: 'center' });
+    })
+    .catch(() => showToast('Could not load that drawing.', true));
 } else {
   void restoreDraft().then(() => {
     if (!denOf) return;

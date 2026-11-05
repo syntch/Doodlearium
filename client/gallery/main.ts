@@ -198,6 +198,18 @@ function card(d: Drawing) {
     line.textContent = inPacks.map((p) => `📦 ${p.name}`).join(' · ');
     lines.push(line);
   }
+  // 🏠 Dens: a den says who lives in it, and a creature which dens it lives in.
+  const residents = (d.den?.for ?? []).map((id) => drawings.find((x) => x.id === id)?.name).filter((n): n is string => !!n);
+  if (residents.length) {
+    const line = Object.assign(document.createElement('div'), { className: 'meta', textContent: `🏠 Den for ${residents.join(', ')}` });
+    line.title = 'Change who lives in it with ✏️ Edit, then Ready ➜';
+    lines.push(line);
+  }
+  const homes = drawings.filter((x) => x.den?.for.includes(d.id));
+  if (homes.length) {
+    const line = Object.assign(document.createElement('div'), { className: 'meta', textContent: `🏠 Lives in ${homes.map((h) => h.name).join(', ')}` });
+    lines.push(line);
+  }
   if (allWorlds().length > 1) {
     // Which worlds it lives in: its own choice, else its packs', else Earth.
     const own = d.worlds?.length ? d.worlds : [...new Set(inPacks.flatMap((p) => p.worlds ?? []))];
@@ -260,13 +272,21 @@ function card(d: Drawing) {
     visit.title = `Go to ${placeById(home)!.name}${films ? ' and film it' : ''}`;
     actions.append(visit);
   }
-  // 🏠 Draw its den: a decoration it lives in (a hive, a cave), started on the draw page.
+  // 🏠 Its den(s), opened on the draw page where who lives in it is chosen; and ➕ a new one, drawn from scratch.
+  for (const h of homes) {
+    const link = document.createElement('a');
+    link.className = 'button';
+    link.href = `/draw/?edit=${encodeURIComponent(h.id)}&step=den`;
+    link.textContent = homes.length === 1 ? '🏠 Its den' : `🏠 ${h.name}`;
+    link.title = `Open ${h.name}, where ${d.name} lives: see or change who lives in it`;
+    actions.append(link);
+  }
   if (DEN_MOTIONS.includes(motionOf(d))) {
     const den = document.createElement('a');
     den.className = 'button';
     den.href = `/draw/?den=${encodeURIComponent(d.id)}`;
-    den.textContent = '🏠 Den';
-    den.title = `Draw a home for ${d.name} to live in: it goes in to sleep, keep dry and rest`;
+    den.textContent = '➕ New den';
+    den.title = `Draw a new home for ${d.name} to live in: it goes in to sleep, keep dry and rest`;
     actions.append(den);
   }
   actions.append(edit, toggle, remove);
