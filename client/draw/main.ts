@@ -2006,6 +2006,7 @@ previewToggle.onclick = () => {
   const open = Boolean(previewEl.hidden);
   previewEl.hidden = !open;
   workspace.classList.toggle('previewing', open);
+  workspace.closest('.draw-step')?.classList.toggle('previewing', open);
   previewToggle.setAttribute('aria-pressed', String(open));
   previewToggle.textContent = open ? '⏹ Preview' : '▶ Preview';
   renderMarkers();
