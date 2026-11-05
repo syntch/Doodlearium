@@ -5,6 +5,8 @@ import type { WorldDef } from '../../shared/world/places.ts';
 import type { Biome } from '../../shared/world/biomes.ts';
 
 const PIN_KEY = 'doodlearium-pin';
+/** How long a device remembers the grown-up PIN after it's typed in: then it asks again. */
+const PIN_KEEP_MS = 60 * 60_000;
 
 /** Learns which worlds (and so which places) there are: call before anything looks up a place. */
 /**
@@ -28,17 +30,33 @@ export async function switchOff(kind: 'drawings' | 'packs' | 'worlds', id: strin
   return res.json();
 }
 
+/** The PIN this device remembers, if it was typed in within the hour (one from before that, or kept the old way, is forgotten). */
 function storedPin() {
   try {
-    return localStorage.getItem(PIN_KEY) ?? '';
+    const kept = JSON.parse(localStorage.getItem(PIN_KEY) ?? 'null');
+    if (typeof kept?.pin === 'string' && typeof kept.at === 'number' && Date.now() - kept.at < PIN_KEEP_MS) return kept.pin;
+    localStorage.removeItem(PIN_KEY);
   } catch {
-    return '';
+    try {
+      localStorage.removeItem(PIN_KEY);
+    } catch {}
   }
+  return '';
+}
+
+/** Whether this device remembers the PIN right now. */
+export const pinRemembered = () => storedPin() !== '';
+
+/** Forgets the PIN on this device, so the next big change asks for it. */
+export function forgetPin() {
+  try {
+    localStorage.removeItem(PIN_KEY);
+  } catch {}
 }
 
 /**
  * Sends a request that may need the grown-up PIN: when the server asks for it, asks whoever's here, and
- * remembers it on this device once it works.
+ * remembers it on this device for an hour once it works.
  */
 async function withPin(url: string, init: RequestInit): Promise<Response> {
   let pin = storedPin();
@@ -48,7 +66,7 @@ async function withPin(url: string, init: RequestInit): Promise<Response> {
     if (res.status !== 401 || !(await res.clone().json().catch(() => null))?.pin) {
       if (asked && res.ok) {
         try {
-          localStorage.setItem(PIN_KEY, pin);
+          localStorage.setItem(PIN_KEY, JSON.stringify({ pin, at: Date.now() }));
         } catch {
           // Not remembered: it'll be asked for again next time.
         }

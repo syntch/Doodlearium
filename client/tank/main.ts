@@ -14,9 +14,11 @@ import {
   feedFish,
   fetchDrawings,
   fetchUpdateInfo,
+  forgetPin,
   layEgg,
   leaveFullscreen,
   loadWorlds,
+  pinRemembered,
   scheduleTankCommand,
   sendTankCommand,
   showEverywhere,
@@ -1337,6 +1339,17 @@ updateCheck.onclick = async () => {
   }
 };
 
+// The grown-up PIN is remembered for an hour after it's typed in; a grown-up can forget it sooner.
+const forgetPinButton = document.querySelector<HTMLButtonElement>('#forget-pin')!;
+const showForgetPin = () => (forgetPinButton.hidden = !pinRemembered());
+showForgetPin();
+setInterval(showForgetPin, 30_000);
+forgetPinButton.onclick = () => {
+  forgetPin();
+  showForgetPin();
+  updateNote.textContent = '🔒 PIN forgotten: this screen asks for it next time.';
+};
+
 updateNow.onclick = async () => {
   await leaveFullscreen();
   if (!confirm('Update Doodlearium now? Every screen reloads when it is back, in a minute or so.')) return;
@@ -1350,6 +1363,7 @@ updateNow.onclick = async () => {
     updateNote.textContent = err instanceof Error ? err.message : 'Update failed.';
   } finally {
     updateNow.disabled = false;
+    showForgetPin();
   }
 };
 
