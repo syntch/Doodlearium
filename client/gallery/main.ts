@@ -4,6 +4,7 @@ import { allWorlds, placeById, worldById } from '../../shared/world/places.ts';
 import {
   changePack,
   connectLive,
+  copyDrawing,
   deleteDrawing,
   exportPack,
   fetchDrawings,
@@ -17,6 +18,7 @@ import {
   switchOff,
 } from '../shared/api.ts';
 import { compareVersions } from '../../shared/versions.ts';
+import { askKeepCopies } from '../shared/keepcopies.ts';
 
 // Which worlds (and places) there are, before anything looks a place up.
 let worldPacks: WorldPack[] = await loadWorlds(true).catch(() => []);
@@ -289,7 +291,23 @@ function card(d: Drawing) {
     den.title = `Draw a new home for ${d.name} to live in: it goes in to sleep, keep dry and rest`;
     actions.append(den);
   }
-  actions.append(edit, toggle, remove);
+  // 📄 Copy: one of the family's own, in no pack (so a pack update never replaces it).
+  const copy = document.createElement('button');
+  copy.textContent = '📄 Copy';
+  copy.title = 'Make a copy of your own: it joins the world too, and pack updates never change it';
+  copy.onclick = async () => {
+    const name = prompt(`A name for the copy of ${d.name}:`, `${d.name} (copy)`);
+    if (name === null) return;
+    copy.disabled = true;
+    try {
+      await copyDrawing(d.id, name.trim() || undefined);
+      await refresh();
+    } catch (err) {
+      copy.disabled = false;
+      alert(problem(err, 'Copying failed'));
+    }
+  };
+  actions.append(edit, copy, toggle, remove);
 
   el.append(art, ...lines, actions);
   return el;
@@ -537,7 +555,27 @@ packFile.onchange = async () => {
           ? `You already have version ${had.version} of ${had.name}. Install it again? ${what}.`
           : `This is version ${pack.version} of ${had.name}, older than the version ${had.version} you have. Install it anyway? ${what}.`;
   }
-  if (!confirm(ask)) return;
+  // Drawings of this pack changed here would be replaced: offer to keep them as copies first.
+  const edited = (had?.edited ?? []).map((id) => drawings.find((d) => d.id === id)).filter((d): d is Drawing => !!d);
+  let keep: string[] = [];
+  if (edited.length) {
+    const chosen = await askKeepCopies(
+      `${ask} You've changed ${edited.length} of its drawings here, and ${edited.length === 1 ? 'it gets' : 'they get'} replaced. Keep your versions as copies?`,
+      edited,
+      had && compareVersions(pack.version, had.version) > 0 ? 'update' : 'install',
+    );
+    if (chosen === null) return;
+    keep = chosen;
+  } else if (!confirm(ask)) return;
+  try {
+    for (const id of keep) {
+      const d = drawings.find((x) => x.id === id)!;
+      await copyDrawing(id, `${d.name} (my version)`);
+    }
+  } catch (err) {
+    packsNote.textContent = problem(err, 'Keeping copies failed, so nothing was installed.');
+    return;
+  }
   packsNote.textContent = `📥 Installing ${pack.name}…`;
   try {
     const done = await installPack(text);

@@ -13,6 +13,8 @@ import {
   connectLive,
   feedFish,
   fetchDrawings,
+  copyDrawing,
+  fetchIncomingPacks,
   fetchUpdateInfo,
   forgetPin,
   layEgg,
@@ -37,6 +39,7 @@ import { Seasons } from './seasons.ts';
 import { Shows } from './shows.ts';
 import { Sounds } from './sounds.ts';
 import { createCreature } from './creatures.ts';
+import { askKeepCopies } from '../shared/keepcopies.ts';
 import { Food } from './food.ts';
 import { loadCutout, type Cutout } from './parts.ts';
 import { Scene } from './scene.ts';
@@ -1352,9 +1355,22 @@ forgetPinButton.onclick = () => {
 
 updateNow.onclick = async () => {
   await leaveFullscreen();
-  if (!confirm('Update Doodlearium now? Every screen reloads when it is back, in a minute or so.')) return;
   updateNow.disabled = true;
   try {
+    // A built-in pack's new version replaces its drawings: ones changed here can be kept as copies first.
+    const incoming = await fetchIncomingPacks().catch(() => []);
+    const edited = incoming.flatMap((p) => p.edited);
+    const reload = 'Every screen reloads when it is back, in a minute or so.';
+    if (edited.length) {
+      const packs = incoming.map((p) => `${p.name} (version ${p.version})`).join(' and ');
+      const keep = await askKeepCopies(
+        `This update brings a new version of ${packs}. You've changed ${edited.length} of ${incoming.length === 1 ? 'its' : 'their'} drawings here, and ${edited.length === 1 ? 'it gets' : 'they get'} replaced. Keep your versions as copies? ${reload}`,
+        edited,
+      );
+      if (keep === null) return;
+      for (const id of keep) await copyDrawing(id, `${edited.find((d) => d.id === id)!.name} (my version)`);
+      if (keep.length) updateNote.textContent = `📄 Kept ${keep.length === 1 ? 'a copy' : `${keep.length} copies`} of your versions.`;
+    } else if (!confirm(`Update Doodlearium now? ${reload}`)) return;
     await startUpdate();
     updateNow.hidden = true;
     updateNote.textContent = '🔄 Updating… every screen reloads when it is back.';

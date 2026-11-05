@@ -1,4 +1,4 @@
-import type { ClientMessage, Drawing, HistoryEntry, NewDrawing, NewEgg, Pack, PackInstall, ServerMessage, SpeciesWhere, Story, TankCommand, TankCommandValue, UpdateInfo, WorldPack } from '../../shared/types.ts';
+import type { ClientMessage, Drawing, HistoryEntry, IncomingPack, NewDrawing, NewEgg, Pack, PackInstall, ServerMessage, SpeciesWhere, Story, TankCommand, TankCommandValue, UpdateInfo, WorldPack } from '../../shared/types.ts';
 
 import { setWorlds } from '../../shared/world/places.ts';
 import type { WorldDef } from '../../shared/world/places.ts';
@@ -316,6 +316,20 @@ export function setupFeedButton(button: HTMLButtonElement) {
       button.disabled = false;
     }, 1600);
   };
+}
+
+/** Copies a drawing as the family's own (in no pack, so pack updates leave it be). */
+export async function copyDrawing(id: string, name?: string): Promise<Drawing & { place: string }> {
+  const res = await fetch(`/api/drawings/${id}/copy`, asJson('POST', name === undefined ? {} : { name }));
+  if (!res.ok) throw await failure(res, 'Copying failed');
+  return res.json();
+}
+
+/** The built-in packs ⬇️ Update now brings newer versions of, with their drawings changed here. */
+export async function fetchIncomingPacks(): Promise<IncomingPack[]> {
+  const res = await fetch('/api/update/packs');
+  if (!res.ok) throw await failure(res, 'Checking the packs failed');
+  return res.json();
 }
 
 export async function deleteDrawing(id: string) {

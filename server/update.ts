@@ -2,7 +2,10 @@ import { execFile } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import type { UpdateInfo, UpdateResult } from '../shared/types.ts';
+import type { IncomingPack, UpdateInfo, UpdateResult } from '../shared/types.ts';
+import { compareVersions } from '../shared/versions.ts';
+import { listDrawings } from './store.ts';
+import { listPacks } from './packs.ts';
 import { DATA_DIR } from './store.ts';
 
 /**
@@ -60,6 +63,37 @@ export async function updateInfo(check: boolean): Promise<UpdateInfo> {
   info.changes = log ? log.split('\n') : [];
   info.dirty = Boolean(await git('status', '--porcelain', '--untracked-files=no'));
   return info;
+}
+
+/**
+ * The built-in packs (bundled/) that updating will bring newer versions of, where some of their drawings
+ * were edited here: updating replaces those, so the ⚙️ menu offers to keep copies first. Read from what
+ * the last check fetched from GitHub.
+ */
+export async function incomingPacks(): Promise<IncomingPack[]> {
+  if (await cantUpdate()) return [];
+  let files: string[];
+  try {
+    files = (await git('ls-tree', '--name-only', '@{upstream}', 'bundled/')).split('\n').filter((f) => f.endsWith('.doodlepack'));
+  } catch {
+    return [];
+  }
+  const names = new Map(listDrawings().map((d) => [d.id, d.name]));
+  const found: IncomingPack[] = [];
+  for (const file of files) {
+    let pack: { id?: unknown; name?: unknown; version?: unknown };
+    try {
+      const { stdout } = await run('git', ['show', `@{upstream}:${file}`], { cwd: ROOT, timeout: 60_000, windowsHide: true, maxBuffer: 256 * 1024 * 1024 });
+      pack = JSON.parse(stdout);
+    } catch {
+      continue;
+    }
+    const have = listPacks().find((p) => p.id === pack.id);
+    if (!have?.installed || typeof pack.version !== 'string' || compareVersions(pack.version, have.version) <= 0) continue;
+    const edited = (have.edited ?? []).map((id) => ({ id, name: names.get(id) ?? 'A drawing' }));
+    if (edited.length) found.push({ id: have.id, name: have.name, version: pack.version, edited });
+  }
+  return found;
 }
 
 async function lastUpdate(): Promise<UpdateResult | undefined> {

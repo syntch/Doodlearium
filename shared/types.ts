@@ -145,6 +145,8 @@ export interface Drawing {
    * rather than adding it again (see server/packs.ts).
    */
   origin?: string;
+  /** When its pack last put this version of it here (an edit after that is the family's own change). */
+  packedAt?: number;
   /** The worlds it lives in (unset: its packs' worlds, or Earth). */
   worlds?: string[];
   /** Exactly where it lives, tapped on the map (unset: wherever suits it in its worlds). */
@@ -177,6 +179,8 @@ export interface Pack {
   exported?: { version: string; at: number; signature: string };
   /** Sent with the list: something's changed since the last export (so the next one is a new version). */
   changed?: boolean;
+  /** Sent with the list, for an installed pack: its drawings edited here since the pack put them here. */
+  edited?: string[];
   /** The worlds its drawings live in (unless a drawing says otherwise). Unset: Earth. */
   worlds?: string[];
   /** Switched off: its drawings are away from the world (unless another pack that's on has them too). */
@@ -325,6 +329,14 @@ export interface UpdateResult {
 }
 
 /** The ⚙️ menu's 🔄 Update: whether it can, the version running, and what's new on GitHub (when checked). */
+/** A built-in pack that ⬇️ Update now will bring a newer version of, and the drawings in it edited here. */
+export interface IncomingPack {
+  id: string;
+  name: string;
+  version: string;
+  edited: { id: string; name: string }[];
+}
+
 export interface UpdateInfo {
   can: boolean;
   why?: string;

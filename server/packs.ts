@@ -6,8 +6,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Drawing, Pack, PackFile, PackFileDrawing, PackInstall } from '../shared/types.ts';
-import { record } from './history.ts';
-import { DATA_DIR, DRAWINGS_DIR, addDrawing, listDrawings, removeDrawing, setDenFor, setParents, updateDrawing, type ExtraImages } from './store.ts';
+import { historyBetween, record } from './history.ts';
+import { DATA_DIR, DRAWINGS_DIR, addDrawing, listDrawings, markPacked, removeDrawing, setDenFor, setParents, updateDrawing, type ExtraImages } from './store.ts';
 import { drawingAdded, drawingRemoved, drawingUpdated } from './world.ts';
 import { allWorlds, isWorldOff, worldById } from '../shared/world/places.ts';
 import { broadcast } from './ws.ts';
@@ -24,6 +24,22 @@ export async function loadPacks() {
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
     packs = [];
+  }
+  await rememberWhenPacked();
+}
+
+/**
+ * Drawings installed before packs remembered when (packedAt): the history's line for the last install or
+ * update of a pack with them in it says when it finished, so an edit after that was the family's own.
+ * (Needs the drawings and the history loaded first.)
+ */
+async function rememberWhenPacked() {
+  const missing = listDrawings().filter((d) => d.origin && d.packedAt === undefined);
+  if (!missing.length) return;
+  const lines = historyBetween().filter((e) => e.type === 'pack' && /was installed|was updated to/.test(e.text));
+  for (const d of missing) {
+    const last = lines.findLast((e) => e.who.includes(d.id));
+    await markPacked(d.id, last?.at);
   }
 }
 
@@ -47,8 +63,22 @@ function tidy(pack: Pack) {
   return pack;
 }
 
-/** The packs, each saying whether it's changed since it was last exported. */
-export const listPacks = () => packs.map((p) => ({ ...tidy(p), changed: !p.exported || p.exported.signature !== signature(p) }));
+/** The packs, each saying whether it's changed since it was last exported (and, if installed, which drawings were edited here). */
+export const listPacks = () =>
+  packs.map((p) => ({ ...tidy(p), changed: !p.exported || p.exported.signature !== signature(p), ...(p.installed && { edited: editedIn(p) }) }));
+
+/**
+ * An installed pack's drawings that were edited here since the pack put them here, which an update would
+ * replace (see rememberWhenPacked for ones installed before packs remembered).
+ */
+function editedIn(pack: Pack) {
+  const all = new Map(listDrawings().map((d) => [d.id, d]));
+  return pack.drawings.filter((id) => {
+    const d = all.get(id);
+    if (!d?.origin || d.updatedAt === undefined) return false;
+    return d.updatedAt > (d.packedAt ?? d.updatedAt);
+  });
+}
 
 /**
  * The worlds a drawing lives in: the ones it was given itself, else its packs' (all of them, for a drawing in
@@ -235,12 +265,14 @@ export async function installPack(file: { id: string; name: string; version: str
     if (old) {
       join(old.id);
       const drawing = (await updateDrawing(old.id, item.meta, item.png, item.extra))!;
+      if (drawing.origin) await markPacked(drawing.id);
       broadcast({ type: 'drawing:updated', drawing });
       drawingUpdated(drawing);
       ids.set(item.key, drawing.id);
       updated++;
     } else {
       const drawing = await addDrawing({ ...item.meta, origin: item.key }, item.png, item.extra);
+      await markPacked(drawing.id);
       join(drawing.id);
       broadcast({ type: 'drawing:added', drawing });
       drawingAdded(drawing);

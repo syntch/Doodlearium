@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Attachment, CreatureType, Den, Drawing, Motion, Part, SpeciesSize, Traits } from '../shared/types.ts';
 import type { Biome } from '../shared/world/biomes.ts';
@@ -94,6 +94,31 @@ export async function updateDrawing(
   Object.assign(drawing, meta, { updatedAt: Date.now() });
   await save();
   return drawing;
+}
+
+/**
+ * A copy of a drawing that's the family's own: every picture and setting, but in no pack (so a pack update
+ * never touches it), switched on, and not still an egg.
+ */
+export async function copyDrawing(id: string, name: string): Promise<Drawing | null> {
+  const from = drawings.find((d) => d.id === id);
+  if (!from) return null;
+  const { id: _id, createdAt: _c, updatedAt: _u, origin: _o, packedAt: _p, off: _off, hatchAt: _h, nest: _n, ...rest } = from;
+  const drawing: Drawing = { ...rest, id: randomUUID(), createdAt: Date.now(), name };
+  for (const kind of ['', '.parts', '.glow', '.behind']) {
+    await copyFile(join(DRAWINGS_DIR, `${id}${kind}.png`), join(DRAWINGS_DIR, `${drawing.id}${kind}.png`)).catch(() => {});
+  }
+  drawings.push(drawing);
+  await save();
+  return drawing;
+}
+
+/** Notes that a pack has just put this version of a drawing here (or did, at `at`): edits after that are the family's own. */
+export async function markPacked(id: string, at?: number) {
+  const drawing = drawings.find((d) => d.id === id);
+  if (!drawing) return;
+  drawing.packedAt = at ?? drawing.updatedAt ?? drawing.createdAt;
+  await save();
 }
 
 /** Switches a drawing off (away from the world, but kept) or back on. */

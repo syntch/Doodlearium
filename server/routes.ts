@@ -19,13 +19,13 @@ import {
   type Part,
 } from '../shared/types.ts';
 import { addStory, historyBetween, listStories, record } from './history.ts';
-import { addDrawing, listDrawings, removeDrawing, switchDrawing, updateDrawing } from './store.ts';
+import { addDrawing, copyDrawing, listDrawings, removeDrawing, switchDrawing, updateDrawing } from './store.ts';
 import { BIOMES, type Biome } from '../shared/world/biomes.ts';
 import { placeById, placeName } from '../shared/world/places.ts';
 import { EGG_GAP, HATCH_TIME, arrange, drawingAdded, drawingRemoved, drawingUpdated, feed, runCommand, schedule, stopForUpdate, whereSpecies } from './world.ts';
 import { broadcast } from './ws.ts';
 import { rateLimit, requirePin } from './security.ts';
-import { updateInfo } from './update.ts';
+import { incomingPacks, updateInfo } from './update.ts';
 import { cleanText } from './text.ts';
 import { MAX_PACK_DRAWINGS, changePack, exportPack, forgetPack, installPack, listPacks, makePack, type PackItem } from './packs.ts';
 import { changeWorld, exportWorld, switchWorld, forgetWorld, installWorld, isWorldInstalled, listWorlds, makeWorld, newWorldId, parseWorld } from './worlds.ts';
@@ -230,6 +230,20 @@ api.put('/drawings/:id', uploads, async (req: express.Request<{ id: string }>, r
   res.json(drawing);
 });
 
+/** Copies a drawing as the family's own (in no pack, so pack updates leave it be): { name? }. */
+api.post('/drawings/:id/copy', uploads, async (req: express.Request<{ id: string }>, res) => {
+  const from = listDrawings().find((d) => d.id === req.params.id);
+  if (!from) {
+    res.status(404).json({ error: 'not found' });
+    return;
+  }
+  const drawing = (await copyDrawing(from.id, cleanText(req.body?.name, `${from.name} (copy)`)))!;
+  broadcast({ type: 'drawing:added', drawing });
+  const place = drawingAdded(drawing);
+  record('joined', [drawing.id, from.id], `📄 ${drawing.name}, a copy of ${from.name}, moved into ${placeName(place)}.`, place);
+  res.status(201).json({ ...drawing, place });
+});
+
 /** Switches a drawing off (it's kept, but away from the world) or back on: { off }. */
 api.post('/drawings/:id/switch', async (req: express.Request<{ id: string }>, res) => {
   if (typeof req.body?.off !== 'boolean') {
@@ -396,6 +410,11 @@ api.delete('/drawings/:id', requirePin, async (req: express.Request<{ id: string
 /** The ⚙️ menu's 🔄 Update: the version running and (?check=1) what's new on GitHub. */
 api.get('/update', async (req, res) => {
   res.json(await updateInfo(req.query.check === '1'));
+});
+
+/** The built-in packs the update brings newer versions of, with their drawings edited here (to keep copies first). */
+api.get('/update/packs', async (_req, res) => {
+  res.json(await incomingPacks());
 });
 
 /** Updates to the newest version and starts again (screens reload when it's back). */
