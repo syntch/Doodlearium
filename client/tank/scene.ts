@@ -2,7 +2,7 @@ import { Container, Graphics, Sprite, Texture } from 'pixi.js';
 import type { Effect } from '../../shared/sim/world.ts';
 import type { Biome } from '../../shared/world/biomes.ts';
 import { lookOf, type Look as SpaceLook } from '../../shared/world/looks.ts';
-import { drawSpaceBack, drawSpaceGround, drawSpaceLive, type Span } from './spacescene.ts';
+import { drawSpaceBack, drawSpaceFlicker, drawSpaceGround, drawSpaceLive, type Span } from './spacescene.ts';
 import { TAU, seededRandom, type World } from './world.ts';
 
 /** The part of the tank's units a screen shows: the tank itself plus extra water or sand around it. */
@@ -187,6 +187,8 @@ export class Scene {
   private spaceLook: SpaceLook | undefined;
   /** Out in space: twinkles, drifting rocks, traffic and spores. */
   private spaceSky = new Graphics();
+  /** A station's neon signs on the blink, just in front of them. */
+  private spaceFlicker = new Graphics();
   /** Lily pads on the pond: where across, how big, and their bob. */
   private pads: { x: number; r: number; phase: number; flower: boolean }[] = [];
   /** Called for every aerator bubble burst, e.g. to make a sound. */
@@ -203,7 +205,7 @@ export class Scene {
 
   constructor() {
     this.rays.blendMode = 'add';
-    this.back.addChild(this.background, this.spaceSky, this.clouds, this.skyWeather, this.rays, this.props, this.sand, this.groundWeather, this.surface);
+    this.back.addChild(this.background, this.spaceSky, this.clouds, this.skyWeather, this.rays, this.props, this.spaceFlicker, this.sand, this.groundWeather, this.surface);
     this.front.addChild(this.bubbleGfx, this.foreground, this.falling, this.night, this.nightLights);
   }
 
@@ -247,6 +249,8 @@ export class Scene {
     this.drawRays(world);
     this.spaceSky.clear();
     if (this.spaceLook) drawSpaceLive(this.spaceSky, world, this.span(world), this.spaceLook, world.biome);
+    this.spaceFlicker.clear();
+    if (this.spaceLook) drawSpaceFlicker(this.spaceFlicker, world, this.spaceLook, world.biome);
     this.drawSurface(world);
     this.drawSky(world);
     this.drawGrass(world);

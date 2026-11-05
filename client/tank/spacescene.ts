@@ -118,6 +118,110 @@ export function drawSpaceBack(g: Graphics, world: World, span: Span, look: Look,
   }
 }
 
+/** A neon sign in a station: where, how big, its colour, what holds it up, and whether it flickers (and what part). */
+interface Sign {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  color: number;
+  hold: 'tower' | 'cables' | 'post';
+  flicker?: 'letters' | 'all';
+}
+
+/** The station's signs as last drawn, for drawSpaceFlicker. */
+let signs: Sign[] = [];
+
+const signBoard = (look: Look) => mix(look.sky[0], 0x000000, 0.3);
+
+function drawSign(g: Graphics, s: Sign, look: Look, rand: (lo?: number, hi?: number) => number) {
+  const { x, y, w, h, color } = s;
+  g.roundRect(x - w / 2 - 8, y - h / 2 - 8, w + 16, h + 16, 14).fill({ color, alpha: 0.15 });
+  g.roundRect(x - w / 2, y - h / 2, w, h, 10).fill(signBoard(look)).stroke({ width: 3, color });
+  if (s.hold === 'tower') for (const side of [-1, 1]) g.circle(x + side * (w / 2 - 14), y - h / 2 + 6, 2).fill(mix(color, 0xffffff, 0.5));
+  // A picture at the start: a sock, a star, a cup, a planet or a fish.
+  const size = h - 14;
+  const px = x - w / 2 + 8 + size / 2;
+  picture(g, ['sock', 'star', 'cup', 'planet', 'fish'][Math.floor(rand(0, 5))]!, px, y, size, color);
+  // Then the lettering: squiggly made-up letters, each glowing a little.
+  let lx = px + size / 2 + 10;
+  const end = x + w / 2 - 10;
+  const lh = h * 0.42;
+  while (lx + 10 <= end) {
+    const lw = rand(9, 15);
+    letter(g, Math.floor(rand(0, 7)), lx, y, Math.min(lw, end - lx), lh, color);
+    lx += lw + rand(5, 8);
+  }
+}
+
+/** One made-up letter, about lw wide and lh tall around y. */
+function letter(g: Graphics, kind: number, x: number, y: number, lw: number, lh: number, color: number) {
+  const top = y - lh / 2;
+  const bottom = y + lh / 2;
+  const mid = x + lw / 2;
+  const path = () => {
+    if (kind === 0) g.circle(mid, y, Math.min(lw, lh) / 2);
+    else if (kind === 1) g.moveTo(x, top).lineTo(x + lw * 0.33, bottom).lineTo(x + lw * 0.66, top).lineTo(x + lw, bottom);
+    else if (kind === 2) g.moveTo(x + lw * 0.2, top).lineTo(x + lw * 0.2, bottom).moveTo(x + lw * 0.2, y).quadraticCurveTo(x + lw * 1.1, y - lh * 0.1, x + lw * 0.7, bottom);
+    else if (kind === 3) g.moveTo(x, bottom).lineTo(mid, top).lineTo(x + lw, bottom).closePath();
+    else if (kind === 4) g.moveTo(x, y).quadraticCurveTo(x + lw * 0.25, top, mid, y).quadraticCurveTo(x + lw * 0.75, bottom, x + lw, y);
+    else if (kind === 5) g.moveTo(x, top).lineTo(x + lw, top).moveTo(mid, top).lineTo(mid, bottom).moveTo(x, bottom).lineTo(x + lw * 0.6, bottom);
+    else g.moveTo(x + lw, top).quadraticCurveTo(x - lw * 0.3, y, x + lw, bottom);
+  };
+  path();
+  g.stroke({ width: 7, color, alpha: 0.25, cap: 'round', join: 'round' });
+  path();
+  g.stroke({ width: 2.6, color, cap: 'round', join: 'round' });
+  if (kind === 0 || kind === 3) g.circle(mid, top - 4, 1.8).fill(color);
+}
+
+/** A little sign picture, about size across, centred on x, y. */
+function picture(g: Graphics, kind: string, x: number, y: number, size: number, color: number) {
+  const r = size / 2;
+  if (kind === 'sock') {
+    g.moveTo(x - r * 0.2, y - r * 0.8).lineTo(x - r * 0.2, y + r * 0.15).quadraticCurveTo(x - r * 0.2, y + r * 0.65, x + r * 0.55, y + r * 0.55).stroke({ width: r * 0.6, color, cap: 'round', join: 'round' });
+    g.moveTo(x - r * 0.5, y - r * 0.55).lineTo(x + r * 0.1, y - r * 0.55).stroke({ width: 2, color: 0xffffff, alpha: 0.6 });
+  } else if (kind === 'star') {
+    const pts: number[] = [];
+    for (let k = 0; k < 10; k++) {
+      const a = -Math.PI / 2 + (k * Math.PI) / 5;
+      const d = k % 2 ? r * 0.42 : r;
+      pts.push(x + Math.cos(a) * d, y + Math.sin(a) * d);
+    }
+    g.poly(pts).fill(color);
+  } else if (kind === 'cup') {
+    g.poly([x - r * 0.65, y - r * 0.2, x + r * 0.45, y - r * 0.2, x + r * 0.3, y + r * 0.8, x - r * 0.5, y + r * 0.8]).fill(color);
+    g.circle(x + r * 0.55, y + r * 0.25, r * 0.28).stroke({ width: 2.5, color });
+    for (const dx of [-0.35, 0.1]) g.moveTo(x + r * dx, y - r * 0.4).quadraticCurveTo(x + r * (dx + 0.25), y - r * 0.65, x + r * dx, y - r * 0.95).stroke({ width: 2, color, cap: 'round' });
+  } else if (kind === 'planet') {
+    g.circle(x, y, r * 0.55).fill(color);
+    g.ellipse(x, y, r, r * 0.3).stroke({ width: 2.5, color });
+  } else {
+    g.ellipse(x - r * 0.15, y, r * 0.6, r * 0.38).fill(color);
+    g.poly([x + r * 0.35, y, x + r, y - r * 0.45, x + r, y + r * 0.45]).fill(color);
+    g.circle(x - r * 0.45, y - r * 0.08, 1.8).fill(0x000000);
+  }
+}
+
+/**
+ * In front of the signs, every frame: a station's flickery signs now and then buzz out for a moment (one's lettering,
+ * another's whole board), like neon on the blink.
+ */
+export function drawSpaceFlicker(g: Graphics, world: World, look: Look, biome: string) {
+  if (biome !== 'station') return;
+  const t = world.time;
+  for (const [i, s] of signs.entries()) {
+    if (!s.flicker) continue;
+    const phase = (t + i * 2.3) % (i % 2 ? 7 : 11);
+    const out = phase < 1.1 && Math.sin(t * 37 + i) > -0.2;
+    if (!out) continue;
+    const pad = 3;
+    const from = s.flicker === 'letters' ? s.x - s.w / 2 + 8 + (s.h - 14) + 4 : s.x - s.w / 2 + pad;
+    g.rect(from, s.y - s.h / 2 + pad, s.x + s.w / 2 - pad - from, s.h - pad * 2).fill(signBoard(look));
+    if (s.flicker === 'all') g.roundRect(s.x - s.w / 2 - 8, s.y - s.h / 2 - 8, s.w + 16, s.h + 16, 14).stroke({ width: 4, color: signBoard(look), alpha: 0.9 });
+  }
+}
+
 /** Two rows of soft far hills (or dunes), like Earth's. */
 function drawLandHills(g: Graphics, world: World, span: Span, rand: () => number, color: number, lift: number, wave: number) {
   const left = span.left - 40;
@@ -135,7 +239,8 @@ function drawStation(g: Graphics, world: World, span: Span, look: Look, rand: (l
   const { left, right, top } = span;
   const floor = floorOf(world);
   const metal = mix(look.ground[1], 0x000000, 0.35);
-  // Far towers, two rows, with rows of little lit windows.
+  // Far towers, two rows, with rows of little lit windows. The nearer row's are kept for signs to hang on.
+  const towers: { x: number; w: number; top: number; base: number; color: number }[] = [];
   for (const [count, shade, tall] of [[14, 0.55, [180, 340]], [9, 0.3, [120, 240]]] as const) {
     for (let i = 0; i < count; i++) {
       const x = left + ((i + rand(0.1, 0.9)) * (right - left)) / count;
@@ -143,6 +248,7 @@ function drawStation(g: Graphics, world: World, span: Span, look: Look, rand: (l
       const h = rand(tall[0], tall[1]);
       const base = floor(x) + 4;
       const color = mix(look.ground[1], look.sky[0], shade);
+      if (shade < 0.5) towers.push({ x, w, top: base - h, base, color });
       g.rect(x - w / 2, base - h, w, h).fill(color);
       if (rand() < 0.4) g.rect(x - 3, base - h - 40, 6, 40).fill(color);
       for (let wy = base - h + 14; wy < base - 16; wy += 22) {
@@ -162,16 +268,39 @@ function drawStation(g: Graphics, world: World, span: Span, look: Look, rand: (l
       g.circle(x + 80, roof + 6, 5).fill(look.accent2);
     }
   }
-  // Neon signs: glowing rounded boards with a few bright bars, like lettering.
-  for (let i = 0; i < 6; i++) {
-    const x = rand(left + 60, right - 60);
-    const y = rand(world.height * 0.18, floor(x) - 180);
-    const w = rand(70, 140);
-    const h = rand(28, 46);
+  // Neon signs, each held up by something: bolted onto a tower, hung from the roof on cables, or up on a post.
+  // Each has a little picture and some alien lettering.
+  signs = [];
+  const roof = world.height * 0.1;
+  const ways: Sign['hold'][] = open ? ['tower', 'post', 'tower', 'post', 'tower', 'post'] : ['tower', 'cables', 'post', 'cables', 'tower', 'post'];
+  const free = [...towers].sort(() => rand() - 0.5);
+  for (let i = 0; i < ways.length; i++) {
+    let hold = ways[i]!;
+    const w = rand(80, 140);
+    const h = rand(34, 46);
+    let x = rand(left + 80, right - 80);
+    let y: number;
+    const tower = hold === 'tower' ? free.find((t) => t.base - t.top > 205) : undefined;
+    if (hold === 'tower' && !tower) hold = 'post';
+    if (tower) {
+      free.splice(free.indexOf(tower), 1);
+      x = tower.x;
+      y = rand(tower.top + h / 2 + 24, Math.min(tower.base - 150, tower.top + 110));
+      // Brackets out from the tower behind it.
+      for (const side of [-1, 1]) g.rect(x + side * (w / 2 - 14) - 3, y - h / 2 - 10, 6, h + 20).fill(mix(tower.color, 0x000000, 0.25));
+    } else if (hold === 'cables') {
+      y = rand(roof + 70, world.height * 0.36);
+      for (const side of [-1, 1]) g.moveTo(x + side * (w / 2 - 12), roof).lineTo(x + side * (w / 2 - 12), y - h / 2).stroke({ width: 2, color: mix(metal, 0xffffff, 0.25) });
+    } else {
+      y = floor(x) - rand(250, 300);
+      g.rect(x - 4, y, 8, floor(x) + 8 - y).fill(mix(metal, 0xffffff, 0.22));
+      g.rect(x - w / 2 + 16, y + h / 2 + 2, w - 32, 5).fill(mix(metal, 0xffffff, 0.22));
+      g.roundRect(x - 14, floor(x) + 2, 28, 8, 3).fill(mix(metal, 0xffffff, 0.1));
+    }
     const color = i % 2 ? look.accent : look.accent2;
-    g.roundRect(x - w / 2 - 8, y - h / 2 - 8, w + 16, h + 16, 14).fill({ color, alpha: 0.15 });
-    g.roundRect(x - w / 2, y - h / 2, w, h, 10).fill(mix(look.sky[0], 0x000000, 0.3)).stroke({ width: 3, color });
-    for (let k = 0; k < 4; k++) g.roundRect(x - w / 2 + 10 + (k * (w - 20)) / 4, y - 5, (w - 20) / 4 - 6, 10, 4).fill(color);
+    const sign: Sign = { x, y, w, h, color, hold, flicker: i === 1 ? 'letters' : i === 4 ? 'all' : undefined };
+    signs.push(sign);
+    drawSign(g, sign, look, rand);
   }
   // Market stalls along the back of the floor: striped awnings over counters.
   for (let i = 0; i < 5; i++) {
