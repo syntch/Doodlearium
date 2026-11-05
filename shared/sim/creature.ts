@@ -30,6 +30,8 @@ export interface Pose {
   /** What its 🦾 arms are doing (see ACT), and how far through that it is (0..1). */
   act: number;
   actT: number;
+  /** In its den: 1 out of sight inside, 2 inside where it can be seen (the den has a front). */
+  den: number;
 }
 
 /** What a creature with 🦾 arms can be doing with them; screens swing the arms to match. */
@@ -53,7 +55,7 @@ export const ACT = {
 } as const;
 
 export const newPose = (): Pose => ({
-  x: 0, y: 0, sx: 1, sy: 1, rot: 0, z: 0.5, phase: 0, effort: 1, drowsy: 0, puff: 0, out: true, star: false, act: 0, actT: 0,
+  x: 0, y: 0, sx: 1, sy: 1, rot: 0, z: 0.5, phase: 0, effort: 1, drowsy: 0, puff: 0, out: true, star: false, act: 0, actT: 0, den: 0,
 });
 
 /** One creature's brain: where it goes and what it does. Screens draw it from its pose. */

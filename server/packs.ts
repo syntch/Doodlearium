@@ -7,7 +7,7 @@ import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Drawing, Pack, PackFile, PackFileDrawing, PackInstall } from '../shared/types.ts';
 import { record } from './history.ts';
-import { DATA_DIR, DRAWINGS_DIR, addDrawing, listDrawings, removeDrawing, setParents, updateDrawing, type ExtraImages } from './store.ts';
+import { DATA_DIR, DRAWINGS_DIR, addDrawing, listDrawings, removeDrawing, setDenFor, setParents, updateDrawing, type ExtraImages } from './store.ts';
 import { drawingAdded, drawingRemoved, drawingUpdated } from './world.ts';
 import { allWorlds, isWorldOff, worldById } from '../shared/world/places.ts';
 import { broadcast } from './ws.ts';
@@ -197,6 +197,8 @@ export async function exportPack(id: string): Promise<PackFile | null> {
       worlds: d.worlds,
       places: d.places,
       parents: parents?.[0] && parents[1] ? [parents[0], parents[1]] : undefined,
+      // Who lives in a den, by their keys (they might be in another pack, or drawn there too).
+      den: d.den && { ...d.den, for: d.den.for.map((id) => keyOf(all.find((x) => x.id === id) ?? ({ id } as Drawing))) },
     });
   }
   return { format: 'doodlearium-pack', formatVersion: 1, id: pack.id, name: pack.name, version: pack.version, exportedAt: Date.now(), worlds: pack.worlds, drawings };
@@ -246,9 +248,12 @@ export async function installPack(file: { id: string; name: string; version: str
       added++;
     }
   }
+  // Babies and dens point at other drawings: in this pack, or already here (from another pack, say).
+  const everyone = new Map(listDrawings().map((d) => [keyOf(d), d.id]));
   for (const item of items) {
     const parents = item.parents?.map((k) => ids.get(k));
     if (parents?.[0] && parents[1]) await setParents(ids.get(item.key)!, [parents[0], parents[1]]);
+    if (item.meta.den) await setDenFor(ids.get(item.key)!, item.meta.den.for.map((k: string) => ids.get(k) ?? everyone.get(k) ?? k));
   }
 
   const drawings = [...new Set(ids.values())];

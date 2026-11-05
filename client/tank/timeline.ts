@@ -100,6 +100,7 @@ export class Timeline {
     into.out = (t < 0.5 ? a : b).out;
     into.star = (t < 0.5 ? a : b).star;
     into.act = (t < 0.5 ? a : b).act;
+    into.den = (t < 0.5 ? a : b).den;
     into.actT = a.act === b.act ? lerp(a.actT, b.actT, t) : into.act === a.act ? a.actT : b.actT;
     return into;
   }

@@ -1,4 +1,4 @@
-import { imageUrl, type CreatureType, type Drawing, type Pack, type PackFile, type SpeciesWhere, type WorldPack } from '../../shared/types.ts';
+import { DEN_MOTIONS, imageUrl, motionOf, type CreatureType, type Drawing, type Pack, type PackFile, type SpeciesWhere, type WorldPack } from '../../shared/types.ts';
 import { BIOME_NAMES } from '../../shared/world/biomes.ts';
 import { allWorlds, placeById, worldById } from '../../shared/world/places.ts';
 import {
@@ -259,6 +259,15 @@ function card(d: Drawing) {
     visit.textContent = '🔭 Visit';
     visit.title = `Go to ${placeById(home)!.name}${films ? ' and film it' : ''}`;
     actions.append(visit);
+  }
+  // 🏠 Draw its den: a decoration it lives in (a hive, a cave), started on the draw page.
+  if (DEN_MOTIONS.includes(motionOf(d))) {
+    const den = document.createElement('a');
+    den.className = 'button';
+    den.href = `/draw/?den=${encodeURIComponent(d.id)}`;
+    den.textContent = '🏠 Den';
+    den.title = `Draw a home for ${d.name} to live in: it goes in to sleep, keep dry and rest`;
+    actions.append(den);
   }
   actions.append(edit, toggle, remove);
 

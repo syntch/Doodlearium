@@ -104,7 +104,7 @@ export function splitParts(picture: CanvasImageSource, partsImage: CanvasImageSo
         for (let k = 0; k < 4; k++) out.data[o + k] = px[i * 4 + k];
         // Under the part: what was painted there, or the same shape in shadow.
         if (part.behind && behind) for (let k = 0; k < 4; k++) px[i * 4 + k] = behind[i * 4 + k];
-        else for (let k = 0; k < 3; k++) px[i * 4 + k] *= 0.4;
+        else if (part.motion !== 'front') for (let k = 0; k < 3; k++) px[i * 4 + k] *= 0.4;
       }
     }
     c.putImageData(out, 0, 0);
@@ -301,6 +301,9 @@ export class Parts {
         }
         return aroundPoint(l.mid, m.rotate(open * Math.min(1.1, 0.5 * amount) * l.opens));
       }
+      case 'front':
+        // A den's front stays put: whoever's inside shows between it and the rest.
+        return m;
       case 'spin':
         l.phase += dt * 4 * amount;
         return aroundPoint(l.centre, m.rotate(l.phase));

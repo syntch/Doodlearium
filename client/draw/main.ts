@@ -1,5 +1,7 @@
 import {
   MAX_ATTACHMENTS,
+  MAX_DEN_FOR,
+  DEN_MOTIONS,
   MAX_PARTS,
   PART_MOTIONS,
   isHinged,
@@ -602,7 +604,82 @@ function worldsChanged() {
 
 const SPECIES_SIZES: [SpeciesSize | undefined, string][] = [['small', 'Small'], [undefined, 'Medium'], ['big', 'Big']];
 
+// --- 🏠 Dens: a decoration that some creatures live in -------------------------------------------------
+
+const denBox = document.querySelector<HTMLDivElement>('#den-box')!;
+const denForEl = document.querySelector<HTMLDivElement>('#den-for')!;
+const denAdd = document.querySelector<HTMLSelectElement>('#den-add')!;
+const denDoor = document.querySelector<HTMLDivElement>('#den-door')!;
+const denPicture = document.querySelector<HTMLImageElement>('#den-picture')!;
+const denMark = document.querySelector<HTMLSpanElement>('#den-mark')!;
+const denHint = document.querySelector<HTMLParagraphElement>('#den-hint')!;
+/** Who lives in it (drawing ids), and where its door is (across and down the picture, 0..1). */
+let denFor: string[] = [];
+let denDoorAt: [number, number] | null = null;
+/** The creatures that could live in a den, for the list. */
+let denChoices: Drawing[] | null = null;
+
+async function renderDen() {
+  denBox.hidden = state.motion !== 'decor';
+  if (denBox.hidden) return;
+  denChoices ??= (await fetchDrawings().catch(() => [] as Drawing[])).filter((d) => !d.off && DEN_MOTIONS.includes(motionOf(d)));
+  const named = (id: string) => denChoices!.find((d) => d.id === id)?.name ?? 'Someone';
+  denForEl.replaceChildren(
+    ...denFor.map((id) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = `${named(id)} ✕`;
+      b.title = 'Take it off the list';
+      b.onclick = () => {
+        denFor = denFor.filter((x) => x !== id);
+        void renderDen();
+      };
+      return b;
+    }),
+  );
+  const left = denChoices.filter((d) => !denFor.includes(d.id)).sort((a, b) => a.name.localeCompare(b.name));
+  denAdd.replaceChildren(new Option(denFor.length ? '+ Someone else…' : '+ Who lives in it?', ''), ...left.map((d) => new Option(d.name, d.id)));
+  denAdd.hidden = denFor.length >= MAX_DEN_FOR || !left.length;
+  denDoor.hidden = !denFor.length;
+  denMark.hidden = !denDoorAt;
+  if (denDoorAt) {
+    denMark.style.left = `${denDoorAt[0] * 100}%`;
+    denMark.style.top = `${denDoorAt[1] * 100}%`;
+  }
+  const open = currentParts().some((p) => p.motion === 'front');
+  denHint.textContent = !denFor.length
+    ? 'Is it a home? Pick who lives in it: a hive for bees, a cave for a bear.'
+    : !denDoorAt
+      ? '👆 Tap the picture where they go in.'
+      : open
+        ? 'They can be seen inside, behind its 🚪 In front parts.'
+        : 'They go in out of sight. To see them inside (a cave, say), use ✨ Make it move → 🚪 In front on the parts that cover them.';
+}
+
+denAdd.onchange = () => {
+  if (denAdd.value) denFor = [...denFor, denAdd.value];
+  void renderDen();
+};
+denDoor.onclick = (e) => {
+  const r = denPicture.getBoundingClientRect();
+  if (!r.width || !r.height) return;
+  denDoorAt = [Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))];
+  void renderDen();
+};
+
+/** The finished picture, to tap its door on. */
+function refreshDenPicture() {
+  if (state.motion !== 'decor') return;
+  const exported = exportCurrent();
+  if (exported) denPicture.src = exported.dataUrl;
+}
+
+function denPayload() {
+  return state.motion === 'decor' && denFor.length && denDoorAt ? { for: denFor, door: denDoorAt } : undefined;
+}
+
 function renderWhere(home = homeSelect.value) {
+  void renderDen();
   // Only animals explore; an explorer is one of a kind, and goes wherever its travels take it.
   explorerLabel.hidden = state.motion === 'plant' || state.motion === 'decor';
   if (explorerLabel.hidden) explorerInput.checked = false;
@@ -2032,6 +2109,7 @@ function showReady(open: boolean) {
   // The one preview moves between the steps.
   if (open) {
     previewWasOpen = !previewEl.hidden;
+    refreshDenPicture();
     readyLook.prepend(previewEl);
     if (previewEl.hidden) previewToggle.click();
     else void refreshPreview();
@@ -2078,8 +2156,13 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
     partsImage: exported.partsImage,
     glowImage: exported.glowImage,
     behindImage: exported.behindImage,
+    den: denPayload(),
     ...wherePayload(),
   };
+  if (state.motion === 'decor' && denFor.length && !denDoorAt) {
+    showToast('Tap the picture where they go into the den 🚪', true);
+    return;
+  }
 
   sendButton.disabled = true;
   try {
@@ -2109,6 +2192,8 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
     nameInput.value = '';
     nocturnalInput.checked = false;
     explorerInput.checked = false;
+    denFor = [];
+    denDoorAt = null;
     setWhere(defaultHabitats(state.motion), defaultGroup(state.motion), '', undefined, {});
     suggestDismissed = false;
     closePhotoPanel();
@@ -2196,6 +2281,8 @@ async function loadForEditing(id: string) {
   artistInput.value = drawing.artist;
   nocturnalInput.checked = drawing.nocturnal === true;
   explorerInput.checked = drawing.explorer === true;
+  denFor = drawing.den?.for ?? [];
+  denDoorAt = drawing.den?.door ?? null;
   // The worlds its drawing packs give it, so the chips show where it lives now.
   const packs = await fetchPacks().catch(() => []);
   packWorlds = [...new Set(packs.filter((p) => p.drawings.includes(drawing.id)).flatMap((p) => p.worlds ?? []))];
@@ -2223,8 +2310,16 @@ renderKind();
 setWhere(defaultHabitats(state.motion), defaultGroup(state.motion));
 
 const editId = new URLSearchParams(location.search).get('edit');
+// 🏠 Draw its den (from a creature in the gallery): a decoration, already that creature's home.
+const denOf = new URLSearchParams(location.search).get('den');
 if (editId) {
   loadForEditing(editId).catch(() => showToast('Could not load that drawing.', true));
 } else {
-  void restoreDraft();
+  void restoreDraft().then(() => {
+    if (!denOf) return;
+    setMotion('decor');
+    renderKind();
+    denFor = [denOf];
+    setWhere(defaultHabitats('decor'), defaultGroup('decor'));
+  });
 }

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Attachment, CreatureType, Drawing, Motion, Part, SpeciesSize, Traits } from '../shared/types.ts';
+import type { Attachment, CreatureType, Den, Drawing, Motion, Part, SpeciesSize, Traits } from '../shared/types.ts';
 import type { Biome } from '../shared/world/biomes.ts';
 
 export const DATA_DIR = join(import.meta.dirname, '..', 'data');
@@ -55,6 +55,7 @@ type DrawingMeta = {
   origin?: string;
   worlds?: string[];
   places?: string[];
+  den?: Den;
 };
 
 /** Images that go with a drawing: which pixels are moving parts, which glow, and what's painted behind parts. */
@@ -103,6 +104,14 @@ export async function switchDrawing(id: string, off: boolean): Promise<Drawing |
   else delete drawing.off;
   await save();
   return drawing;
+}
+
+/** Points a den from a drawing pack at the drawings that live in it, once they're all in. */
+export async function setDenFor(id: string, residents: string[]) {
+  const drawing = drawings.find((d) => d.id === id);
+  if (!drawing?.den) return;
+  drawing.den.for = residents;
+  await save();
 }
 
 /** Links a baby from a drawing pack to its parents, once they're in too. */

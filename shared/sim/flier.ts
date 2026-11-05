@@ -3,7 +3,7 @@ import { newPose, type Saved, type SimCreature } from './creature.ts';
 import { LANDED_SECONDS, type Flake } from './food.ts';
 import { TAU, clamp, depthScale, growScale, seededRandom } from './math.ts';
 import { sizeFactor } from './styles.ts';
-import { burst, heart, sandY, type World } from './world.ts';
+import { burst, denFor, heart, sandY, type DenSpot, type World } from './world.ts';
 
 /** A place to land: the ground (at a depth) or the top of a plant or decoration. */
 interface Perch {
@@ -12,6 +12,8 @@ interface Perch {
   z: number;
   /** On the water's surface (waterfowl), where it paddles about. */
   water?: boolean;
+  /** Its den's door: it goes in there (to roost for the night, keep dry, or rest). */
+  den?: DenSpot;
 }
 
 /**
@@ -142,8 +144,11 @@ export class SimFlier implements SimCreature {
     };
   }
 
-  /** Somewhere to land: on dry ground, or on top of a tree, fence or flower. */
-  private findPerch(world: World): Perch | null {
+  /** Somewhere to land: home in its den (if its kind has one here), on dry ground, or on top of a tree, fence or flower. */
+  private findPerch(world: World, asleep = false): Perch | null {
+    const den = denFor(world, this.drawing.id, this.x);
+    // Home for the night or out of the rain, and often just for a rest (bees are always popping in and out).
+    if (den && (asleep || world.rain > 0.5 || Math.random() < 0.4)) return { x: den.x, y: den.y, z: den.z, den };
     // Waterfowl mostly come down on the water.
     if (this.swims && !world.land && Math.random() < 0.85) {
       const water = Array.from({ length: 6 }, () => Math.random() * world.width).filter((x) => this.onWater(world, x));
@@ -278,17 +283,21 @@ export class SimFlier implements SimCreature {
     this.flyFor -= dt;
     // Time to rest (or roost for the night, or wait out the rain).
     if (!this.perch && !this.starring && (this.flyFor <= 0 || asleep || world.rain > 0.5) && !this.leader?.perch) {
-      this.perch = this.findPerch(world);
+      this.perch = this.findPerch(world, asleep);
       if (!this.perch) this.flyFor = 6;
     }
     if (this.leader?.perch && !this.perch && this.leader.sitting > 0) {
       // The flock lands together, near its leader: scattered about it, nearer and further back, not in
       // one neat row (and now and then on a plant close by).
       const p = this.leader.perch;
+      // Going home: the whole flock follows it in.
+      if (p.den) this.perch = { ...p };
       const x = clamp(p.x + (this.rank + 1) * (25 + Math.random() * 35) * (this.rank % 2 ? 1 : -1), 20, world.width - 20);
       const z = clamp(p.z + (Math.random() - 0.5) * 0.5, 0.02, 0.98);
       const plant = p.water ? undefined : world.hideouts.find((h) => Math.abs(h.x - x) < h.halfWidth && (world.land || h.bottom - h.height < world.waterTop - 10));
-      if (p.water) this.perch = this.onWater(world, x) ? { x, y: world.waterTop, z: p.z, water: true } : null;
+      if (p.den) {
+        // (Following it in, above.)
+      } else if (p.water) this.perch = this.onWater(world, x) ? { x, y: world.waterTop, z: p.z, water: true } : null;
       else if (plant && Math.random() < 0.4) this.perch = { x, y: plant.bottom - plant.height * (0.55 + Math.random() * 0.4), z: plant.z };
       else this.perch = world.land || world.floorAt(x) < world.waterTop - 8 ? { x, y: sandY(world, z, x), z } : null;
     }
@@ -305,6 +314,8 @@ export class SimFlier implements SimCreature {
     } else if (this.leader) this.pickGoal(world);
     else if (Math.hypot(tx - this.x, ty - this.y) < 40) this.pickGoal(world);
 
+    // Heading home, it comes in to the den's depth on the way.
+    if (this.perch?.den) this.z += (this.perch.z - this.z) * Math.min(1, dt * 1.5);
     const speed = world.height * (this.perch ? 0.22 : 0.18) * this.pace * (this.meal ? 1.5 : 1);
     const dx = tx - this.x;
     const dy = ty - this.y;
@@ -323,6 +334,9 @@ export class SimFlier implements SimCreature {
         burst(world, this.x, world.waterTop, 10);
         this.paddleTo = this.x;
         this.sitting = this.meal ? 4 : asleep ? 30 : 15 + Math.random() * 30;
+      } else if (this.perch.den) {
+        this.z = this.perch.z;
+        this.sitting = asleep ? 30 : 6 + Math.random() * 14;
       } else this.sitting = this.meal ? 2 : asleep ? 30 : 4 + Math.random() * 14;
       return;
     }
@@ -357,5 +371,16 @@ export class SimFlier implements SimCreature {
     p.star = this.starring;
     const ground = world.land ? sandY(world, this.perch?.z ?? this.z, this.x) : null;
     p.puff = ground === null ? -1 : Math.max(0, ground - this.y);
+    p.den = 0;
+    const den = !flying ? this.perch?.den : undefined;
+    if (den) {
+      // In its den: just in front of the back wall, behind the front, small enough to fit.
+      const fit = Math.min(1, (den.height * 0.6) / Math.max(1, this.drawing.height * s));
+      p.z = den.z - 0.005;
+      p.sx *= fit;
+      p.sy *= fit;
+      p.puff = 0;
+      p.den = den.open ? 2 : 1;
+    }
   }
 }

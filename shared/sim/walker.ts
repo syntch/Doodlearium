@@ -3,7 +3,7 @@ import { ACT, newPose, type Saved, type SimCreature } from './creature.ts';
 import { LANDED_SECONDS, type Flake } from './food.ts';
 import { TAU, clamp, depthScale, growScale, seededRandom } from './math.ts';
 import { sizeFactor } from './styles.ts';
-import { heart, sandY, type Trinket, type World } from './world.ts';
+import { denFor, heart, sandY, type DenSpot, type Trinket, type World } from './world.ts';
 
 /** How a land animal gets about: trotting on legs, hopping, or sliding along the ground. */
 export type Gait = 'walk' | 'hop' | 'slither';
@@ -65,6 +65,8 @@ export class SimWalker implements SimCreature {
   holding: string | null = null;
   /** Being petted: a happy wiggle, for a few seconds. */
   private petted = 0;
+  /** Off home to its den (or in it): why, and (for a rest) until when. */
+  private home: { den: DenSpot; why: 'sleep' | 'rain' | 'rest'; inside: boolean; until: number } | null = null;
 
   constructor(
     readonly id: string,
@@ -126,7 +128,39 @@ export class SimWalker implements SimCreature {
 
   /** Free to be petted: standing about, not off somewhere. */
   private get idle() {
-    return this.resting > 1.5 && this.hop < 0 && !this.meal && !this.errand && !this.starring;
+    return this.resting > 1.5 && this.hop < 0 && !this.meal && !this.errand && !this.starring && !this.home;
+  }
+
+  /** Heads home to its den, if its kind has one here. */
+  private goHome(world: World, why: 'sleep' | 'rain' | 'rest') {
+    const den = denFor(world, this.drawing.id, this.x);
+    if (!den) return false;
+    this.home = { den, why, inside: false, until: 0 };
+    this.errand = null;
+    this.act = ACT.none;
+    this.holding = null;
+    this.shelter = null;
+    this.goal = { x: den.x, z: den.z };
+    this.hurry = why === 'rest' ? 1 : 1.5;
+    this.resting = 0;
+    return true;
+  }
+
+  /** In its den: snug until it's time to come out (morning, the rain stops, or it's had its rest). */
+  private stayHome(dt: number, world: World, asleep: boolean) {
+    const home = this.home!;
+    const done = home.why === 'sleep' ? !asleep : home.why === 'rain' ? world.rain < 0.3 : world.time > home.until;
+    if (done || this.starring || (this.meal && home.why === 'rest')) {
+      // Out it comes, and off somewhere.
+      this.home = null;
+      this.resting = 0;
+      this.pickGoal(world);
+      return false;
+    }
+    this.x = home.den.x;
+    this.z = home.den.z;
+    this.stride += (0 - this.stride) * Math.min(1, dt * 6);
+    return true;
   }
 
   baseScale(world: World) {
@@ -185,8 +219,26 @@ export class SimWalker implements SimCreature {
       this.resting = 0;
     }
 
+    // At bedtime, or when it pours, a creature with a den here heads home.
+    if (this.home?.inside && this.stayHome(dt, world, asleep)) {
+      this.pose.drowsy = this.dozing;
+      this.setPose(world, base);
+      return;
+    }
+    if (!this.home && !this.starring && !this.meal && (asleep || world.rain > 0.5)) this.goHome(world, asleep ? 'sleep' : 'rain');
+    if (this.home && (this.starring || (this.meal && this.home.why !== 'sleep'))) this.home = null;
+    if (this.home && !this.home.inside) {
+      this.goal = { x: this.home.den.x, z: this.home.den.z };
+      if (Math.abs(this.home.den.x - this.x) < 8 && Math.abs(this.home.den.z - this.z) < 0.03) {
+        this.home.inside = true;
+        this.home.until = world.time + 8 + Math.random() * 16;
+        this.setPose(world, base);
+        return;
+      }
+    }
+
     // When it pours, everyone heads for the nearest tree or decoration and waits it out there.
-    if (world.rain > 0.5 && !this.starring && !this.meal) {
+    if (world.rain > 0.5 && !this.starring && !this.meal && !this.home) {
       if (!this.shelter && world.hideouts.length) {
         const h = world.hideouts.reduce((a, b) => (Math.abs(b.x - this.x) < Math.abs(a.x - this.x) ? b : a));
         this.shelter = { x: clamp(h.x + (Math.random() - 0.5) * h.halfWidth, 20, world.width - 20), z: clamp(h.z + (Math.random() - 0.5) * 0.15, 0, 1) };
@@ -233,7 +285,7 @@ export class SimWalker implements SimCreature {
     }
 
     let moving = false;
-    if (asleep && !this.meal) {
+    if (asleep && !this.meal && !this.home) {
       this.resting = Math.max(this.resting, 1);
       this.pause = 'sit';
     }
@@ -243,6 +295,9 @@ export class SimWalker implements SimCreature {
       if (this.resting <= 0 && !asleep) this.pickGoal(world);
     } else if (Math.abs(dx) < 5 && Math.abs(dz) < 0.02) {
       if (this.errand) this.arrive(world);
+      else if (this.home) this.resting = 0;
+      // Now and then it pops home for a rest.
+      else if (Math.random() < 0.12 && this.goHome(world, 'rest')) this.resting = 0;
       else if (!this.arms || !this.busyHands(world)) {
       // Arrived: a look about, some grazing, or a good long sit.
       const roll = Math.random();
@@ -445,5 +500,19 @@ export class SimWalker implements SimCreature {
     p.star = this.starring;
     p.act = this.act;
     p.actT = this.act ? Math.min(1, this.actT / this.actFor) : 0;
+    p.den = 0;
+    if (this.home?.inside) {
+      // Just in front of the den's back wall and behind its front, at the door, small enough to fit.
+      const den = this.home.den;
+      const fit = Math.min(1, (den.height * 0.75) / Math.max(1, this.drawing.height * scale));
+      p.x = den.x;
+      p.y = den.y;
+      p.z = den.z - 0.005;
+      p.sx *= fit;
+      p.sy *= fit;
+      p.rot = 0;
+      p.puff = 0;
+      p.den = den.open ? 2 : 1;
+    }
   }
 }

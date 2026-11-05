@@ -54,7 +54,7 @@ export interface Attachment {
 }
 
 /** How a selected part of a drawing moves on its own, on top of the whole-body motion. */
-export const PART_MOTIONS = ['popout', 'flap', 'chomp', 'spin', 'pulse', 'blink', 'leg', 'arm'] as const;
+export const PART_MOTIONS = ['popout', 'flap', 'chomp', 'spin', 'pulse', 'blink', 'leg', 'arm', 'front'] as const;
 export type PartMotion = (typeof PART_MOTIONS)[number];
 /** Motions that move around the line where the part is attached (rather than around its middle). */
 export const isHinged = (m: PartMotion) => m === 'popout' || m === 'flap' || m === 'chomp' || m === 'leg' || m === 'arm';
@@ -81,6 +81,24 @@ export interface Part {
    */
   behind?: boolean;
 }
+
+/**
+ * A den: a decoration that some creatures live in. They go in to sleep, to keep out of the rain, or just for
+ * a rest, through the door. Parts marked 🚪 In front stay in front of whoever is inside, so a den with them
+ * (a cave, a doghouse) shows its creature inside; without them, it goes in out of sight (a hive, a burrow).
+ */
+export interface Den {
+  /** The drawings that live in it (any of their kind). */
+  for: string[];
+  /** Where they go in and out: across and down the drawing, 0..1. */
+  door: [number, number];
+}
+
+export const MAX_DEN_FOR = 12;
+/** The kinds that go home to a den (the ones that walk about on land, and fliers). */
+export const DEN_MOTIONS: readonly Motion[] = ['walker', 'hopper', 'slitherer', 'flier', 'waterfowl'];
+/** A den shows its creatures inside when it has parts in front of them. */
+export const isOpenDen = (d: Pick<Drawing, 'parts'>) => Boolean(d.parts?.some((p) => p.motion === 'front'));
 
 export const isAttachmentColor = (c: unknown): c is string =>
   typeof c === 'string' && (c === 'rainbow' || /^#[0-9a-f]{6}$/i.test(c));
@@ -138,6 +156,8 @@ export interface Drawing {
   explorer?: boolean;
   /** Switched off in the gallery: kept, but away from the world until it's switched back on. */
   off?: boolean;
+  /** Decorations: a den that these creatures live in. */
+  den?: Den;
 }
 
 /** A named group of drawings to share with another Doodlearium (see server/packs.ts). */
@@ -242,6 +262,7 @@ export interface NewDrawing {
   traits?: Traits;
   worlds?: string[];
   places?: string[];
+  den?: Den;
 }
 
 /** A baby made by the tank from two parents, sent to be laid as an egg (in the place the parents are). */

@@ -43,6 +43,8 @@ const MAX_DECOR_EACH = 2;
 export const bucketOf = (d: Drawing): CreatureType => habitatOf(motionOf(d));
 /** Blended babies and explorers are one of a kind: there's only ever the original. */
 export const isUnique = (d: Drawing) => Boolean(d.parents) || d.explorer === true;
+/** A den goes wherever the creatures that live in it are, and nowhere else. */
+export const isDen = (d: Drawing) => bucketOf(d) === 'decor' && Boolean(d.den?.for.length);
 
 /** The worlds a drawing lives in: its own choice, else its packs' (see server/packs.ts), else Earth. */
 export type WorldsOf = (d: Drawing) => string[];
@@ -93,6 +95,8 @@ export function populate(
 ): Individual[] {
   const byId = new Map(drawings.map((d) => [d.id, d]));
   const homes = new Map(drawings.map((d) => [d.id, new Set(homesOf(d, worldsOf(d)).map((p) => p.id))]));
+  // A den can be anywhere the creatures who live in it can.
+  for (const d of drawings) if (isDen(d)) homes.set(d.id, new Set(d.den!.for.flatMap((r) => [...(homes.get(r) ?? [])])));
   const fits = (d: Drawing, p: Place) => homes.get(d.id)!.has(p.id);
   /** Places a species can live: in its regions, or anywhere it fits if none of those suit it. */
   const rangeOf = (d: Drawing) => {
@@ -131,7 +135,7 @@ export function populate(
   // move on to make room.
   const now = Date.now();
   for (const d of drawings) {
-    if (!fresh.has(d.id) || isUnique(d)) continue;
+    if (!fresh.has(d.id) || isUnique(d) || isDen(d)) continue;
     const bucket = bucketOf(d);
     for (const place of ranges.get(d.id)!) {
       const target = TARGETS[place.biome]?.[bucket] ?? 0;
@@ -160,7 +164,7 @@ export function populate(
     if (!targets) continue;
     for (const bucket of Object.keys(targets) as CreatureType[]) {
       const target = targets[bucket] ?? 0;
-      const kinds = drawings.filter((d) => bucketOf(d) === bucket && !isUnique(d) && fits(d, place));
+      const kinds = drawings.filter((d) => bucketOf(d) === bucket && !isUnique(d) && !isDen(d) && fits(d, place));
       const local = kinds.filter((d) => ranges.get(d.id)!.includes(place));
       const pool = local.length >= Math.min(MIN_CHOICE, kinds.length) ? local : kinds;
       // Any one species fills at most half of a place's swimmers (unless it's the only one; plants can carpet it).
@@ -180,6 +184,19 @@ export function populate(
         n += add;
       }
     }
+  }
+
+  // Dens: one in every place where some of the creatures who live in it are (the original in one of them).
+  for (const d of drawings) {
+    if (!isDen(d)) continue;
+    const wanted = new Set(list.filter((i) => d.den!.for.includes(i.species) && !((i.hatchAt ?? 0) > now)).map((i) => i.place));
+    const original = list.find((i) => i.id === d.id);
+    if (original && !original.placement && !wanted.has(original.place)) {
+      const free = [...wanted].find((p) => !list.some((i) => i.species === d.id && i.place === p));
+      if (free) original.place = free;
+    }
+    list = list.filter((i) => i.species !== d.id || i.named || i.placement || wanted.has(i.place));
+    for (const p of wanted) if (!list.some((i) => i.species === d.id && i.place === p)) list.push({ id: `${d.id}~${suffix()}`, species: d.id, place: p });
   }
   return list;
 }

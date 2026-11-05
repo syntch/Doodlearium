@@ -164,6 +164,7 @@ export class Tank {
     world.fish = [];
     world.walkers = [];
     world.trinkets = [];
+    world.dens = [];
     const hideouts: Hideout[] = [];
     for (const c of this.creatures.values()) {
       // Night creatures only come out after dark.
@@ -175,7 +176,9 @@ export class Tank {
       else if (c instanceof SimWalker) world.walkers.push(c);
       else if (c instanceof SimStill) {
         hideouts.push(c.hideout());
-        if (c.kind === 'decor') world.trinkets.push(c.trinket());
+        const den = c.denSpot();
+        if (den) world.dens.push(den);
+        else if (c.kind === 'decor') world.trinkets.push(c.trinket());
       }
     }
     world.hideouts = hideouts;

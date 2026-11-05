@@ -264,10 +264,14 @@ export class Cover {
   private lifted: Container[] = [];
   /** Glow inside what's lifted, taken out of the layer meanwhile (see lift). */
   private nested: Container[] = [];
+  /** Whether what's on top is lifted into the glow layer now. */
+  private up = false;
 
   constructor(
     private body: Container & { tint: number; texture: Texture },
     private layer: RenderLayer,
+    /** A den's front: it goes up into the glow layer too, still in front of whoever's inside. */
+    private front: Container | null = null,
   ) {
     this.node = copyOf(body, body.texture) as Container & { tint: number };
     body.parent!.addChildAt(this.node, body.parent!.getChildIndex(body));
@@ -281,7 +285,7 @@ export class Cover {
       this.drop();
       return;
     }
-    if (!this.lifted.length) this.lift();
+    if (!this.up) this.lift();
     const k = 1 - dim;
     const dimmed = (t: number) => {
       const ch = (shift: number) => Math.round(((t >> shift) & 255) * k) << shift;
@@ -293,12 +297,18 @@ export class Cover {
       extra.zIndex = z;
       extra.tint = dimmed(0xffffff);
     }
+    if (this.front && !this.front.destroyed) {
+      // (Its view's zIndex + 10, in the glow layer's doubled order; see Decor.)
+      this.front.zIndex = z + 20;
+      this.front.tint = dimmed(0xffffff);
+    }
   }
 
   /** Everything after the body in its parent that isn't already in a layer (the glow's copies are). */
   private lift() {
     const parent = this.body.parent;
     if (!parent) return;
+    this.up = true;
     this.lifted = parent.children.slice(parent.getChildIndex(this.body) + 1).filter((c) => !c.parentRenderLayer);
     // Glow on a moving part is in the layer already, inside a part that's about to be. Pixi would draw it
     // twice (once with its part, once by itself), and only one copy follows the part: the other is left
@@ -307,6 +317,12 @@ export class Cover {
     for (const node of this.nested) this.layer.detach(node);
     // Attached after the copy, so at the same depth they're drawn over it.
     for (const extra of this.lifted) this.layer.attach(extra);
+    if (this.front && !this.front.destroyed) {
+      const inside = inLayer(this.front, this.layer);
+      this.nested.push(...inside);
+      for (const node of inside) this.layer.detach(node);
+      this.layer.attach(this.front);
+    }
   }
 
   private drop() {
@@ -315,9 +331,14 @@ export class Cover {
       this.layer.detach(extra);
       extra.tint = 0xffffff;
     }
+    if (this.front && !this.front.destroyed) {
+      this.layer.detach(this.front);
+      this.front.tint = 0xffffff;
+    }
     for (const node of this.nested) if (!node.destroyed) this.layer.attach(node);
     this.lifted = [];
     this.nested = [];
+    this.up = false;
   }
 
   destroy() {

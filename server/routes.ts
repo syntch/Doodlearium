@@ -3,6 +3,7 @@ import {
   ATTACHMENT_KINDS,
   CREATURE_TYPES,
   MAX_ATTACHMENTS,
+  MAX_DEN_FOR,
   MAX_PARTS,
   MOTIONS,
   PART_MOTIONS,
@@ -13,6 +14,7 @@ import {
   isAttachmentColor,
   motionOf,
   type Attachment,
+  type Den,
   type Motion,
   type Part,
 } from '../shared/types.ts';
@@ -111,8 +113,17 @@ function parseDrawing(body: any) {
     // Which worlds, and exactly which places (ones not here yet are kept, for when their world arrives).
     worlds: keyList(body.worlds, 20),
     places: keyList(body.places, 60),
+    den: motion === 'decor' ? parseDen(body.den) : undefined,
   };
   return { meta, png: png.bytes, extra: { parts: partsPng?.bytes ?? null, glow: glowPng?.bytes ?? null, behind: behindPng?.bytes ?? null } };
+}
+
+/** A decoration's den: who lives in it and where its door is, or undefined if it isn't one. */
+function parseDen(value: any): Den | undefined {
+  const residents = keyList(value?.for, MAX_DEN_FOR);
+  const door = value?.door;
+  if (!residents || !Array.isArray(door) || door.length !== 2 || !door.every((n: unknown) => typeof n === 'number' && n >= 0 && n <= 1)) return undefined;
+  return { for: residents, door: [door[0], door[1]] };
 }
 
 /** Swimmer behaviours switched on or off (see TRAITS), or undefined for the usual. */

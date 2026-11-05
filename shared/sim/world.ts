@@ -59,6 +59,8 @@ export interface World {
   walkers?: SimWalker[];
   /** Decorations, which a creature with 🦾 arms might pick up for a look. */
   trinkets?: Trinket[];
+  /** Dens, and who lives in them. */
+  dens?: DenSpot[];
   /** A gentle sideways current, in units per second (negative flows left). */
   current: number;
   /** How hard it's raining (0..1): land animals run for shelter when it pours. */
@@ -82,6 +84,24 @@ export interface Trinket extends Hideout {
   id: string;
   taken: boolean;
 }
+
+/** A den in this place: its door (where its creatures go in and out), and how big it is. */
+export interface DenSpot {
+  id: string;
+  /** The drawings that live in it. */
+  for: string[];
+  x: number;
+  y: number;
+  z: number;
+  /** Its creatures can be seen inside (it has a front). */
+  open: boolean;
+  /** How tall it stands, so whoever's inside can be made to fit. */
+  height: number;
+}
+
+/** The nearest den for a drawing's kind, if there's one here. */
+export const denFor = (world: World, species: string, x: number) =>
+  (world.dens ?? []).filter((d) => d.for.includes(species)).sort((a, b) => Math.abs(a.x - x) - Math.abs(b.x - x))[0];
 
 export interface School {
   leader: SimSwimmer;

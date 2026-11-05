@@ -45,6 +45,8 @@ export interface Creature {
   labelAnchor(): { x: number; y: number };
   /** The drawing itself (a bent mesh or a sprite), for glowing paint to follow. */
   readonly body?: Container;
+  /** A den's 🚪 In front parts, kept apart from its view so they're drawn in front of whoever's inside. */
+  readonly front?: Container | null;
   /** Its moving parts, for their glowing paint to ride along. */
   readonly moving?: Parts;
   /** 🦾 Arms: a show has them wave or cheer for a moment (see ACT), and where the hand is, on the screen. */

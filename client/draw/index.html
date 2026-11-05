@@ -171,6 +171,16 @@
           <label class="fill" id="explorer-label" title="One of a kind: it travels from place to place, and puts on a show wherever it arrives. It visits every world, unless you pick its worlds here.">
             <input type="checkbox" id="explorer" /> 🧭 Explorer: one of a kind, travels and puts on shows
           </label>
+          <div class="den-box" id="den-box" hidden>
+            <h3 title="Make it a home that some creatures live in: they go in to sleep, keep out of the rain, or have a rest">🏠 A den for</h3>
+            <div class="habitats" id="den-for"></div>
+            <select id="den-add" aria-label="Add a creature that lives in it"></select>
+            <div class="den-door" id="den-door" title="Tap where they go in">
+              <img id="den-picture" alt="" />
+              <span class="den-mark" id="den-mark" hidden>🚪</span>
+            </div>
+            <p class="picker-hint" id="den-hint"></p>
+          </div>
           <button class="primary" type="submit" id="send">Add to the world 🌊</button>
         </form>
       </section>

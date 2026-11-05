@@ -62,6 +62,10 @@ export const PART_INFO: Record<PartMotion, { icon: string; label: string; hint: 
     label: 'Arm',
     hint: 'Swings as it walks, and waves, pets friends and picks things up (mark each arm on its own)',
     attach: 'Draw a short line across the top of the arm, where it joins the body (the shoulder). The hand moves from there.',
+  },  front: {
+    icon: '🚪',
+    label: 'In front',
+    hint: "For a den: stays in front of whoever's inside (a cave's rocky rim, a doghouse's front wall), so you can see them in there",
   },
 };
 

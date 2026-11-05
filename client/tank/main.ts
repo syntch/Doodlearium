@@ -402,7 +402,7 @@ async function addEntry(drawing: Drawing, r: RosterEntry) {
 function attachGlow(entry: Entry) {
   const body = entry.creature.body;
   if (entry.glowTextures && body) entry.glow = new Glow(body, entry.glowTextures, glowLayer, entry.creature.moving);
-  if (body && 'texture' in body && 'tint' in body) entry.cover = new Cover(body as Container & { tint: number; texture: Texture }, glowLayer);
+  if (body && 'texture' in body && 'tint' in body) entry.cover = new Cover(body as Container & { tint: number; texture: Texture }, glowLayer, entry.creature.front);
 }
 
 /** Puts a creature's glow and its cover at its depth among the glows (night creatures, above the tint, on top). */
@@ -623,7 +623,8 @@ app.ticker.add((ticker) => {
   for (const [id, entry] of entries) {
     const { creature } = entry;
     const placed = entry.still || timeline.pose(id, entry.pose) !== null;
-    const wanted = !entry.removing && placed && isAwake(entry);
+    // (Gone into its den, out of sight, it fades away until it comes out again.)
+    const wanted = !entry.removing && placed && isAwake(entry) && entry.pose.den !== 1;
     entry.fade = Math.max(0, Math.min(1, entry.fade + (wanted ? dt : -dt) / FADE_SECONDS));
     creature.view.alpha = entry.fade;
     if (entry.removing && entry.fade === 0) {
