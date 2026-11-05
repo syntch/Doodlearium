@@ -1,4 +1,4 @@
-import { MAX_ATTACHMENTS, MAX_PARTS, glowUrl, imageUrl, partsUrl, type Attachment, type Drawing, type NewEgg, type Part } from '../../shared/types.ts';
+import { MAX_ATTACHMENTS, MAX_PARTS, behindUrl, glowUrl, imageUrl, partsUrl, type Attachment, type Drawing, type NewEgg, type Part } from '../../shared/types.ts';
 
 export { babyScale } from '../../shared/sim/math.ts';
 
@@ -15,14 +15,15 @@ const smoothstep = (edge0: number, edge1: number, x: number) => {
   return t * t * (3 - 2 * t);
 };
 
-/** A parent's picture, plus its moving-parts and glow images when it has them. */
+/** A parent's picture, plus its moving-parts, glow and behind-the-parts images when it has them. */
 const loadParent = async (d: Drawing) => {
-  const [picture, parts, glow] = await Promise.all([
+  const [picture, parts, glow, behind] = await Promise.all([
     loadImage(imageUrl(d)),
     d.parts?.length ? loadImage(partsUrl(d)) : null,
     d.glow ? loadImage(glowUrl(d)) : null,
+    d.parts?.some((p) => p.behind) ? loadImage(behindUrl(d)).catch(() => null) : null,
   ]);
-  return { picture, parts, glow };
+  return { picture, parts, glow, behind };
 };
 
 const toCanvas = (out: ImageData) => {
@@ -40,6 +41,8 @@ export interface Blend {
   parts: Part[];
   partsImage?: HTMLCanvasElement;
   glowImage?: HTMLCanvasElement;
+  /** What's painted behind the parts that have it (invisible paint, say), blended like the picture. */
+  behindImage?: HTMLCanvasElement;
 }
 
 /**
@@ -66,6 +69,9 @@ export async function blendParents(head: Drawing, tail: Drawing): Promise<Blend>
   const tg = read(b.glow);
   const hp = read(a.parts);
   const tp = read(b.parts);
+  // What's behind the parts: a parent without any has its own picture there (only its parts with behind use it).
+  const hb = read(a.behind) ?? h;
+  const tb = read(b.behind) ?? t;
 
   // Both parents' moving parts come along (a wagging tail moves whichever tail the baby got), the ones on
   // the half each parent gave first. Each gets a new number in the baby's part image.
@@ -83,6 +89,7 @@ export async function blendParents(head: Drawing, tail: Drawing): Promise<Blend>
   const out = new ImageData(width, height);
   const glowOut = new ImageData(width, height);
   const partsOut = new ImageData(width, height);
+  const behindOut = new ImageData(width, height);
   let glows = false;
   const used = new Set<number>();
   for (let y = 0; y < height; y++) {
@@ -92,6 +99,13 @@ export async function blendParents(head: Drawing, tail: Drawing): Promise<Blend>
       const w = smoothstep(0.3, 0.7, x / width);
       const ah = (h[i + 3] / 255) * w;
       const at = (t[i + 3] / 255) * (1 - w);
+      // Behind the parts, blended the same way (see-through where both parents painted it invisible).
+      const bh = (hb[i + 3] / 255) * w;
+      const bt = (tb[i + 3] / 255) * (1 - w);
+      if (bh + bt > 0) {
+        for (let k = 0; k < 3; k++) behindOut.data[i + k] = (hb[i + k] * bh + tb[i + k] * bt) / (bh + bt);
+        behindOut.data[i + 3] = Math.round(Math.min(1, Math.max(0, (bh + bt - 0.3) / 0.35)) * 255);
+      }
       const alpha = ah + at;
       if (alpha <= 0) continue;
       for (let k = 0; k < 3; k++) out.data[i + k] = (h[i + k] * ah + t[i + k] * at) / alpha;
@@ -130,6 +144,7 @@ export async function blendParents(head: Drawing, tail: Drawing): Promise<Blend>
     parts,
     partsImage: parts.length ? toCanvas(partsOut) : undefined,
     glowImage: glows ? toCanvas(glowOut) : undefined,
+    behindImage: parts.some((p) => p.behind) ? toCanvas(behindOut) : undefined,
   };
 }
 
@@ -172,6 +187,7 @@ export async function makeEgg(mum: Drawing, dad: Drawing, nest: number): Promise
     parts: blend.parts,
     partsImage: blend.partsImage?.toDataURL('image/png'),
     glowImage: blend.glowImage?.toDataURL('image/png'),
+    behindImage: blend.behindImage?.toDataURL('image/png'),
     nocturnal: mum.nocturnal === true && dad.nocturnal === true,
     parents: [mum.id, dad.id],
     nest,
