@@ -246,20 +246,6 @@ svg.icon { width: 1.05em; height: 1.05em; vertical-align: -0.18em; }
   text-align: center;
 }
 
-.suggest {
-  margin: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  justify-content: center;
-  padding: 6px 8px 6px 14px;
-  border-radius: 999px;
-  background: rgba(255, 214, 10, 0.18);
-  border: 1px solid rgba(255, 214, 10, 0.5);
-}
-.suggest button { padding: 4px 12px; }
-#suggest-dismiss { background: transparent; border: 0; box-shadow: none; padding: 4px 8px; }
 
 .workspace {
   display: flex;

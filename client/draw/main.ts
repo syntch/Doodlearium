@@ -416,7 +416,6 @@ function setMotion(motion: Motion) {
     setWhere(defaultHabitats(motion), defaultGroup(motion), '', speciesSize);
   }
   renderKind();
-  suggestEl.hidden = true;
   renderGuide();
   changed();
 }
@@ -860,54 +859,8 @@ function renderGuide() {
   guide.innerHTML = mirrorLine + guides[m];
 }
 
-// --- motion suggestions ------------------------------------------------------
-
-const suggestEl = document.querySelector<HTMLParagraphElement>('#suggest')!;
-const suggestText = document.querySelector<HTMLSpanElement>('#suggest-text')!;
-const suggestOptions = document.querySelector<HTMLSpanElement>('#suggest-options')!;
-/** Once dismissed, no more suggestions until the drawing is sent. */
-let suggestDismissed = false;
-document.querySelector<HTMLButtonElement>('#suggest-dismiss')!.onclick = () => {
-  suggestDismissed = true;
-  suggestEl.hidden = true;
-};
-
-/** Suggests (never switches to) a style that suits the drawing's shape. */
-function suggestMotion() {
-  const b = suggestDismissed || state.motion === 'plant' || state.motion === 'decor' ? null : inkBounds(paper);
-  const w = b ? b.right - b.left + 1 : 0;
-  const h = b ? b.bottom - b.top + 1 : 0;
-  let text = '';
-  let options: Motion[] = [];
-  if (b && Math.max(w, h) > 80) {
-    if (w >= h * 3.2) {
-      text = 'Looks long and skinny! Try';
-      options = LAND_MOTIONS.includes(state.motion) ? ['slitherer'] : ['eel'];
-    } else if (h >= w * 1.4) {
-      text = 'Tall and thin! Try';
-      options = ['seahorse', 'jelly'];
-    }
-  }
-  // Already one of the suggestions: nothing to say.
-  if (options.includes(state.motion)) options = [];
-  suggestEl.hidden = options.length === 0;
-  if (suggestEl.hidden) return;
-  suggestText.textContent = text;
-  suggestOptions.replaceChildren(
-    ...options.map((m) => {
-      const button = document.createElement('button');
-      button.textContent = `${MOTION_LABELS[m]}?`;
-      button.onclick = () => setMotion(m);
-      return button;
-    }),
-  );
-}
-
-let suggestTimer = 0;
 /** Called whenever the drawing, its style or its extras change. */
 function changed() {
-  clearTimeout(suggestTimer);
-  suggestTimer = window.setTimeout(suggestMotion, 800);
   schedulePreview();
   scheduleParts();
   scheduleDraft();
@@ -2196,7 +2149,6 @@ document.querySelector<HTMLFormElement>('#submit-form')!.onsubmit = async (e) =>
     denFor = [];
     denDoorAt = null;
     setWhere(defaultHabitats(state.motion), defaultGroup(state.motion), '', undefined, {});
-    suggestDismissed = false;
     closePhotoPanel();
     redraw();
     showReady(false);
