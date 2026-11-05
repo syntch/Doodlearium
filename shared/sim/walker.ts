@@ -297,7 +297,9 @@ export class SimWalker implements SimCreature {
       // Something small enough to pick up (much smaller than itself), not too far.
       const h = this.drawing.height * this.baseScale(world) * depthScale(this.z);
       const w = this.halfWidth(world);
-      const near = (world.trinkets ?? []).filter((t) => !t.taken && t.height < h * 0.6 && t.halfWidth < w * 0.8 && Math.abs(t.x - this.x) < reach);
+      // (Measured against its height or length, whichever is bigger, so a tall thin person counts as big.)
+      const size = Math.max(h, w * 2);
+      const near = (world.trinkets ?? []).filter((t) => !t.taken && t.height < size * 0.5 && t.halfWidth < size * 0.4 && Math.abs(t.x - this.x) < reach);
       const trinket = near[Math.floor(Math.random() * near.length)];
       if (trinket) {
         const side = Math.sign(trinket.x - this.x) || 1;
@@ -321,7 +323,7 @@ export class SimWalker implements SimCreature {
     } else if (roll < 0.7) {
       // Someone on the move nearby gets a wave; otherwise a stretch, or a scratch of the head.
       const passing = (world.walkers ?? []).find((o) => o !== this && o.pose.out && o.stride > 0.5 && Math.abs(o.x - this.x) < world.width * 0.3);
-      if (passing) {
+      if (passing && Math.random() < 0.55) {
         this.facing = Math.sign(passing.x - this.x) || this.facing;
         this.doAct(ACT.wave, 2 + Math.random());
       } else if (Math.random() < 0.5) this.doAct(ACT.stretch, 2.5);

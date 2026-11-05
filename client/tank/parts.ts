@@ -169,7 +169,6 @@ export class Parts {
     /** Texture point that sits at the view's origin (the mesh pivot or sprite anchor). */
     private origin: { x: number; y: number },
   ) {
-    let arms = 0;
     this.live = pieces.map((piece) => {
       const holder = new Container();
       holder.addChild(new Sprite({ texture: piece.texture, position: { x: piece.x, y: piece.y } }));
@@ -195,12 +194,15 @@ export class Parts {
         centre,
         opens: opensAway(piece.part, { x: (h1.x + h2.x) / 2, y: (h1.y + h2.y) / 2 }, centre, piece.rest),
         ...liftAway(h1, h2, centre, piece),
-        arm: piece.part.motion === 'arm' ? arms++ : -1,
+        arm: piece.part.motion === 'arm' ? 0 : -1,
         drawn,
         tip: { x: mid.x + dir.x * length, y: mid.y + dir.y * length },
         turn: 0,
       };
     });
+    // Arms take turns by how far forward they are (drawings face right): the front one waves and holds things.
+    const arms = this.live.filter((l) => l.arm >= 0).sort((a, b) => b.mid.x - a.mid.x || a.piece.index - b.piece.index);
+    arms.forEach((l, i) => (l.arm = i));
   }
 
   /** The container that moves a part, by its place in the drawing's list (to hang its glow on). */
