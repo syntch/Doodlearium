@@ -1,6 +1,6 @@
 import { Container, Graphics, MeshPlane, Sprite, type Texture } from 'pixi.js';
 import { motionOf, type Drawing } from '../../../shared/types.ts';
-import type { Pose } from '../../../shared/sim/creature.ts';
+import { ACT, type Pose } from '../../../shared/sim/creature.ts';
 import { Attachments } from '../attachments.ts';
 import { Parts, type Cutout } from '../parts.ts';
 import { TAU, clamp, depthOrder, depthTint, type Creature, type World } from '../world.ts';
@@ -30,6 +30,8 @@ export class Walker implements Creature {
   private stride = 0;
   private z = -1;
   private starring = false;
+  /** Set by a show for a moment: what its arms do (overriding the simulation's), and for how long. */
+  private shown = { act: 0, for: 0 };
 
   constructor(
     readonly drawing: Drawing,
@@ -70,6 +72,16 @@ export class Walker implements Creature {
     return this.mesh;
   }
 
+  /** Its leading 🦾 arm's hand, on the screen (null without arms). */
+  hand() {
+    return this.parts.hand();
+  }
+
+  /** A show has its arms do something (waving, cheering...) for the next moment. */
+  gesture(act: number) {
+    this.shown = { act, for: 0.2 };
+  }
+
   update(dt: number, world: World, pose: Pose) {
     if (pose.z !== this.z || pose.star !== this.starring) {
       this.z = pose.z;
@@ -92,7 +104,9 @@ export class Walker implements Creature {
     this.stride = clamp(pose.effort - 1, 0, 1);
     const bend = this.slither ? (u: number, v: number) => this.shape(clamp(u, 0, 1), clamp(v, 0, 1)) : undefined;
     if (this.slither) this.bend();
-    this.parts.update(dt, pose.effort, bend, pose.drowsy, { phase: pose.phase, stride: this.stride });
+    this.shown.for -= dt;
+    const arms = this.shown.for > 0 ? { act: this.shown.act, t: 0 } : { act: pose.act ?? ACT.none, t: pose.actT ?? 0 };
+    this.parts.update(dt, pose.effort, bend, pose.drowsy, { phase: pose.phase, stride: this.stride }, arms);
     this.attachments.update(dt, world, bend);
   }
 

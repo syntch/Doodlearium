@@ -448,7 +448,7 @@ const BASES: { id: Base; icon: string; label: string; title: string; first: Moti
     title: 'Gets about on land (and along the bottom of ponds)',
     first: 'walker',
     bodies: [
-      ['walker', '🐕 Walks', 'Walks about, grazing and napping (dogs, cows, chickens). Mark its legs with ⬚ Select → ✨ Make it move → 🦵 Leg'],
+      ['walker', '🐕 Walks', 'Walks about, grazing and napping (dogs, cows, chickens). Mark its legs with ⬚ Select → ✨ Make it move → 🦵 Leg (and arms → 🦾 Arm)'],
       ['hopper', '🐇 Hops', 'Hops along (bunnies, frogs, grasshoppers)'],
       ['slitherer', '🐍 Slithers', 'Slides along in ripples (snakes, worms, caterpillars); swims like an eel in the water'],
     ],

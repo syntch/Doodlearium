@@ -1,4 +1,5 @@
-import { Container, Matrix, Sprite, Texture } from 'pixi.js';
+import { Container, Matrix, Sprite, Texture, type PointData } from 'pixi.js';
+import { ACT } from '../../shared/sim/creature.ts';
 import { behindUrl, isHinged, partsUrl, type Drawing, type Part } from '../../shared/types.ts';
 import type { Deform } from './attachments.ts';
 import { TAU } from './world.ts';
@@ -107,6 +108,7 @@ export function splitParts(picture: CanvasImageSource, partsImage: CanvasImageSo
       }
     }
     c.putImageData(out, 0, 0);
+    if (part.motion === 'arm' && !(part.behind && behind)) fillArmGap(px, marks, value, width, height, left, top, right, bottom);
     // Where the rest of the drawing is, sampled sparsely.
     let sx = 0, sy = 0, n = 0;
     for (let i = 0; i < width * height; i += 7) {
@@ -140,7 +142,20 @@ interface Live {
   /** Open & close, lifting: the way straight off the rest of the drawing, and how far that is across the part. */
   away: { x: number; y: number };
   depth: number;
+  /** 🦾 Arms: which arm it is (0 leads), the way it points as drawn, where its hand is, and how far it's turned now. */
+  arm: number;
+  drawn: number;
+  tip: { x: number; y: number };
+  turn: number;
 }
+
+/** What a land animal's arms are up to (see ACT), and how far into it (0..1). */
+export interface ArmsDoing {
+  act: number;
+  t: number;
+}
+
+const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
 
 /** Animates a drawing's pieces in place, riding the body's own bend like extras do. */
 export class Parts {
@@ -154,6 +169,7 @@ export class Parts {
     /** Texture point that sits at the view's origin (the mesh pivot or sprite anchor). */
     private origin: { x: number; y: number },
   ) {
+    let arms = 0;
     this.live = pieces.map((piece) => {
       const holder = new Container();
       holder.addChild(new Sprite({ texture: piece.texture, position: { x: piece.x, y: piece.y } }));
@@ -162,6 +178,12 @@ export class Parts {
       const h1 = { x: x1 * texW, y: y1 * texH };
       const h2 = { x: x2 * texW, y: y2 * texH };
       const centre = { x: piece.x + piece.canvas.width / 2, y: piece.y + piece.canvas.height / 2 };
+      const mid = { x: (h1.x + h2.x) / 2, y: (h1.y + h2.y) / 2 };
+      // An arm points from its shoulder toward its middle; its hand is the far end of it that way.
+      const drawn = Math.atan2(centre.y - mid.y, centre.x - mid.x);
+      const dir = { x: Math.cos(drawn), y: Math.sin(drawn) };
+      const corners = [[piece.x, piece.y], [piece.x + piece.canvas.width, piece.y], [piece.x, piece.y + piece.canvas.height], [piece.x + piece.canvas.width, piece.y + piece.canvas.height]];
+      const length = Math.max(...corners.map(([x, y]) => (x - mid.x) * dir.x + (y - mid.y) * dir.y)) * 0.9;
       return {
         piece,
         holder,
@@ -173,6 +195,10 @@ export class Parts {
         centre,
         opens: opensAway(piece.part, { x: (h1.x + h2.x) / 2, y: (h1.y + h2.y) / 2 }, centre, piece.rest),
         ...liftAway(h1, h2, centre, piece),
+        arm: piece.part.motion === 'arm' ? arms++ : -1,
+        drawn,
+        tip: { x: mid.x + dir.x * length, y: mid.y + dir.y * length },
+        turn: 0,
       };
     });
   }
@@ -182,15 +208,22 @@ export class Parts {
     return this.live.find((l) => l.piece.index === index)?.holder;
   }
 
+  /** Where the leading arm's hand is just now, on the screen (null without arms). */
+  hand(): PointData | null {
+    const l = this.live.find((l) => l.arm === 0);
+    return l ? l.holder.toGlobal(l.tip) : null;
+  }
+
   get empty() {
     return this.live.length === 0;
   }
 
   /** effort: how hard the creature is swimming (1 = normal), so fins work harder when it hurries. */
   /** sleepy (0..1) slowly closes blinking eyes. walk keeps 🦵 legs in step with a land animal's stride. */
-  update(dt: number, effort = 1, deform?: Deform, sleepy = 0, walk?: { phase: number; stride: number }) {
+  /** arms says what 🦾 arms are up to (waving, petting, holding something...). */
+  update(dt: number, effort = 1, deform?: Deform, sleepy = 0, walk?: { phase: number; stride: number }, arms?: ArmsDoing) {
     for (const l of this.live) {
-      const m = this.motion(l, dt * (l.piece.part.speed ?? 1), effort, sleepy, walk);
+      const m = this.motion(l, dt * (l.piece.part.speed ?? 1), effort, sleepy, walk, arms, dt);
       // Pieces follow the body's bend at the point they're attached.
       const at = isHinged(l.piece.part.motion) ? l.mid : l.centre;
       const bend = deform?.(at.x / this.texW, at.y / this.texH) ?? { dx: 0, dy: 0 };
@@ -200,7 +233,7 @@ export class Parts {
   }
 
   /** The piece's own motion, as a matrix in texture pixels. */
-  private motion(l: Live, dt: number, effort: number, sleepy: number, walk?: { phase: number; stride: number }) {
+  private motion(l: Live, dt: number, effort: number, sleepy: number, walk?: { phase: number; stride: number }, arms?: ArmsDoing, realDt = dt) {
     const m = new Matrix();
     const amount = l.piece.part.amount ?? 1;
     switch (l.piece.part.motion) {
@@ -225,6 +258,30 @@ export class Parts {
         if (!walk) l.phase += dt * (2 + effort);
         const swing = walk ? Math.sin(walk.phase + opposite) * 0.5 * walk.stride : Math.sin(l.phase + opposite) * 0.25;
         return aroundPoint(l.mid, m.rotate(swing * amount));
+      }
+      case 'arm': {
+        // Swings opposite the legs as it walks (and hangs, swaying a little, when it stands), unless it's
+        // busy: then it turns to point the way the job needs, eased so it never snaps.
+        l.phase += dt;
+        const opposite = l.arm % 2 ? Math.PI : 0;
+        const swing = walk
+          ? Math.sin(walk.phase + Math.PI + opposite) * 0.45 * walk.stride + Math.sin(l.phase * 1.3 + opposite) * 0.06 * (1 - walk.stride)
+          : Math.sin(l.phase * 2 + opposite) * 0.2;
+        // Angles as the drawing faces (right): 0 forward, π/2 straight down, -π/2 straight up.
+        const toward = (angle: number) => wrap(angle - l.drawn);
+        const act = arms?.act ?? ACT.none;
+        const lead = l.arm === 0;
+        let want = swing * amount;
+        if (act === ACT.wave && lead) want = toward(-0.95) + Math.sin(l.phase * 9) * 0.35;
+        else if (act === ACT.pet && lead) want = toward(0.45) + Math.sin(l.phase * 4) * 0.22;
+        else if (act === ACT.scratch && lead) want = toward(-2.3) + Math.sin(l.phase * 16) * 0.12;
+        else if (act === ACT.reach) want = toward(1.2 - l.arm * 0.15);
+        else if (act === ACT.hold) want = toward(-0.25 - l.arm * 0.2) + Math.sin(l.phase * 1.5) * 0.08;
+        else if (act === ACT.stretch) want = toward(-1.55 - l.arm * 0.25);
+        else if (act === ACT.cheer) want = toward(l.arm % 2 ? -1.2 : -1.75) + Math.sin(l.phase * 7 + opposite) * 0.3;
+        else if (act === ACT.forward) want = toward(0.1) + Math.sin(l.phase * 3 + opposite) * 0.06;
+        l.turn += (want - l.turn) * Math.min(1, realDt * 7);
+        return aroundPoint(l.mid, m.rotate(l.turn));
       }
       case 'chomp': {
         // Opens away from the rest of the body, holds, snaps shut, and rests a moment before the next.
@@ -264,6 +321,55 @@ export class Parts {
       }
     }
   }
+}
+
+/**
+ * An arm swings right away from where it was drawn, so a shadow of it left there would look like a second
+ * arm. Instead, where it was drawn across the body (body on both sides of it, across or up and down), the
+ * body's colours are blended over the gap; anywhere else (sticking out into the air) it's left clear.
+ */
+/** Eight ways round, each opposite the one four along. */
+const DIRS = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+
+function fillArmGap(px: Uint8ClampedArray, marks: Uint8ClampedArray, value: number, width: number, height: number, left: number, top: number, right: number, bottom: number) {
+  const isArm = (i: number) => marks[i * 4 + 3] >= 128 && Math.abs(marks[i * 4] - value) <= 10;
+  const isBody = (i: number) => !isArm(i) && px[i * 4 + 3] >= 128;
+  // The nearest body pixel from (x, y) going one way, or -1 if it reaches the air (or the edge) first.
+  const find = (x: number, y: number, dx: number, dy: number) => {
+    for (let s = 1; s < 400; s++) {
+      const nx = x + dx * s, ny = y + dy * s;
+      if (nx < 0 || ny < 0 || nx >= width || ny >= height) return -1;
+      const i = ny * width + nx;
+      if (isArm(i)) continue;
+      return isBody(i) ? i : -1;
+    }
+    return -1;
+  };
+  const fill = new Uint8ClampedArray(px.length);
+  const filled: number[] = [];
+  for (let y = top; y <= bottom; y++) {
+    for (let x = left; x <= right; x++) {
+      const i = y * width + x;
+      if (!isArm(i)) continue;
+      // Looking all eight ways: body on two opposite sides, or most of the way round, means it's on the body.
+      const hits = DIRS.map(([dx, dy]) => find(x, y, dx, dy));
+      const across = [0, 1, 2, 3].some((d) => hits[d] >= 0 && hits[d + 4] >= 0);
+      if (!across && hits.filter((h) => h >= 0).length < 5) continue;
+      // Blended from the body round about, nearer pixels counting for more.
+      let total = 0;
+      const sum = [0, 0, 0, 0];
+      for (const h of hits) {
+        if (h < 0) continue;
+        const weight = 1 / Math.max(1, Math.hypot((h % width) - x, Math.floor(h / width) - y));
+        total += weight;
+        for (let k = 0; k < 4; k++) sum[k] += px[h * 4 + k] * weight;
+      }
+      for (let k = 0; k < 4; k++) fill[i * 4 + k] = sum[k] / total;
+      filled.push(i);
+    }
+  }
+  for (let y = top; y <= bottom; y++) for (let x = left; x <= right; x++) if (isArm(y * width + x)) px[(y * width + x) * 4 + 3] = 0;
+  for (const i of filled) for (let k = 0; k < 4; k++) px[i * 4 + k] = fill[i * 4 + k];
 }
 
 /** Which way to turn a part around its hinge so it swings away from the rest of the drawing (a clam's lid opens upward). */

@@ -1,6 +1,7 @@
 import { shapeOf, type Biome } from '../world/biomes.ts';
 import type { SimFood } from './food.ts';
 import type { SimSwimmer } from './swimmer.ts';
+import type { SimWalker } from './walker.ts';
 
 /**
  * The tank in its own units, the same on every screen: screens scale it to fit (and show a little more water
@@ -54,6 +55,10 @@ export interface World {
   sleepiness: number;
   /** Plants and decorations, where fish sleep and hide. */
   hideouts: Hideout[];
+  /** Land animals out and about, so they can wave to and pet each other. */
+  walkers?: SimWalker[];
+  /** Decorations, which a creature with 🦾 arms might pick up for a look. */
+  trinkets?: Trinket[];
   /** A gentle sideways current, in units per second (negative flows left). */
   current: number;
   /** How hard it's raining (0..1): land animals run for shelter when it pours. */
@@ -70,6 +75,12 @@ export interface Hideout {
   height: number;
   halfWidth: number;
   z: number;
+}
+
+/** A decoration where it sits, and whether someone has already gone to pick it up. */
+export interface Trinket extends Hideout {
+  id: string;
+  taken: boolean;
 }
 
 export interface School {

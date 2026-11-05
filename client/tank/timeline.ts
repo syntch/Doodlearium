@@ -99,7 +99,15 @@ export class Timeline {
     into.puff = lerp(a.puff, b.puff, t);
     into.out = (t < 0.5 ? a : b).out;
     into.star = (t < 0.5 ? a : b).star;
+    into.act = (t < 0.5 ? a : b).act;
+    into.actT = a.act === b.act ? lerp(a.actT, b.actT, t) : into.act === a.act ? a.actT : b.actT;
     return into;
+  }
+
+  /** Decorations being held up at the drawing time: decoration → who has it. */
+  holds(): Map<string, string> {
+    if (!this.frames.length) return new Map();
+    return new Map((this.span().from.frame.holds ?? []).map(([who, what]) => [what, who]));
   }
 
   /** The food at the drawing time: [id, x, y, size, color, landedFor]. */

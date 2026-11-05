@@ -47,6 +47,9 @@ export interface Creature {
   readonly body?: Container;
   /** Its moving parts, for their glowing paint to ride along. */
   readonly moving?: Parts;
+  /** 🦾 Arms: a show has them wave or cheer for a moment (see ACT), and where the hand is, on the screen. */
+  gesture?(act: number): void;
+  hand?(): { x: number; y: number } | null;
 }
 
 /** Negative z means pressed up against the glass, in front of everything. */

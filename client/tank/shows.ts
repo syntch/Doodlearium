@@ -1,4 +1,5 @@
 import { Container, Graphics, Text } from 'pixi.js';
+import { ACT } from '../../shared/sim/creature.ts';
 import type { Show } from '../../shared/sim/protocol.ts';
 import { ARRIVE_SECONDS, SHOWS, showSeconds } from '../../shared/sim/explorers.ts';
 import { isSpace } from '../../shared/world/biomes.ts';
@@ -222,6 +223,7 @@ export class Shows {
       if (!run.hand) run.root.addChild((run.hand = emoji('👋', world.height * 0.06)));
       const top = explorer.labelAnchor();
       if (u < seconds - 2) explorer.view.y -= Math.abs(Math.sin(u * 5)) * world.height * 0.02 * (u < 6 ? 1 : 0.4);
+      if (u < seconds - 1.5) explorer.gesture?.(ACT.wave);
       run.hand.position.set(top.x + world.height * 0.06, top.y + 10);
       run.hand.rotation = Math.sin(u * 9) * 0.5;
       run.hand.alpha = Math.min(1, u * 2, seconds - u);
@@ -245,6 +247,8 @@ export class Shows {
       h.hand.position.set(a.x, a.y - Math.min(1, Math.max(0, v)) * 10);
       h.hand.rotation = Math.sin(u * 8 + h.from) * 0.4;
       h.hand.alpha = v < 0 ? 0 : Math.min(1, v * 3, 3.5 - v) * h.c.view.alpha;
+      // Waving back, if it has arms to wave with.
+      if (v > 0 && v < 3.2) h.c.gesture?.(ACT.wave);
     }
   }
 
@@ -270,6 +274,7 @@ export class Shows {
     };
     if (explorer) {
       march(explorer, 0, world.height * 0.02);
+      if (fading > 0.5) explorer.gesture?.(ACT.wave);
       if (!run.hand) run.root.addChild((run.hand = emoji('🎺', world.height * 0.05)));
       const a = explorer.labelAnchor();
       run.hand.position.set(a.x, a.y - 14);
@@ -338,6 +343,8 @@ export class Shows {
       c.view.skew.x = Math.sin(phase) * 0.12 * on;
     };
     others.forEach((c) => dance(c, world.height * 0.012));
+    // Hands in the air!
+    if (on > 0.3) for (const c of [...others, ...(explorer ? [explorer] : [])]) c.gesture?.(ACT.cheer);
     if (explorer) {
       dance(explorer, world.height * 0.03);
       explorer.view.rotation += Math.sin(u * Math.PI) * 0.15 * on;
@@ -401,6 +408,8 @@ export class Shows {
       const hop = Math.abs(Math.sin(beats * Math.PI)) * H * 0.008 * (1 - kick) + kick * H * (i === 0 ? 0.03 : 0.018);
       c.view.position.set(lerp(real.x, x, k), lerp(real.y, y, k) - hop * k);
       c.view.rotation += side * kick * 0.3 * k;
+      // Hands on the shoulders of the one in front; the leader throws its arms up on the kick.
+      if (k > 0.5) c.gesture?.(i === 0 ? (kick > 0.2 ? ACT.cheer : ACT.wave) : ACT.forward);
       // Facing the way the line is going.
       if (k > 0.5) c.view.scale.x = Math.abs(c.view.scale.x) * (Math.sin(angle) >= 0 ? 1 : -1);
     });
@@ -454,7 +463,9 @@ export class Shows {
     box.scale.set(1, rise);
     lid.scale.set(1, rise);
     chest.node.alpha = Math.min(1, (seconds - u) / 2);
+    if (explorer && u > 3.6 && u < 9) explorer.gesture?.(ACT.cheer);
     if (explorer && u < 3) {
+      explorer.gesture?.(ACT.reach);
       explorer.view.rotation += Math.sin(u * 30) * 0.12;
       if (run.rand() < 0.5) this.dirt(run, chest.x - world.height * 0.06, chest.y, world);
     }

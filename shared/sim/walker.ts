@@ -1,9 +1,9 @@
 import { motionOf, type Drawing } from '../types.ts';
-import { newPose, type Saved, type SimCreature } from './creature.ts';
+import { ACT, newPose, type Saved, type SimCreature } from './creature.ts';
 import { LANDED_SECONDS, type Flake } from './food.ts';
 import { TAU, clamp, depthScale, growScale, seededRandom } from './math.ts';
 import { sizeFactor } from './styles.ts';
-import { heart, sandY, type World } from './world.ts';
+import { heart, sandY, type Trinket, type World } from './world.ts';
 
 /** How a land animal gets about: trotting on legs, hopping, or sliding along the ground. */
 export type Gait = 'walk' | 'hop' | 'slither';
@@ -41,7 +41,7 @@ export class SimWalker implements SimCreature {
   private pause: 'look' | 'graze' | 'sit' = 'look';
   private hurry = 1;
   private step = Math.random() * TAU;
-  private stride = 0;
+  stride = 0;
   /** Hoppers: how far through the current hop (0..1), and how far it carries. */
   private hop = -1;
   private hopFrom = { x: 0, z: 0 };
@@ -53,6 +53,18 @@ export class SimWalker implements SimCreature {
   private dozing = 0;
   /** Where it's sheltering from the rain (under a tree or beside a barn), while it pours. */
   private shelter: { x: number; z: number } | null = null;
+  /** Marked with 🦾 arm parts: it can wave, pet the others and pick things up. */
+  readonly arms: boolean;
+  /** What its arms are doing (see ACT), for how long, and how far into it. */
+  private act: number = ACT.none;
+  private actFor = 0;
+  private actT = 0;
+  /** Off to do something with its arms: pick up a decoration for a look, or give someone a pat. */
+  private errand: { kind: 'fetch'; trinket: Trinket; stage: number } | { kind: 'pet'; who: SimWalker } | null = null;
+  /** The decoration it has in its hands just now. */
+  holding: string | null = null;
+  /** Being petted: a happy wiggle, for a few seconds. */
+  private petted = 0;
 
   constructor(
     readonly id: string,
@@ -64,6 +76,7 @@ export class SimWalker implements SimCreature {
   ) {
     const rand = seededRandom(id);
     this.gait = gaitOf(drawing);
+    this.arms = drawing.parts?.some((p) => p.motion === 'arm') ?? false;
     this.z = saved?.z ?? rand(0.05, 0.95);
     this.size = rand(0.85, 1.2) * sizeFactor(drawing) * growScale(grownFrom);
     this.pace = rand(0.8, 1.2);
@@ -95,12 +108,33 @@ export class SimWalker implements SimCreature {
     if (on) this.goal.z = 0.05;
   }
 
-  private baseScale(world: World) {
+  /** The decoration it's off to fetch (or has in its hands), so nobody else goes for it. */
+  get fetching() {
+    return this.errand?.kind === 'fetch' ? this.errand.trinket.id : null;
+  }
+
+  /** Someone's coming over to give it a pat: it stays put, and wiggles happily once they're there. */
+  stayFor(seconds: number) {
+    this.resting = Math.max(this.resting, seconds);
+    if (this.pause === 'graze') this.pause = 'look';
+  }
+
+  pat(seconds: number) {
+    this.petted = seconds;
+    this.stayFor(seconds);
+  }
+
+  /** Free to be petted: standing about, not off somewhere. */
+  private get idle() {
+    return this.resting > 1.5 && this.hop < 0 && !this.meal && !this.errand && !this.starring;
+  }
+
+  baseScale(world: World) {
     const longest = this.gait === 'slither' ? this.drawing.width : Math.max(this.drawing.width, this.drawing.height);
     return (world.height * SIZES[this.gait] * this.size) / longest;
   }
 
-  private halfWidth(world: World) {
+  halfWidth(world: World) {
     return (this.drawing.width * this.baseScale(world) * depthScale(this.z)) / 2;
   }
 
@@ -166,6 +200,19 @@ export class SimWalker implements SimCreature {
       this.resting = 0.5;
     }
 
+    // Something more pressing comes up: put down what it's holding and let the errand go.
+    if ((asleep || this.meal || this.shelter || this.starring) && (this.errand || this.act)) this.dropEverything();
+    this.petted = Math.max(0, this.petted - dt);
+    if (this.act) {
+      this.actT += dt;
+      this.resting = Math.max(this.resting, 0.2);
+      if (this.errand?.kind === 'pet' && Math.random() < dt * 1.1) {
+        const who = this.errand.who;
+        heart(world, who.x, sandY(world, who.z, who.x) - who.drawing.height * who.baseScale(world) * depthScale(who.z) * 1.05, 9);
+      }
+      if (this.actT >= this.actFor) this.nextAct(world);
+    }
+
     if (this.starring) {
       // On camera: up near the front, trotting back and forth, with a hop now and then.
       this.trickIn -= dt;
@@ -195,10 +242,13 @@ export class SimWalker implements SimCreature {
       this.resting -= dt;
       if (this.resting <= 0 && !asleep) this.pickGoal(world);
     } else if (Math.abs(dx) < 5 && Math.abs(dz) < 0.02) {
+      if (this.errand) this.arrive(world);
+      else if (!this.arms || !this.busyHands(world)) {
       // Arrived: a look about, some grazing, or a good long sit.
       const roll = Math.random();
       this.pause = roll < 0.4 ? 'look' : roll < 0.75 ? 'graze' : 'sit';
       this.resting = this.leader ? 1 + Math.random() * 3 : this.pause === 'sit' ? 6 + Math.random() * 8 : 1.5 + Math.random() * 4;
+      }
     } else moving = true;
 
     if (moving) {
@@ -213,12 +263,109 @@ export class SimWalker implements SimCreature {
         this.step += dt * (this.gait === 'slither' ? 5 : 8) * this.pace * this.hurry;
       }
     }
-    if (this.leader && this.resting <= 0 && !this.meal && Math.abs(this.leader.x - this.x) > this.halfWidth(world) * 8) this.pickGoal(world);
+    if (this.leader && this.resting <= 0 && !this.meal && !this.errand && Math.abs(this.leader.x - this.x) > this.halfWidth(world) * 8) this.pickGoal(world);
 
     this.stride += ((moving ? 1 : 0) - this.stride) * Math.min(1, dt * 6);
     this.landed = Math.max(0, this.landed - dt);
     this.pose.drowsy = this.dozing;
     this.setPose(world, base);
+  }
+
+  /** Starts doing something with its arms, standing still while it does. */
+  private doAct(act: number, seconds: number) {
+    this.act = act;
+    this.actFor = seconds;
+    this.actT = 0;
+    this.resting = Math.max(this.resting, seconds);
+  }
+
+  private dropEverything() {
+    this.errand = null;
+    this.holding = null;
+    this.act = ACT.none;
+  }
+
+  /**
+   * Instead of just standing about when it gets somewhere, a creature with arms might find something to do
+   * with them: go and pick up a little decoration for a look, go over and pet someone, wave at a passer-by,
+   * have a stretch or scratch its head. True if it found something.
+   */
+  private busyHands(world: World) {
+    const roll = Math.random();
+    const reach = world.width * 0.4;
+    if (roll < 0.22) {
+      // Something small enough to pick up (much smaller than itself), not too far.
+      const h = this.drawing.height * this.baseScale(world) * depthScale(this.z);
+      const w = this.halfWidth(world);
+      const near = (world.trinkets ?? []).filter((t) => !t.taken && t.height < h * 0.6 && t.halfWidth < w * 0.8 && Math.abs(t.x - this.x) < reach);
+      const trinket = near[Math.floor(Math.random() * near.length)];
+      if (trinket) {
+        const side = Math.sign(trinket.x - this.x) || 1;
+        trinket.taken = true;
+        this.errand = { kind: 'fetch', trinket, stage: 0 };
+        this.goal = { x: clamp(trinket.x - side * (trinket.halfWidth + w * 0.55), 20, world.width - 20), z: trinket.z };
+        this.hurry = 1;
+        return true;
+      }
+    } else if (roll < 0.44) {
+      const near = (world.walkers ?? []).filter((o) => o !== this && o.idle && o.pose.out && Math.abs(o.x - this.x) < reach);
+      const who = near[Math.floor(Math.random() * near.length)];
+      if (who) {
+        const side = Math.sign(who.x - this.x) || 1;
+        this.errand = { kind: 'pet', who };
+        this.goal = { x: clamp(who.x - side * (who.halfWidth(world) + this.halfWidth(world)) * 0.7, 20, world.width - 20), z: who.z };
+        this.hurry = 1;
+        who.stayFor(8);
+        return true;
+      }
+    } else if (roll < 0.7) {
+      // Someone on the move nearby gets a wave; otherwise a stretch, or a scratch of the head.
+      const passing = (world.walkers ?? []).find((o) => o !== this && o.pose.out && o.stride > 0.5 && Math.abs(o.x - this.x) < world.width * 0.3);
+      if (passing) {
+        this.facing = Math.sign(passing.x - this.x) || this.facing;
+        this.doAct(ACT.wave, 2 + Math.random());
+      } else if (Math.random() < 0.5) this.doAct(ACT.stretch, 2.5);
+      else this.doAct(ACT.scratch, 1.6 + Math.random());
+      this.pause = 'look';
+      this.resting += 0.5 + Math.random() * 1.5;
+      return true;
+    }
+    return false;
+  }
+
+  /** Got to where its errand was: turn to face it and get on with it. */
+  private arrive(world: World) {
+    const e = this.errand!;
+    const at = e.kind === 'fetch' ? e.trinket.x : e.who.x;
+    this.facing = Math.sign(at - this.x) || this.facing;
+    this.pause = 'look';
+    if (e.kind === 'fetch') this.doAct(ACT.reach, 0.8);
+    else if (e.who.pose.out && Math.abs(e.who.x - this.x) < (e.who.halfWidth(world) + this.halfWidth(world)) * 1.5) {
+      this.doAct(ACT.pet, 3 + Math.random() * 1.5);
+      e.who.pat(this.actFor + 0.5);
+    } else this.errand = null;
+  }
+
+  /** One thing done with its arms: on to the next part of its errand, or back to its day. */
+  private nextAct(world: World) {
+    const e = this.errand;
+    this.act = ACT.none;
+    if (e?.kind === 'fetch') {
+      e.stage++;
+      // Bent down: up it comes for a good look, then down again, and back it goes just where it was.
+      if (e.stage === 1) {
+        this.holding = e.trinket.id;
+        this.doAct(ACT.hold, 3 + Math.random() * 3);
+        return;
+      }
+      if (e.stage === 2) {
+        this.doAct(ACT.reach, 0.8);
+        return;
+      }
+      this.holding = null;
+    }
+    this.errand = null;
+    this.resting = 0.8 + Math.random();
   }
 
   /** Hoppers go in hops: a crouch, an arc through the air, a squash on landing, and a short pause. */
@@ -271,6 +418,14 @@ export class SimWalker implements SimCreature {
       lift = bob * h * 0.05;
       rot = Math.sin(this.step * 2) * 0.03 * this.stride;
     }
+    // Bending down to pick something up; stretching tall; wiggling happily while being petted.
+    if (this.act === ACT.reach) rot += 0.22 * Math.sin(Math.min(1, this.actT / this.actFor) * Math.PI);
+    if (this.act === ACT.stretch) sy *= 1 + 0.05 * Math.sin(Math.min(1, this.actT / this.actFor) * Math.PI);
+    if (this.petted > 0) {
+      const k = Math.min(1, this.petted);
+      rot += Math.sin(world.time * 13) * 0.05 * k;
+      sy *= 1 + Math.abs(Math.sin(world.time * 6.5)) * 0.03 * k;
+    }
     if (this.resting > 0 && this.stride < 0.5) {
       // Grazing tips the head down; sitting settles lower; asleep it's lower still.
       if (this.pause === 'graze' && this.gait === 'walk') rot += 0.1 * Math.min(1, this.resting);
@@ -286,5 +441,7 @@ export class SimWalker implements SimCreature {
     p.effort = 1 + this.stride * this.hurry;
     p.puff = lift;
     p.star = this.starring;
+    p.act = this.act;
+    p.actT = this.act ? Math.min(1, this.actT / this.actFor) : 0;
   }
 }

@@ -27,9 +27,34 @@ export interface Pose {
   out: boolean;
   /** Documentary mode is filming it. */
   star: boolean;
+  /** What its 🦾 arms are doing (see ACT), and how far through that it is (0..1). */
+  act: number;
+  actT: number;
 }
 
-export const newPose = (): Pose => ({ x: 0, y: 0, sx: 1, sy: 1, rot: 0, z: 0.5, phase: 0, effort: 1, drowsy: 0, puff: 0, out: true, star: false });
+/** What a creature with 🦾 arms can be doing with them; screens swing the arms to match. */
+export const ACT = {
+  none: 0,
+  /** One arm up, waving hello. */
+  wave: 1,
+  /** Reaching out to stroke the one beside it. */
+  pet: 2,
+  /** Bending down to pick something up (or put it back). */
+  reach: 3,
+  /** Holding something up to look at it. */
+  hold: 4,
+  /** Both arms up: hooray! */
+  cheer: 5,
+  stretch: 6,
+  /** Scratching its head. */
+  scratch: 7,
+  /** Arms out in front (on the shoulders of the one ahead, in a conga). */
+  forward: 8,
+} as const;
+
+export const newPose = (): Pose => ({
+  x: 0, y: 0, sx: 1, sy: 1, rot: 0, z: 0.5, phase: 0, effort: 1, drowsy: 0, puff: 0, out: true, star: false, act: 0, actT: 0,
+});
 
 /** One creature's brain: where it goes and what it does. Screens draw it from its pose. */
 export interface SimCreature {

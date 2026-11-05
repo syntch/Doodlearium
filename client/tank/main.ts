@@ -39,7 +39,7 @@ import { Food } from './food.ts';
 import { loadCutout, type Cutout } from './parts.ts';
 import { Scene } from './scene.ts';
 import { Timeline } from './timeline.ts';
-import { setHaze, shapeFor, type Creature, type World } from './world.ts';
+import { depthOrder, lerp, setHaze, shapeFor, type Creature, type World } from './world.ts';
 
 /**
  * A place in the world (the Lake, the Pond...), drawn from the server's world: the server decides where
@@ -507,6 +507,48 @@ function updateLabels(dt: number) {
   }
 }
 
+/** Decorations picked up for a look: how far up into the hand each is (0..1), and where that hand was last. */
+const lifted = new Map<string, { k: number; x: number; y: number; holder: Creature | null }>();
+
+/**
+ * A creature with 🦾 arms has picked up a decoration (the server says who has what): it rises into its hand,
+ * turning a little as it's looked at, and is put back down just where it was.
+ */
+function updateHolds(dt: number) {
+  const holds = timeline.holds();
+  for (const id of new Set([...lifted.keys(), ...holds.keys()])) {
+    const decor = entries.get(id);
+    const lift = lifted.get(id) ?? { k: 0, x: 0, y: 0, holder: null };
+    const holder = entries.get(holds.get(id) ?? '');
+    if (!decor || decor.removing || holding(decor)) {
+      lifted.delete(id);
+      continue;
+    }
+    const view = decor.creature.view;
+    const hand = holder && !holder.removing ? holder.creature.hand?.() : null;
+    if (hand && view.parent) {
+      const at = view.parent.toLocal(hand);
+      lift.x = at.x;
+      lift.y = at.y;
+      lift.holder = holder!.creature;
+    }
+    lift.k = Math.max(0, Math.min(1, lift.k + (hand ? dt : -dt) * 3));
+    if (lift.k === 0) {
+      view.rotation = 0;
+      view.zIndex = depthOrder(decor.pose.z);
+      lifted.delete(id);
+      continue;
+    }
+    lifted.set(id, lift);
+    const k = lift.k * lift.k * (3 - 2 * lift.k);
+    // Held by its middle, just in front of whoever has it.
+    const middle = (decor.texture.height * Math.abs(view.scale.y)) / 2;
+    view.position.set(lerp(decor.pose.x, lift.x, k), lerp(decor.pose.y, lift.y + middle, k));
+    view.rotation = Math.sin(world.time * 1.4 + id.length) * 0.25 * k;
+    if (lift.holder && !lift.holder.view.destroyed) view.zIndex = lift.holder.view.zIndex + 1;
+  }
+}
+
 /** An explorer just arrived: it's carried in and puts on its show (see shows.ts), and says hello once down. */
 function updateShow(dt: number, show: Show | null) {
   if (!show && !shows.showing) return;
@@ -609,6 +651,7 @@ app.ticker.add((ticker) => {
   }
 
   updateShow(dt, frame?.show ?? null);
+  updateHolds(dt);
 
   filmWhenIdle(frame?.doc ?? null);
   // The camera only follows the star on a screen nobody is using, or one that asked for the film.

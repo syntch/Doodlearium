@@ -54,10 +54,10 @@ export interface Attachment {
 }
 
 /** How a selected part of a drawing moves on its own, on top of the whole-body motion. */
-export const PART_MOTIONS = ['popout', 'flap', 'chomp', 'spin', 'pulse', 'blink', 'leg'] as const;
+export const PART_MOTIONS = ['popout', 'flap', 'chomp', 'spin', 'pulse', 'blink', 'leg', 'arm'] as const;
 export type PartMotion = (typeof PART_MOTIONS)[number];
 /** Motions that move around the line where the part is attached (rather than around its middle). */
-export const isHinged = (m: PartMotion) => m === 'popout' || m === 'flap' || m === 'chomp' || m === 'leg';
+export const isHinged = (m: PartMotion) => m === 'popout' || m === 'flap' || m === 'chomp' || m === 'leg' || m === 'arm';
 export const MAX_PARTS = 8;
 
 /**

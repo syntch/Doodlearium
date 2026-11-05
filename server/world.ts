@@ -16,6 +16,7 @@ import {
 } from '../shared/sim/protocol.ts';
 import { ARRIVE_SECONDS, SHOWS, SHOW_KINDS, STAY_MINUTES, showSeconds, type ShowKind } from '../shared/sim/explorers.ts';
 import { Tank } from '../shared/sim/tank.ts';
+import { SimWalker } from '../shared/sim/walker.ts';
 import { FILM_SECONDS, pickVisitor } from '../shared/sim/visitors.ts';
 import { habitatOf, motionOf, type Drawing, type SpeciesWhere, type TankCommand, type TankCommandValue } from '../shared/types.ts';
 import { hasWeather } from '../shared/world/biomes.ts';
@@ -400,6 +401,7 @@ function frame(spot: Spot): Frame {
     show: spot.show,
     weather: [round3(tank.weather.rain), round3(tank.weather.snow), round3(tank.weather.rainbow)],
     poses: [...tank.creatures.values()].filter((c) => c.kind !== 'plant' && c.kind !== 'decor').map((c) => packPose(c.id, c.pose)),
+    holds: [...tank.creatures.values()].flatMap((c) => (c instanceof SimWalker && c.holding ? [[c.id, c.holding] as [string, string]] : [])),
     flakes: tank.food.flakes.map(packFlake),
     effects: tank.world.effects,
   };

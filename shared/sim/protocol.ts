@@ -73,7 +73,8 @@ export interface Settings {
 
 /**
  * A moment in the tank, sent about ten times a second. Poses are packed into arrays to keep it small:
- * [id, x, y, sx, sy, rot, z, phase, effort, drowsy, puff, flags], where flags is 1 for out, 2 for starring.
+ * [id, x, y, sx, sy, rot, z, phase, effort, drowsy, puff, flags, act, actT], where flags is 1 for out, 2 for
+ * starring, and act is what its arms are doing (see ACT).
  */
 export interface Frame {
   /** Which place this is. */
@@ -90,6 +91,8 @@ export interface Frame {
   /** [rain, snow, rainbow], each 0..1. */
   weather?: [number, number, number];
   poses: PackedPose[];
+  /** Decorations being held up to look at: [who's holding it, the decoration]. */
+  holds?: [string, string][];
   /** [id, x, y, size, color, landedFor] */
   flakes: number[][];
   effects: Effect[];
@@ -104,13 +107,13 @@ const r5 = (v: number) => Math.round(v * 100000) / 100000;
 export function packPose(id: string, p: Pose): PackedPose {
   return [
     id, r1(p.x), r1(p.y), r5(p.sx), r5(p.sy), r3(p.rot), r3(p.z), r3(p.phase), r3(p.effort), r3(p.drowsy), r3(p.puff),
-    (p.out ? 1 : 0) | (p.star ? 2 : 0),
+    (p.out ? 1 : 0) | (p.star ? 2 : 0), p.act, r3(p.actT),
   ];
 }
 
 export function unpackPose(a: PackedPose, into: Pose) {
-  const [, x, y, sx, sy, rot, z, phase, effort, drowsy, puff, flags] = a;
-  Object.assign(into, { x, y, sx, sy, rot, z, phase, effort, drowsy, puff, out: (flags & 1) !== 0, star: (flags & 2) !== 0 });
+  const [, x, y, sx, sy, rot, z, phase, effort, drowsy, puff, flags, act = 0, actT = 0] = a;
+  Object.assign(into, { x, y, sx, sy, rot, z, phase, effort, drowsy, puff, out: (flags & 1) !== 0, star: (flags & 2) !== 0, act, actT });
   return into;
 }
 

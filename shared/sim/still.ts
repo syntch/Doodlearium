@@ -2,7 +2,7 @@ import type { Drawing } from '../types.ts';
 import { newPose, type Placement, type SimCreature } from './creature.ts';
 import { depthScale, seededRandom } from './math.ts';
 import { sizeFactor } from './styles.ts';
-import { sandY, type Hideout, type World } from './world.ts';
+import { sandY, type Hideout, type Trinket, type World } from './world.ts';
 
 /**
  * Plants and decorations: they stay where they grew (a spot picked from the drawing's id, so it never
@@ -42,6 +42,10 @@ export class SimStill implements SimCreature {
   hideout(): Hideout {
     const p = this.pose;
     return { x: p.x, bottom: p.y, height: this.drawing.height * p.sy, halfWidth: (this.drawing.width * p.sx) / 2, z: p.z };
+  }
+
+  trinket(): Trinket {
+    return { ...this.hideout(), id: this.id, taken: false };
   }
 
   update() {}

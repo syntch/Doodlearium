@@ -162,6 +162,8 @@ export class Tank {
 
     this.hatchEggs();
     world.fish = [];
+    world.walkers = [];
+    world.trinkets = [];
     const hideouts: Hideout[] = [];
     for (const c of this.creatures.values()) {
       // Night creatures only come out after dark.
@@ -170,8 +172,16 @@ export class Tank {
       c.pose.out = out;
       if (!out) continue;
       if (c instanceof SimSwimmer) world.fish.push(c);
-      else if (c instanceof SimStill) hideouts.push(c.hideout());
+      else if (c instanceof SimWalker) world.walkers.push(c);
+      else if (c instanceof SimStill) {
+        hideouts.push(c.hideout());
+        if (c.kind === 'decor') world.trinkets.push(c.trinket());
+      }
     }
+    world.hideouts = hideouts;
+    // Nobody goes for a decoration someone else is already off to fetch.
+    const claimed = new Set(world.walkers.map((w) => w.fetching).filter(Boolean));
+    for (const t of world.trinkets) t.taken = claimed.has(t.id);
     this.updateCurrent(dt);
     this.updateWeather(dt);
     this.updateHerds();

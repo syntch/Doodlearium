@@ -57,6 +57,12 @@ export const PART_INFO: Record<PartMotion, { icon: string; label: string; hint: 
     hint: 'Swings from where it joins the body as the animal walks (mark each leg on its own)',
     attach: 'Draw a short line across the top of the leg, where it joins the body (the hip or shoulder). The foot swings from there.',
   },
+  arm: {
+    icon: '🦾',
+    label: 'Arm',
+    hint: 'Swings as it walks, and waves, pets friends and picks things up (mark each arm on its own)',
+    attach: 'Draw a short line across the top of the arm, where it joins the body (the shoulder). The hand moves from there.',
+  },
 };
 
 const newCanvas = (width: number, height: number) => Object.assign(document.createElement('canvas'), { width, height });
