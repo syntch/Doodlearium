@@ -119,6 +119,8 @@ docker compose up -d --build
 
 It restarts on its own after reboots and crashes. Then open `http://<server-ip>:3000/tank/` on the TV.
 
+**Which screens can show it:** it needs a fairly up-to-date browser with WebGL graphics: Firefox, Chrome, Edge or Safari from about 2023 on, on a computer, phone or tablet (an Android TV or Google TV box with a current Chrome-based browser usually works too). The browsers built into smart TVs and game consoles (a PS4, say) are too old, so for the TV, plug in a laptop or small PC, or cast a Chrome tab to it. A browser that's too old gets a friendly message saying so (`client/public/oldbrowser.js`) instead of a blank page, with **Try anyway** to have a go regardless.
+
 - **Update** after changing the code: run `docker compose up -d --build` again. Drawings are kept.
 - **Logs**: `docker compose logs -f`
 - **Back up the drawings**: `docker run --rm -v doodlearium_doodlearium-data:/data -v "$PWD":/backup alpine tar czf /backup/doodlearium-backup.tgz -C /data .`
