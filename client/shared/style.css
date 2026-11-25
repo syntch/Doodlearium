@@ -1,0 +1,68 @@
+:root {
+  --bg: #0c2f4a;
+  --panel: #12405f;
+  --panel-2: #1a5378;
+  --text: #f2f8fc;
+  --muted: #a9c6da;
+  --accent: #ffcc4d;
+  --danger: #ff7a6b;
+  --radius: 14px;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+a { color: var(--accent); }
+button, input, select {
+  font: inherit;
+  color: inherit;
+}
+button {
+  background: var(--panel-2);
+  border: 2px solid transparent;
+  border-radius: 10px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+button:hover { border-color: rgba(255, 255, 255, 0.25); }
+button.primary { background: var(--accent); color: #2b2100; font-weight: bold; }
+button[aria-pressed='true'] { border-color: var(--accent); }
+input[type='text'] {
+  background: var(--panel-2);
+  border: 2px solid transparent;
+  border-radius: 10px;
+  padding: 8px 12px;
+  min-width: 0;
+}
+input[type='text']:focus { outline: none; border-color: var(--accent); }
+/* Rows of little toggle buttons (filters, choices). */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chips .chips-label { color: var(--muted); font-size: 0.85rem; margin-right: 2px; }
+.chip { padding: 5px 11px; border-radius: 999px; font-size: 0.9rem; background: var(--panel); }
+.chip[aria-pressed='true'] { background: var(--panel-2); border-color: var(--accent); }
+.chip[aria-pressed='false'] { color: var(--muted); }
+.nav {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  row-gap: 6px;
+  align-items: center;
+  padding: 12px 16px;
+}
+.nav > * { white-space: nowrap; }
+.nav .brand { font-weight: bold; font-size: 1.25rem; text-decoration: none; color: var(--text); margin-right: auto; }
+.nav a:not(.brand) { text-decoration: none; }
+.nav button { padding: 6px 12px; }
+/* A phone: everything a little closer together, so it all fits on one line. */
+@media (max-width: 480px) {
+  .nav { gap: 8px; padding: 10px 10px; font-size: 0.92rem; }
+  .nav .brand { font-size: 1rem; }
+  .nav button { padding: 4px 8px; }
+  .nav button .label { display: none; }
+}

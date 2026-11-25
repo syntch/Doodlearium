@@ -1,0 +1,15 @@
+# Publishes the browser-only demo (npm run build:demo) and the showcase copy (showcase/) for the Syntcht
+# Games site, as the `showcase` release on this repository. The site picks it up from there.
+name: Showcase
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publish:
+    uses: syntch/syntch.github.io/.github/workflows/publish-demo.yml@main
+    with:
+      build-command: npm run build:demo
+      out-dir: dist-demo

@@ -1,0 +1,359 @@
+.draw {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  padding: 0 16px 16px;
+}
+.draw-step { width: 100%; max-width: 1500px; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.colors, .sizes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* The top bar: what it is on the left, the everyday buttons, and Ready on the right. */
+.topbar { width: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.topbar .spacer { flex: 1; }
+.topbar > button { padding: 6px 12px; }
+.kind-wrap { position: relative; }
+#kind-button { padding: 6px 14px; }
+#kind-button b { font-weight: bold; }
+.kind-picker {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  top: calc(100% + 6px);
+  width: min(600px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 2px solid var(--accent);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+.kind-picker h3, .side h3, .submit h3 {
+  flex-basis: 100%;
+  margin: 8px 0 2px;
+  font-size: 0.8rem;
+  font-weight: normal;
+  color: var(--muted);
+}
+.kind-picker h3:first-child, .side > div > h3:first-child { margin-top: 0; }
+.kind-bases { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.kind-bases button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px; font-size: 0.85rem; }
+.kind-bases b { font-size: 1.6rem; font-weight: normal; line-height: 1.2; }
+.kind-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.kind-row button { padding: 5px 10px; font-size: 0.9rem; }
+.kind-row label {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 10px;
+  background: var(--panel-2);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.kind-done { display: flex; justify-content: flex-end; margin-top: 10px; }
+
+/* Tools on the left, the paper in the middle, the chosen tool's options on the right. */
+.desk {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) 236px;
+  gap: 12px;
+  align-items: start;
+}
+.rail { display: flex; flex-direction: column; gap: 6px; }
+.rail button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px; font-size: 0.8rem; }
+.rail b { font-size: 1.5rem; font-weight: normal; line-height: 1.2; }
+.middle { display: flex; flex-direction: column; gap: 8px; align-items: center; min-width: 0; }
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  max-height: calc(100dvh - 150px);
+  overflow-y: auto;
+}
+.side .keys { opacity: 0.7; font-size: 0.75rem; }
+.stage {
+  position: relative;
+  width: min(100%, calc((100dvh - 200px) * 4 / 3));
+  min-width: min(100%, 320px);
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background:
+    linear-gradient(rgba(12, 47, 74, 0.06) 1px, transparent 1px) 0 0 / 40px 40px,
+    linear-gradient(90deg, rgba(12, 47, 74, 0.06) 1px, transparent 1px) 0 0 / 40px 40px,
+    #fbf8f0;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+#paper {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: crosshair;
+}
+.guide {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  color: rgba(12, 47, 74, 0.28);
+  font-weight: bold;
+  font-size: clamp(14px, 2.4vw, 22px);
+}
+.guide .arrow {
+  position: absolute;
+  top: 12px;
+  left: 0;
+  right: 0;
+  text-align: center;
+}
+.guide .ground {
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  bottom: 8%;
+  border-top: 3px dashed rgba(12, 47, 74, 0.25);
+  text-align: center;
+  padding-top: 4px;
+}
+.colors button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.15);
+}
+.colors button[aria-pressed='true'] { border-color: var(--accent); transform: scale(1.12); }
+.colors input[type='color'] {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+.sizes button { width: 46px; height: 40px; padding: 0; display: grid; place-items: center; }
+.sizes button span { display: block; border-radius: 50%; background: var(--text); }
+.fill { color: var(--muted); font-size: 0.9rem; }
+.habitats { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.habitats button { padding: 4px 10px; font-size: 0.85rem; }
+.where select { font: inherit; }
+.place-picker { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.picker-map { width: min(100%, 640px); aspect-ratio: 10 / 7; border-radius: 12px; overflow: hidden; touch-action: manipulation; }
+.picker-map canvas { display: block; width: 100%; height: 100%; }
+.den-box { display: flex; flex-direction: column; gap: 6px; }
+.den-box select { align-self: flex-start; }
+.den-door { position: relative; align-self: center; max-width: 220px; cursor: crosshair; background: repeating-conic-gradient(#0001 0 25%, transparent 0 50%) 0 0 / 16px 16px; border-radius: 8px; }
+.den-door img { display: block; max-width: 100%; max-height: 180px; }
+.den-mark { position: absolute; transform: translate(-50%, -80%); font-size: 1.4rem; pointer-events: none; }
+.picker-hint { margin: 0; color: var(--muted); font-size: 0.9rem; text-align: center; }
+.toast { min-height: 1.4em; margin: 0; color: var(--accent); font-weight: bold; text-align: center; }
+.toast.error { color: var(--danger); }
+.photo-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--muted);
+}
+.photo-panel input[type='range'] { width: 160px; accent-color: var(--accent); }
+.materials, .extras { display: flex; flex-wrap: wrap; gap: 6px; }
+.extras button { padding: 5px 9px; font-size: 0.85rem; }
+.materials button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  font-size: 0.75rem;
+}
+.materials img { width: 36px; height: 36px; border-radius: 6px; image-rendering: pixelated; }
+.materials .turn .arrow { display: block; width: 36px; height: 36px; line-height: 36px; font-size: 1.6rem; }
+/* See-through: the usual checkerboard. */
+.colors .clear,
+.holes {
+  background: repeating-conic-gradient(#c9c9c9 0 25%, #ffffff 0 50%) 0 0 / 12px 12px !important;
+}
+.holes {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0.7;
+  /* The holes canvas only holds where things are invisible; it masks the checkerboard. */
+  --holes: linear-gradient(transparent, transparent);
+  -webkit-mask: var(--holes) 0 0 / 100% 100% no-repeat;
+  mask: var(--holes) 0 0 / 100% 100% no-repeat;
+}
+/* Glow paint shows as a soft shimmering halo of its own colour; blacklight paint with a violet edge. */
+.glow-view {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  filter: blur(5px) saturate(1.8) brightness(1.15);
+  animation: shimmer 1.6s ease-in-out infinite alternate;
+}
+.glow-view.uv { filter: blur(4px) drop-shadow(0 0 5px #b14dff) drop-shadow(0 0 3px #b14dff); }
+@keyframes shimmer { from { opacity: 0.45; } to { opacity: 0.95; } }
+.paint-kind { display: flex; flex-wrap: wrap; gap: 6px; }
+.paint-kind button { font-size: 0.85rem; padding: 4px 10px; }
+.brush-cursor {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 50%;
+  border: 1.5px solid rgba(0, 0, 0, 0.7);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.8), inset 0 0 0 1px rgba(255, 255, 255, 0.8);
+  transform: translate(-50%, -50%);
+}
+.colors .rainbow {
+  background: conic-gradient(#ff4d4d, #ffd60a, #52b788, #3a86ff, #8338ec, #ff4d4d) !important;
+}
+.hint { margin: 0; min-height: 1.2em; color: var(--muted); font-size: 0.9rem; text-align: center; }
+.markers { position: absolute; inset: 0; pointer-events: none; }
+svg.icon { width: 1.05em; height: 1.05em; vertical-align: -0.18em; }
+.markers span {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  line-height: 1;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+}
+.guide .mirror-line { position: absolute; border: 0 dashed rgba(131, 56, 236, 0.35); }
+.guide .mirror-line.updown { left: 0; right: 0; top: 50%; border-top-width: 2px; }
+.guide .mirror-line.leftright { top: 0; bottom: 0; left: 50%; border-left-width: 2px; }
+.editing {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--panel);
+  border-left: 4px solid var(--accent);
+  max-width: 760px;
+  text-align: center;
+}
+
+
+.workspace {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  align-items: flex-start;
+  width: 100%;
+}
+/*
+ * With the preview out on a wide screen, the page uses the whole width: tools, paper, options, then the preview
+ * on the far side of the options (the paper a little bigger). On a tall screen the preview goes under the paper.
+ */
+.draw-step.previewing { max-width: none; }
+.desk.previewing { grid-template-columns: 76px minmax(0, 1.3fr) 236px minmax(0, 1fr); }
+.desk > .preview { grid-column: 4; grid-row: 1; justify-self: start; }
+.preview {
+  width: min(100%, calc((100dvh - 200px) * 4 / 3));
+  min-width: 0;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  background: #1d5a80;
+}
+.preview { position: relative; }
+.preview canvas { display: block; width: 100%; height: 100%; cursor: pointer; }
+.preview-blacklight { position: absolute; right: 8px; top: 8px; z-index: 1; padding: 3px 10px; font-size: 0.8rem; }
+@media (max-aspect-ratio: 4 / 3) and (min-width: 761px) {
+  .draw-step.previewing { max-width: 1500px; }
+  .desk.previewing { grid-template-columns: 76px minmax(0, 1fr) 236px; }
+  .desk.previewing .stage { width: min(100%, calc((100dvh - 230px) / 2 * 4 / 3)); }
+  .desk > .preview { grid-column: 2; grid-row: 2; justify-self: center; width: min(100%, calc((100dvh - 230px) / 2 * 4 / 3)); }
+}
+@media (max-width: 760px) {
+  .stage { width: 100%; }
+  .desk.previewing { grid-template-columns: minmax(0, 1fr); }
+  .desk > .preview { grid-column: auto; grid-row: auto; order: 1; width: 100%; }
+}
+
+.selection-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.select-bar { display: flex; flex-wrap: wrap; gap: 6px; }
+.select-bar .group { display: flex; flex-wrap: wrap; gap: 6px; }
+.select-bar button { padding: 5px 9px; }
+.select-bar .wide { flex-basis: 100%; }
+.select-bar button:disabled { opacity: 0.4; cursor: default; }
+.animate-panel, .parts-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+.animate-panel { justify-content: flex-start; gap: 6px; }
+.animate-panel button { padding: 5px 9px; font-size: 0.85rem; }
+.parts-list .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 12px;
+  border-radius: 999px;
+  background: rgba(255, 140, 26, 0.18);
+  border: 1px solid rgba(255, 140, 26, 0.5);
+  color: var(--text);
+}
+.parts-list .chip button { padding: 2px 8px; background: transparent; border: 0; box-shadow: none; }
+.parts-list .chip button[aria-pressed='true'] { background: rgba(255, 214, 0, 0.5); border-radius: 999px; }
+.parts-list .chip .label { cursor: pointer; }
+.parts-list .chip.picked { background: rgba(255, 214, 0, 0.45); border-color: #e0b400; box-shadow: 0 0 0 2px rgba(255, 214, 0, 0.6); }
+.parts-list .parts-help { flex-basis: 100%; margin: 0; text-align: center; font-size: 0.85em; }
+.hint button { margin-left: 6px; }
+
+/* Step 2, Ready: the creature moving on the left, its name and where it lives on the right. */
+.ready-step {
+  width: 100%;
+  max-width: 1100px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.ready-look { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.ready-look .preview { flex: none; width: 100%; max-width: none; }
+.submit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 16px 16px;
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.submit input[type='text'] { width: 100%; }
+.submit .fill { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+.submit .primary { margin-top: 12px; padding: 10px 16px; font-size: 1.05rem; }
+.place-picker .picker-map { width: 100%; }
+
+/* Phones: the tools become a row under the paper, the options fold below, and the steps stack. */
+@media (max-width: 1000px) {
+  .desk { grid-template-columns: 68px minmax(0, 1fr) 200px; }
+}
+@media (max-width: 760px) {
+  .topbar .label { display: none; }
+  .topbar > button, #kind-button { padding: 5px 8px; font-size: 0.85rem; }
+  .desk { grid-template-columns: minmax(0, 1fr); }
+  .rail { flex-direction: row; order: 2; }
+  .rail button { flex: 1; }
+  .middle { order: 1; }
+  .side { order: 3; max-height: none; }
+  .kind-bases { grid-template-columns: repeat(3, 1fr); }
+  .ready-step { grid-template-columns: minmax(0, 1fr); }
+}

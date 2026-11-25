@@ -1,0 +1,26 @@
+{
+  "format": "doodlearium-world",
+  "formatVersion": 1,
+  "id": "whimsy-galaxy",
+  "name": "The Whimsy Galaxy",
+  "icon": "🪐",
+  "mapStyle": "space",
+  "version": "1",
+  "exportedAt": 1793750400000,
+  "regions": [
+    { "id": "whimsy-galaxy.cozy", "name": "The Cozy Core" },
+    { "id": "whimsy-galaxy.wobbly", "name": "The Wobbly Rim" }
+  ],
+  "places": [
+    { "id": "whimsy-galaxy.socks", "name": "Lost Sock Junkyard", "biome": "station", "look": "mining", "region": "whimsy-galaxy.wobbly", "x": 170, "y": 190 },
+    { "id": "whimsy-galaxy.diner", "name": "The Saucer Diner", "biome": "station", "look": "neon", "region": "whimsy-galaxy.cozy", "x": 430, "y": 130 },
+    { "id": "whimsy-galaxy.teacup", "name": "Teacup Palace", "biome": "station", "look": "golden", "region": "whimsy-galaxy.cozy", "x": 760, "y": 150 },
+    { "id": "whimsy-galaxy.hiccup", "name": "Hiccup Comet", "biome": "space", "look": "golden", "region": "whimsy-galaxy.cozy", "x": 330, "y": 350 },
+    { "id": "whimsy-galaxy.marshmallow", "name": "Marshmallow Meadows", "biome": "garden", "look": "lush", "region": "whimsy-galaxy.cozy", "x": 590, "y": 320 },
+    { "id": "whimsy-galaxy.greenhouse", "name": "The Giant's Greenhouse", "biome": "garden", "look": "golden", "region": "whimsy-galaxy.cozy", "x": 860, "y": 370 },
+    { "id": "whimsy-galaxy.jellybean", "name": "Jellybean Moon", "biome": "moon", "look": "desert", "region": "whimsy-galaxy.wobbly", "x": 130, "y": 470 },
+    { "id": "whimsy-galaxy.snowcone", "name": "Snowcone Moon", "biome": "moon", "look": "icy", "region": "whimsy-galaxy.wobbly", "x": 370, "y": 520 },
+    { "id": "whimsy-galaxy.bubblegum", "name": "The Bubblegum Rings", "biome": "space", "look": "nebula", "region": "whimsy-galaxy.wobbly", "x": 640, "y": 540 },
+    { "id": "whimsy-galaxy.puddle", "name": "Puddle Planet", "biome": "ocean", "region": "whimsy-galaxy.wobbly", "x": 880, "y": 590 }
+  ]
+}

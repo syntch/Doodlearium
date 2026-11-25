@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Doodlearium</title>
+    <link rel="stylesheet" href="./shared/style.css" />
+    <style>
+      main { max-width: 760px; margin: 0 auto; padding: 32px 16px; text-align: center; }
+      h1 { font-size: clamp(2.2rem, 7vw, 3.6rem); margin: 0.2em 0; }
+      p { color: var(--muted); font-size: 1.1rem; }
+      .choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-top: 32px; }
+      .choices a {
+        display: block; padding: 28px 16px; border-radius: var(--radius); background: var(--panel);
+        text-decoration: none; color: var(--text); font-size: 1.3rem; font-weight: bold;
+        border: 2px solid transparent;
+      }
+      .choices a:hover { border-color: var(--accent); }
+      .choices span { display: block; font-size: 3rem; margin-bottom: 8px; }
+      .feed { margin-top: 28px; font-size: 1.2rem; padding: 12px 24px; }
+      .choices small { display: block; color: var(--muted); font-weight: normal; font-size: 0.95rem; margin-top: 6px; }
+    </style>
+    <noscript>
+      <style>
+        body > *:not(noscript) { display: none !important; }
+        .no-js { position: fixed; inset: 0; z-index: 2147483647; overflow: auto; background: #0a3456; color: #f2f8fc;
+          font: 20px/1.5 'Trebuchet MS', sans-serif; text-align: center; padding: 8vh 24px; }
+        .no-js h1 { font-size: 34px; margin: 0 0 12px; }
+        .no-js p { max-width: 640px; margin: 0 auto 14px; }
+      </style>
+    </noscript>
+    <script src="./oldbrowser.js"></script>
+  </head>
+  <body>
+    <noscript>
+      <div class="no-js">
+        <div style="font-size: 64px">🐠</div>
+        <h1>Doodlearium needs JavaScript</h1>
+        <p>The fish swim with JavaScript, and it's turned off in this browser (some workplaces and schools switch it off).</p>
+        <p>Try a computer, phone or tablet where it's on, or turn it on for this site in the browser's settings.</p>
+      </div>
+    </noscript>
+    <main>
+      <h1>🐠 Doodlearium</h1>
+      <p>A little world of lakes, ponds and seas where everything is drawn by us.</p>
+      <div class="choices">
+        <a href="./tank/"><span>🌊</span>Watch the world<small>Lake, pond, ocean and beach: put it on the TV</small></a>
+        <a href="./draw/"><span>🖍️</span>Draw something<small>Fish, plants and decorations</small></a>
+        <a href="./gallery/"><span>🖼️</span>Gallery<small>Every drawing ever made</small></a>
+        <a href="./history/" data-needs-server><span>📖</span>History<small>What's happened, and stories about it</small></a>
+        <a href="./worlds/"><span>🌍</span>Worlds<small>Make, share and install worlds to visit</small></a>
+      </div>
+      <p><button class="primary feed" id="feed">🍤 Feed the fish</button></p>
+    </main>
+    <script type="module">
+      import { setupFeedButton } from './shared/api.ts';
+      setupFeedButton(document.querySelector('#feed'));
+    </script>
+  </body>
+</html>

@@ -1,0 +1,98 @@
+{
+  "title": "Doodlearium",
+  "tagline": "A family aquarium where every creature was drawn by the family.",
+  "status": "beta",
+  "genre": [
+    "Creative",
+    "Digital aquarium",
+    "Family"
+  ],
+  "platforms": [
+    "Self-hosted (home network)",
+    "Web (browser demo)"
+  ],
+  "accent": "#2fc4b2",
+  "summary": "A digital aquarium for the family TV. Everyone draws creatures on a phone, tablet or PC, and they swim, graze and wander through a little world of lakes, oceans and meadows.",
+  "description": "Doodlearium is a family digital aquarium where everything in it was drawn by the family. It runs on an always-on computer at home. You put it on the TV, and anyone on the home network can draw new creatures from a phone, tablet or PC.\n\nIt is a small world of places: four underwater (Sparkle Lake, Lily Pond, Big Blue Ocean, Shell Beach) and four on land (Buttercup Meadow, Sunny Farm, Rolling Hills, Whispering Woods), with more worlds to add or make yourself. The world lives on the server, so every screen showing a place shows the same creatures doing the same things, and life carries on while nobody is watching.\n\nEvery drawing becomes a kind of creature. The world adds more of its kind wherever they suit, so one drawing of a weed can carpet a pond and one fish can become a whole school. Notable events are written into a history that can be turned into stories.\n\n**The demo here runs entirely in your browser.** It starts with the two starter packs of creatures and a second world, the Whimsy Galaxy. Watch a place, feed the fish, then draw something and see it move in. Whatever you draw stays in your own browser: nothing is uploaded or shared, and you can start over at any time. The world only lives while the page is open.\n\nThe full Doodlearium needs its own server and is deliberately not meant for the public internet, because it holds a family's drawings. That is where the shared screens, the history and the built-in updates are. The code is public so you can run your own.",
+  "features": [
+    "Draw creatures from any phone, tablet or PC on the home network",
+    "Brushes, fill, glow and blacklight paint, moving parts, and extras like bubbles and googly eyes",
+    "Eight places to explore, shown on a storybook map, and more worlds to install or make",
+    "A shared world: every screen shows the same creatures, and life continues in the background",
+    "Visitors, weather, day and night, eggs and explorers keep things happening",
+    "A history of notable events that can be turned into stories",
+    "Runs on an always-on home computer, with an update check built in"
+  ],
+  "controls": [
+    {
+      "input": "Click or tap a place on the map",
+      "action": "Zoom in to watch it"
+    },
+    {
+      "input": "Click or tap the water",
+      "action": "Drop food into the tank"
+    },
+    {
+      "input": "Point at a creature",
+      "action": "See its name, who drew it and what it is like"
+    },
+    {
+      "input": "M",
+      "action": "Zoom out to the world map"
+    },
+    {
+      "input": "⚙️ button",
+      "action": "Open the controls: documentary, visitors, weather, time of day"
+    },
+    {
+      "input": "Double-click",
+      "action": "Toggle full screen"
+    },
+    {
+      "input": "S",
+      "action": "Toggle soft sounds"
+    },
+    {
+      "input": "Draw page: drag on the canvas",
+      "action": "Paint with the brush, eraser or fill"
+    },
+    {
+      "input": "Draw page: Preview",
+      "action": "See your drawing move as it will in the world"
+    },
+    {
+      "input": "Draw page: Ready, then Add to the world",
+      "action": "Name your creature and send it into the world"
+    }
+  ],
+  "media": {
+    "cover": "media/cover.png",
+    "gallery": [
+      {
+        "src": "media/cover.png",
+        "alt": "Sparkle Lake: a school of fish and two little submarines above reeds, treasure chests and hermit crabs on the sand",
+        "type": "image"
+      },
+      {
+        "src": "media/trailer.gif",
+        "alt": "A tour of Doodlearium: the world map, the lake, a visiting whale, rain and a rainbow, night in the woods, glow paint, and drawing a fish",
+        "type": "image"
+      }
+    ]
+  },
+  "demo": {
+    "available": true,
+    "mode": "embed",
+    "aspect": "16/9",
+    "notes": "This is a browser-only demo: your drawings stay in your own browser. The full app is self-hosted on a computer on your home network.",
+    "requires": ""
+  },
+  "links": [
+    {
+      "label": "Source code and setup on GitHub",
+      "url": "https://github.com/syntch/Doodlearium"
+    }
+  ],
+  "updated": "",
+  "version": ""
+}

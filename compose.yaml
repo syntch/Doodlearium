@@ -1,0 +1,12 @@
+services:
+  doodlearium:
+    build: .
+    container_name: doodlearium
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - doodlearium-data:/app/data
+
+volumes:
+  doodlearium-data:

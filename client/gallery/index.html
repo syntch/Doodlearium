@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Doodlearium · Gallery</title>
+    <link rel="stylesheet" href="../shared/style.css" />
+    <style>
+      main { padding: 0 16px 32px; }
+      .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+      .filters .search { margin-left: auto; min-width: 220px; background: var(--panel-2); border: 2px solid transparent; border-radius: 10px; padding: 8px 12px; }
+      .filters .search:focus { outline: none; border-color: var(--accent); }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; align-items: start; }
+      .card { background: var(--panel); border-radius: var(--radius); padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+      .card .art { aspect-ratio: 1; display: grid; place-items: center; border-radius: 10px; background: #1f78a8; }
+      .card img { max-width: 90%; max-height: 90%; }
+      .card .name { font-weight: bold; overflow-wrap: anywhere; }
+      .card .meta { color: var(--muted); font-size: 0.85rem; }
+      .card .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+      /* Switched off (or away with its pack or world): faded, with why on the picture. */
+      .card .art { position: relative; }
+      .card.away .art img { opacity: 0.35; filter: grayscale(0.7); }
+      .card .away-note { position: absolute; left: 6px; right: 6px; bottom: 6px; padding: 3px 8px; border-radius: 8px; background: rgba(12, 47, 74, 0.85); font-size: 0.8rem; text-align: center; }
+      .pack.off { background: var(--panel); }
+      .pack.off .title { color: var(--muted); }
+      .card .actions > * { padding: 4px 10px; font-size: 0.85rem; }
+      .card a.button {
+        background: var(--panel-2); border: 2px solid transparent; border-radius: 10px;
+        color: var(--text); text-decoration: none;
+      }
+      .card a.button:hover { border-color: var(--accent); }
+      .card button:hover { border-color: var(--danger); }
+      .empty { color: var(--muted); }
+
+      /* 📦 drawing packs */
+      .packs { background: var(--panel); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 16px; }
+      .packs-head { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+      .packs-head h2 { margin: 0 auto 0 0; font-size: 1.1rem; }
+      .packs-head a.button { background: var(--panel-2); border: 2px solid transparent; border-radius: 10px; color: var(--text); text-decoration: none; padding: 6px 12px; }
+      .packs-head a.button:hover { border-color: var(--accent); }
+      .packs .note { color: var(--muted); font-size: 0.9rem; margin: 8px 0 0; white-space: pre-line; }
+      .packs .note:empty { display: none; }
+      .pack-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+      .pack-list:empty { display: none; }
+      .pack { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; background: var(--panel-2); border-radius: 10px; padding: 8px 10px; }
+      .pack .title { font-weight: bold; overflow-wrap: anywhere; }
+      .pack .version { background: var(--bg); border-radius: 8px; padding: 1px 8px; font-size: 0.85rem; }
+      .pack .meta { color: var(--muted); font-size: 0.85rem; margin-right: auto; }
+      .pack button { padding: 4px 10px; font-size: 0.85rem; background: var(--panel); }
+      .pack button.danger:hover { border-color: var(--danger); }
+      .world-chips { flex-basis: 100%; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+      .world-chips button[aria-pressed='true'] { border-color: var(--accent); }
+      .choose {
+        position: sticky; top: 0; z-index: 5; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+        background: var(--panel); border: 2px solid var(--accent); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 16px;
+      }
+      .choose input[type='text'] { flex: 1 1 160px; }
+      .choose #choose-version { flex: 0 1 90px; }
+      .choose .count { color: var(--muted); margin-right: auto; }
+      .grid.choosing .card { cursor: pointer; position: relative; outline: 3px solid transparent; }
+      .grid.choosing .card.chosen { outline-color: var(--accent); }
+      .grid.choosing .card .actions { display: none; }
+      .card .tick { position: absolute; top: 14px; left: 14px; width: 26px; height: 26px; accent-color: var(--accent); pointer-events: none; }
+    </style>
+    <noscript>
+      <style>
+        body > *:not(noscript) { display: none !important; }
+        .no-js { position: fixed; inset: 0; z-index: 2147483647; overflow: auto; background: #0a3456; color: #f2f8fc;
+          font: 20px/1.5 'Trebuchet MS', sans-serif; text-align: center; padding: 8vh 24px; }
+        .no-js h1 { font-size: 34px; margin: 0 0 12px; }
+        .no-js p { max-width: 640px; margin: 0 auto 14px; }
+      </style>
+    </noscript>
+    <script src="../oldbrowser.js"></script>
+  </head>
+  <body>
+    <noscript>
+      <div class="no-js">
+        <div style="font-size: 64px">🐠</div>
+        <h1>Doodlearium needs JavaScript</h1>
+        <p>The fish swim with JavaScript, and it's turned off in this browser (some workplaces and schools switch it off).</p>
+        <p>Try a computer, phone or tablet where it's on, or turn it on for this site in the browser's settings.</p>
+      </div>
+    </noscript>
+    <nav class="nav">
+      <a class="brand" href="../">🐠 Doodlearium</a>
+      <a href="../tank/">World</a>
+      <a href="../draw/">Draw</a>
+      <a href="../history/" data-needs-server>History</a>
+      <button id="feed" title="Drop food in for everyone" aria-label="Feed">🍤 <span class="label">Feed</span></button>
+    </nav>
+    <main>
+      <section class="packs" aria-labelledby="packs-title">
+        <div class="packs-head">
+          <h2 id="packs-title">📦 Drawing packs</h2>
+          <button id="pack-new" title="Choose some drawings to share with another Doodlearium">➕ Make a pack</button>
+          <button id="pack-install" data-needs-server title="Add the drawings from a .doodlepack file (or update a pack you have)">📥 Install a pack…</button>
+          <input type="file" id="pack-file" accept=".doodlepack,application/json" hidden />
+          <a class="button" href="../worlds/" title="Make, share and install worlds">🌍 Worlds</a>
+        </div>
+        <div class="pack-list" id="pack-list"></div>
+        <p class="note" id="packs-note" role="status"></p>
+      </section>
+      <div class="choose" id="choose" hidden>
+        <input type="text" id="choose-name" maxlength="60" placeholder="Name the pack (e.g. Farm friends)" aria-label="Pack name" />
+        <input type="text" id="choose-version" maxlength="20" placeholder="1" aria-label="Version" title="Version (it goes up by itself when you export it with changes)" />
+        <span class="count" id="choose-count"></span>
+        <button id="choose-all">Select all</button>
+        <button id="choose-none">Unselect all</button>
+        <button class="primary" id="choose-save">💾 Save pack</button>
+        <button id="choose-cancel">Cancel</button>
+      </div>
+      <div class="filters" id="filters"></div>
+      <div class="grid" id="grid"></div>
+      <p class="empty" id="no-match" hidden>Nobody by that name. Try fewer letters, or another filter.</p>
+      <p class="empty" id="empty" hidden>No drawings yet. <a href="../draw/">Draw the first one!</a></p>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
